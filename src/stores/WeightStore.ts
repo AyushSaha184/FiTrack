@@ -1,0 +1,172 @@
+import { makeAutoObservable, runInAction } from 'mobx';
+import type { WeightEntry } from '../models';
+import { weightService } from '../services/supabase/weight';
+import { generateUUID } from '../utils/helpers';
+
+export class WeightStore {
+  entries: WeightEntry[] = [];
+  currentWeight: number | null = null;
+  goalWeight: number | null = null;
+  isLoading = false;
+  error: string | null = null;
+  stats: {
+    highest: WeightEntry | null;
+    lowest: WeightEntry | null;
+    average: number | null;
+    change: number | null;
+  } = { highest: null, lowest: null, average: null, change: null };
+
+  constructor() {
+    makeAutoObservable(this);
+  }
+
+  get trend(): 'up' | 'down' | 'stable' {
+    if (this.stats.change === null) return 'stable';
+    if (Math.abs(this.stats.change) < 0.1) return 'stable';
+    return this.stats.change > 0 ? 'up' : 'down';
+  }
+
+  get progress(): number {
+    if (!this.currentWeight || !this.goalWeight) return 0;
+    if (this.goalWeight === this.currentWeight) return 100;
+    const diff = Math.abs(this.currentWeight - this.goalWeight);
+    const startWeight = this.stats.change !== null && this.stats.change > 0
+      ? this.currentWeight + diff
+      : this.currentWeight - diff;
+    const progress = 100 - (diff / Math.abs(startWeight - this.goalWeight)) * 100;
+    return Math.max(0, Math.min(100, progress));
+  }
+
+  async loadEntries(userId: string, days = 365) {
+    try {
+      this.isLoading = true;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      const data = await weightService.getEntries(
+        userId,
+        startDate.toISOString().split('T')[0],
+        new Date().toISOString().split('T')[0],
+      );
+      runInAction(() => {
+        this.entries = data.map((e: any) => ({
+          ...e,
+          date: new Date(e.date),
+        }));
+        if (data.length > 0) {
+          this.currentWeight = data[0].weight;
+        }
+      });
+    } catch (error: any) {
+      console.error('[WeightStore] loadEntries error:', error);
+      runInAction(() => {
+        this.error = error.message;
+      });
+    } finally {
+      runInAction(() => {
+        this.isLoading = false;
+      });
+    }
+  }
+
+  async loadStats(userId: string, days = 30) {
+    try {
+      const stats = await weightService.getStats(userId, days);
+      runInAction(() => {
+        this.stats = stats;
+      });
+    } catch (error: any) {
+      console.error('[WeightStore] loadStats error:', error);
+      runInAction(() => {
+        this.error = error.message;
+      });
+    }
+  }
+
+  async addEntry(userId: string, weight: number, date?: Date, notes?: string) {
+    try {
+      const entryDate = date || new Date();
+      const entry = await weightService.addEntry({
+        id: generateUUID(),
+        userId,
+        weight,
+        date: entryDate.toISOString(),
+        notes,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any);
+      runInAction(() => {
+        const newEntry = { ...entry, date: new Date(entry.date) };
+        this.entries = [newEntry, ...this.entries].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        );
+        this.currentWeight = newEntry.weight;
+      });
+      return entry;
+    } catch (error: any) {
+      console.error('[WeightStore] addEntry error:', error);
+      runInAction(() => {
+        this.error = error.message;
+      });
+      throw error;
+    }
+  }
+
+  async updateEntry(entryId: string, weight: number, notes?: string) {
+    try {
+      const updated = await weightService.updateEntry(entryId, { weight, notes });
+      runInAction(() => {
+        const index = this.entries.findIndex((e) => e.id === entryId);
+        if (index !== -1) {
+          this.entries[index] = { ...this.entries[index], ...updated, date: new Date(updated.date) };
+          if (index === 0) {
+            this.currentWeight = updated.weight;
+          }
+        }
+      });
+      return updated;
+    } catch (error: any) {
+      runInAction(() => {
+        this.error = error.message;
+      });
+      throw error;
+    }
+  }
+
+  async deleteEntry(entryId: string) {
+    try {
+      await weightService.deleteEntry(entryId);
+      runInAction(() => {
+        this.entries = this.entries.filter((e) => e.id !== entryId);
+        if (this.entries.length > 0) {
+          this.currentWeight = this.entries[0].weight;
+        } else {
+          this.currentWeight = null;
+        }
+      });
+    } catch (error: any) {
+      runInAction(() => {
+        this.error = error.message;
+      });
+      throw error;
+    }
+  }
+
+  setGoalWeight(weight: number) {
+    runInAction(() => {
+      this.goalWeight = weight;
+    });
+  }
+
+  getChartData(days = 30): { date: Date; weight: number }[] {
+    return this.entries.slice(0, days).map((e) => ({
+      date: new Date(e.date),
+      weight: e.weight,
+    })).reverse();
+  }
+
+  clearError() {
+    this.error = null;
+  }
+}
+
+export const weightStore = new WeightStore();

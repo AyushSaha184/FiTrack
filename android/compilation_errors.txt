@@ -1,0 +1,83 @@
+10:The client will now receive all logging from the daemon (pid: 13620). The daemon log file: /home/ayush/.gradle/daemon/8.10.2/daemon-13620.out.log
+11:Starting 6th build in daemon [uptime: 1 hrs 39 mins 26.189 secs, performance: 99%, GC rate: 0.00/s, heap usage: 6% of 2 GiB, non-heap usage: 78% of 512 MiB]
+1022::notifee_react-native:android.compileSdk using custom value: 35
+1023::notifee_react-native:android.targetSdk using custom value: 35
+1024::notifee_react-native:android.minSdk using custom value: 24
+1037::react-native-firebase_analytics:firebase.bom using default value: 32.7.1
+1040::react-native-firebase_analytics:android.compileSdk using custom value: 35
+1041::react-native-firebase_analytics:android.targetSdk using custom value: 35
+1042::react-native-firebase_analytics:android.minSdk using custom value: 24
+1054::react-native-firebase_app:firebase.bom using default value: 32.7.1
+1055::react-native-firebase_app:play.play-services-auth using default value: 20.7.0
+1058::react-native-firebase_app:android.compileSdk using custom value: 35
+1059::react-native-firebase_app:android.targetSdk using custom value: 35
+1060::react-native-firebase_app:android.minSdk using custom value: 24
+1072::react-native-firebase_auth:firebase.bom using default value: 32.7.1
+1075::react-native-firebase_auth:android.compileSdk using custom value: 35
+1076::react-native-firebase_auth:android.targetSdk using custom value: 35
+1077::react-native-firebase_auth:android.minSdk using custom value: 24
+1089::react-native-firebase_crashlytics:firebase.bom using default value: 32.7.1
+1092::react-native-firebase_crashlytics:android.compileSdk using custom value: 35
+1093::react-native-firebase_crashlytics:android.targetSdk using custom value: 35
+1094::react-native-firebase_crashlytics:android.minSdk using custom value: 24
+1106::react-native-firebase_firestore:firebase.bom using default value: 32.7.1
+1109::react-native-firebase_firestore:android.compileSdk using custom value: 35
+1110::react-native-firebase_firestore:android.targetSdk using custom value: 35
+1111::react-native-firebase_firestore:android.minSdk using custom value: 24
+1123::react-native-firebase_storage:firebase.bom using default value: 32.7.1
+1126::react-native-firebase_storage:android.compileSdk using custom value: 35
+1127::react-native-firebase_storage:android.targetSdk using custom value: 35
+1128::react-native-firebase_storage:android.minSdk using custom value: 24
+2352:Gradle: 8.10.2
+7320:Compilation mode: in-process compilation
+7329:Note: /home/ayush/vscode/Projects/Fitrack/node_modules/@notifee/react-native/android/src/main/java/io/invertase/notifee/NotifeeReactUtils.java uses or overrides a deprecated API.
+7330:Note: Recompile with -Xlint:deprecation for details.
+7479:Compilation mode: in-process compilation
+7488:Note: Some input files use or override a deprecated API.
+7489:Note: Recompile with -Xlint:deprecation for details.
+7639:Compilation mode: in-process compilation
+7645:Note: Some input files use or override a deprecated API.
+7646:Note: Recompile with -Xlint:deprecation for details.
+7767:Compilation mode: in-process compilation
+7773:Note: /home/ayush/vscode/Projects/Fitrack/node_modules/@react-native-firebase/auth/android/src/main/java/io/invertase/firebase/auth/ReactNativeFirebaseAuthModule.java uses or overrides a deprecated API.
+7774:Note: Recompile with -Xlint:deprecation for details.
+7775:Note: /home/ayush/vscode/Projects/Fitrack/node_modules/@react-native-firebase/auth/android/src/main/java/io/invertase/firebase/auth/ReactNativeFirebaseAuthModule.java uses unchecked or unsafe operations.
+7776:Note: Recompile with -Xlint:unchecked for details.
+7923:Compilation mode: in-process compilation
+7929:Note: /home/ayush/vscode/Projects/Fitrack/node_modules/@react-native-firebase/crashlytics/android/src/main/java/io/invertase/firebase/crashlytics/ReactNativeFirebaseCrashlyticsModule.java uses or overrides a deprecated API.
+7930:Note: Recompile with -Xlint:deprecation for details.
+8073:Compilation mode: in-process compilation
+8079:Note: Some input files use or override a deprecated API.
+8080:Note: Recompile with -Xlint:deprecation for details.
+8081:Note: Some input files use unchecked or unsafe operations.
+8082:Note: Recompile with -Xlint:unchecked for details.
+8215:Compilation mode: in-process compilation
+8353:Compilation mode: in-process compilation
+8359:Note: Some input files use or override a deprecated API.
+8360:Note: Recompile with -Xlint:deprecation for details.
+8361:Note: Some input files use unchecked or unsafe operations.
+8362:Note: Recompile with -Xlint:unchecked for details.
+8486:Compilation mode: in-process compilation
+11286:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-safe-area-context/android/src/main/java/com/th3rdwave/safeareacontext/SafeAreaProviderManager.kt:15:27 Cannot infer type for this parameter. Please specify it explicitly.
+11287:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-safe-area-context/android/src/main/java/com/th3rdwave/safeareacontext/SafeAreaProviderManager.kt:15:62 Argument type mismatch: actual type is 'com.th3rdwave.safeareacontext.SafeAreaProviderManager', but 'U!' was expected.
+11288:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-safe-area-context/android/src/main/java/com/th3rdwave/safeareacontext/SafeAreaProviderManager.kt:17:16 Return type of 'getDelegate' is not a subtype of the return type of the overridden member 'fun getDelegate(): ViewManagerDelegate<SafeAreaProvider!>?' defined in 'com/th3rdwave/safeareacontext/SafeAreaProviderManager'.
+11648:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/RNGestureHandlerPackage.kt:22:1 Class 'RNGestureHandlerPackage' is not abstract and does not implement abstract member 'getViewManagerNames'.
+11649:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/RNGestureHandlerPackage.kt:40:3 'getViewManagerNames' overrides nothing.
+11650:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/RNGestureHandlerPackage.kt:43:3 'getViewManagers' overrides nothing.
+11651:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/RNGestureHandlerPackage.kt:46:3 'createViewManager' overrides nothing.
+11652:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/react/RNGestureHandlerButtonViewManager.kt:43:72 Type argument is not within its bounds: should be subtype of 'it(BaseViewManagerInterface & com.facebook.react.viewmanagers.RNGestureHandlerButtonManagerInterface<com.swmansion.gesturehandler.react.RNGestureHandlerButtonViewManager.ButtonViewGroup!>)!'.
+11653:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/react/RNGestureHandlerButtonViewManager.kt:43:107 Argument type mismatch: actual type is 'com.swmansion.gesturehandler.react.RNGestureHandlerButtonViewManager', but 'U!' was expected.
+11654:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/react/RNGestureHandlerRootViewManager.kt:22:83 Type argument is not within its bounds: should be subtype of 'it(BaseViewManagerInterface & com.facebook.react.viewmanagers.RNGestureHandlerRootViewManagerInterface<com.swmansion.gesturehandler.react.RNGestureHandlerRootView!>)!'.
+11655:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/react/RNGestureHandlerRootViewManager.kt:22:116 Argument type mismatch: actual type is 'com.swmansion.gesturehandler.react.RNGestureHandlerRootViewManager', but 'U!' was expected.
+11879:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenContainerViewManager.kt:20:71 Type argument is not within its bounds: should be subtype of 'it(BaseViewManagerInterface & com.facebook.react.viewmanagers.RNSScreenContainerManagerInterface<com.swmansion.rnscreens.ScreenContainer!>)!'.
+11880:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenContainerViewManager.kt:20:99 Argument type mismatch: actual type is 'com.swmansion.rnscreens.ScreenContainerViewManager', but 'U!' was expected.
+11881:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt:25:87 Type argument is not within its bounds: should be subtype of 'it(BaseViewManagerInterface & com.facebook.react.viewmanagers.RNSScreenStackHeaderConfigManagerInterface<com.swmansion.rnscreens.ScreenStackHeaderConfig!>)!'.
+11882:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderConfigViewManager.kt:25:123 Argument type mismatch: actual type is 'com.swmansion.rnscreens.ScreenStackHeaderConfigViewManager', but 'U!' was expected.
+11883:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderSubviewManager.kt:19:89 Type argument is not within its bounds: should be subtype of 'it(BaseViewManagerInterface & com.facebook.react.viewmanagers.RNSScreenStackHeaderSubviewManagerInterface<com.swmansion.rnscreens.ScreenStackHeaderSubview!>)!'.
+11884:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackHeaderSubviewManager.kt:19:122 Argument type mismatch: actual type is 'com.swmansion.rnscreens.ScreenStackHeaderSubviewManager', but 'U!' was expected.
+11885:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackViewManager.kt:21:63 Type argument is not within its bounds: should be subtype of 'it(BaseViewManagerInterface & com.facebook.react.viewmanagers.RNSScreenStackManagerInterface<com.swmansion.rnscreens.ScreenStack!>)!'.
+11886:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenStackViewManager.kt:21:87 Argument type mismatch: actual type is 'com.swmansion.rnscreens.ScreenStackViewManager', but 'U!' was expected.
+11887:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenViewManager.kt:31:53 Type argument is not within its bounds: should be subtype of 'it(BaseViewManagerInterface & com.facebook.react.viewmanagers.RNSScreenManagerInterface<com.swmansion.rnscreens.Screen!>)!'.
+11888:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenViewManager.kt:31:72 Argument type mismatch: actual type is 'com.swmansion.rnscreens.ScreenViewManager', but 'U!' was expected.
+11889:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/SearchBarManager.kt:27:63 Type argument is not within its bounds: should be subtype of 'it(BaseViewManagerInterface & com.facebook.react.viewmanagers.RNSSearchBarManagerInterface<com.swmansion.rnscreens.SearchBarView!>)!'.
+11890:e: file:///home/ayush/vscode/Projects/Fitrack/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/SearchBarManager.kt:27:81 Argument type mismatch: actual type is 'com.swmansion.rnscreens.SearchBarManager', but 'U!' was expected.

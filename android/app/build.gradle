@@ -1,0 +1,125 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+apply plugin: "com.google.gms.google-services"
+apply plugin: "com.google.firebase.crashlytics"
+
+def packageJson = file("../../package.json").text
+def matcher = packageJson =~ /"version":\s*"([^"]+)"/
+def appVersion = matcher ? matcher[0][1] : "1.0.0"
+
+/**
+ * This is the configuration block to customize your React Native Android app.
+ * By default you don't need to apply any configuration, just uncomment the lines you need.
+ */
+react {
+    /* Folders */
+    //   The root of your project, i.e. where "package.json" lives. Default is '../..'
+    // root = file("../../")
+    //   The folder where the react-native NPM package is. Default is ../../node_modules/react-native
+    // reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
+    //   The folder where the react-native Codegen package is. Default is ../../node_modules/@react-native/codegen
+    // codegenDir = file("../../node_modules/@react-native/codegen")
+
+    /* Variants */
+    //   The list of variants to that are debuggable. For those we're going to
+    //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
+    //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
+    // debuggableVariants = ["liteDebug", "prodDebug"]
+
+    /* Hermes Commands */
+    //   The hermes compiler command to run. By default it is 'hermesc'
+    // hermesCommand = "$rootDir/my-custom-hermesc/bin/hermesc"
+
+    /* Autolinking */
+    autolinkLibrariesWithApp()
+}
+
+/**
+ * Set this to true in release builds to optimize the app using [R8](https://developer.android.com/topic/performance/app-optimization/enable-app-optimization).
+ */
+def enableProguardInReleaseBuilds = false
+
+/**
+ * The preferred build flavor of JavaScriptCore (JSC)
+ */
+def jscFlavor = 'org.webkit:android-jsc:+'
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+
+    namespace "com.fitrack.app"
+    defaultConfig {
+        applicationId "com.fitrack.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName appVersion
+    }
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
+            def releaseKeystore = findProperty('FITRACK_RELEASE_KEYSTORE') ?: System.getenv('FITRACK_RELEASE_KEYSTORE')
+            if (releaseKeystore && file(releaseKeystore).exists()) {
+                storeFile file(releaseKeystore)
+                storePassword findProperty('FITRACK_RELEASE_STORE_PASSWORD') ?: System.getenv('FITRACK_RELEASE_STORE_PASSWORD')
+                keyAlias findProperty('FITRACK_RELEASE_KEY_ALIAS') ?: System.getenv('FITRACK_RELEASE_KEY_ALIAS')
+                keyPassword findProperty('FITRACK_RELEASE_KEY_PASSWORD') ?: System.getenv('FITRACK_RELEASE_KEY_PASSWORD')
+            } else {
+                // No release keystore configured — fall back to debug key (works for local testing only).
+                // Generate one with: keytool -genkey -v -keystore fitrack-release.keystore -alias fitrack -keyalg RSA -keysize 2048 -validity 10000
+                // Then set FITRACK_RELEASE_KEYSTORE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD in ~/.gradle/gradle.properties or shell env.
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            output.outputFileName = "Fitrack_v${appVersion}_${variant.buildType.name}.apk"
+        }
+    }
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+}
+
+dependencies {
+    // RNFirebase 18.x otherwise resolves its bundled Firebase BoM 32.7.1.
+    // BoM 33.7.0 includes Crashlytics NDK binaries built for 16 KB page sizes.
+    implementation(enforcedPlatform("com.google.firebase:firebase-bom:${rootProject.ext.firebaseBomVersion}"))
+
+    // The version of react-native is set by the React Native Gradle Plugin
+    implementation("com.facebook.react:react-android")
+
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
+}
+
+tasks.register("unitTestClasses") {
+    dependsOn(tasks.matching { it.name.endsWith("UnitTestSources") })
+}

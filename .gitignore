@@ -1,0 +1,115 @@
+# ============================================================
+# Node / JavaScript
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+package-lock.json.bak
+package.json
+# ============================================================
+# Env & secrets (NEVER commit)
+# ============================================================
+.env
+.env.local
+.env.*.local
+.env.production
+*.pem
+*.key
+*.p12
+*.jks
+!debug.keystore
+
+# Firebase / service config (project-specific secrets)
+# Keep one in the repo per environment via secret manager, otherwise each dev regenerates.
+google-services.json
+GoogleService-Info.plist
+android/app/google-services.json
+android/app/release.keystore
+
+# ============================================================
+# Metro / React Native runtime
+# ============================================================
+.expo/
+.expo-shared/
+metro-cache/
+.haste_cache/
+
+# ============================================================
+# Android — build artifacts & local config
+# ============================================================
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/app/src/main/assets/index.android.bundle
+android/captures/
+android/local.properties
+android/app/src/main/res/drawable-*/
+
+# ============================================================
+# iOS — build artifacts & local config
+# ============================================================
+ios/Pods/
+ios/Podfile.lock
+ios/build/
+ios/DerivedData/
+ios/*.xcworkspace
+ios/.xcode.env
+ios/GoogleService-Info.plist
+ios/FitTrack/GoogleService-Info.plist
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ============================================================
+# Tests / coverage
+# ============================================================
+coverage/
+*.lcov
+junit.xml
+test-results/
+
+# ============================================================
+# IDEs & editors
+# ============================================================
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# OS / misc
+# ============================================================
+*.log
+dist/
+build/
+tmp/
+.tmp/
+
+# ============================================================
+# Generated / scripts output
+# ============================================================
+scripts/output/
+*.apk
+*.aab
+!android/app/debug.keystore
+context.md
+scripts
+ios
+assets
+supabase
+tsconfig.json
+jest.config.js
+metro.config.js
+babel.config.js 
+Gemfile
+index.js
+app.json

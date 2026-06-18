@@ -22,4 +22,3 @@ export * from './Workout';
 export * from './Exercise';
 export * from './WeightEntry';
 export * from './StepEntry';
-export * from './BodyMeasurement';

@@ -10,7 +10,7 @@ import { ProgressBar } from '../../components/common/ProgressBar';
 import { Button } from '../../components/common/Button';
 import { SegmentedControl } from '../../components/common/SegmentedControl';
 import { Logo } from '../../components/common/Logo';
-import { useAuth, useWeight, useSteps, useWorkout, useColors } from '../../hooks';
+import { useAuth, useColors, useWeightStore, useStepsStore, useWorkoutStore, useAuthStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { getWeekDates, formatDate, formatWeight, formatSteps } from '../../utils/helpers';
 import type { MainTabParamList, HomeStackParamList } from '../../types/navigation';
@@ -22,19 +22,30 @@ export const HomeScreen = () => {
   const colors = useColors();
   const navigation = useNavigation<NavigationProp>();
   const { user } = useAuth();
-  const { todaySteps, todayProgress, dailyGoal, loadTodaySteps, loadWeeklySteps } = useSteps();
-  const { currentWeight, goalWeight, progress, loadEntries, loadStats } = useWeight();
-  const { selectedDay, selectedDate, activeWorkout, loadWorkouts } = useWorkout();
+  const authStore = useAuthStore();
+  const stepsStore = useStepsStore();
+  const weightStore = useWeightStore();
+  const workoutStore = useWorkoutStore();
+  
+  const todaySteps = stepsStore.todaySteps;
+  const todayProgress = stepsStore.todayProgress;
+  const dailyGoal = stepsStore.dailyGoal;
+  const currentWeight = weightStore.currentWeight;
+  const goalWeight = weightStore.goalWeight;
+  const progress = weightStore.progress;
+  const selectedDay = workoutStore.selectedDay;
+  const selectedDate = workoutStore.selectedDate;
+  const activeWorkout = workoutStore.activeWorkout;
 
   useEffect(() => {
-    if (user?.id) {
-      loadTodaySteps();
-      loadWeeklySteps();
-      loadEntries();
-      loadStats();
-      loadWorkouts();
+    if (authStore.userId) {
+      stepsStore.loadTodaySteps(authStore.userId);
+      stepsStore.loadWeeklySteps(authStore.userId);
+      weightStore.loadEntries(authStore.userId);
+      weightStore.loadStats(authStore.userId);
+      workoutStore.loadWorkouts(authStore.userId);
     }
-  }, [user?.id, loadTodaySteps, loadWeeklySteps, loadEntries, loadStats, loadWorkouts]);
+  }, [authStore.userId, stepsStore, weightStore, workoutStore]);
 
   const weekDates = getWeekDates();
   const today = new Date();

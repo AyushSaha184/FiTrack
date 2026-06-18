@@ -1,10 +1,6 @@
 export { useTheme, useColors, useTypography, useSpacing } from './useTheme';
 export type { Theme } from './useTheme';
 export { useAuth } from './useAuth';
-export { useWorkout } from './useWorkout';
-export { useExercise } from './useExercise';
-export { useWeight } from './useWeight';
-export { useSteps } from './useSteps';
 export { usePermissions } from './usePermissions';
 export type { PermissionStatus } from './usePermissions';
-export { useSettingsStore } from '../stores';
+export { useSettingsStore, useAuthStore, useWorkoutStore, useExerciseStore, useWeightStore, useStepsStore } from '../stores';

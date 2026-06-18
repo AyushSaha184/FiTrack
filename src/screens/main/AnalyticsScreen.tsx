@@ -5,7 +5,7 @@ import { Card } from '../../components/common/Card';
 import { SegmentedControl } from '../../components/common/SegmentedControl';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { Logo } from '../../components/common/Logo';
-import { useAuth, useWorkout, useWeight, useSteps, useColors } from '../../hooks';
+import { useAuth, useColors, useWorkoutStore, useWeightStore, useStepsStore, useAuthStore } from '../../hooks';
 import { spacing, typography } from '../../theme';
 
 const timeRangeOptions = [
@@ -19,29 +19,25 @@ export const AnalyticsScreen = () => {
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState('week');
 
-  const { loadWorkouts, activeWorkout } = useWorkout();
-  const { loadEntries, loadStats } = useWeight();
-  const { loadTodaySteps, loadWeeklySteps } = useSteps();
+  const workoutStore = useWorkoutStore();
+  const weightStore = useWeightStore();
+  const stepsStore = useStepsStore();
+  const authStore = useAuthStore();
 
-  // We access workouts list and steps list directly from stores or hooks
-  const { weeklyEntries: stepEntries } = useSteps();
-  const { entries: weightEntries } = useWeight();
-  
-  // Since useWorkout doesn't expose workouts list directly, we can read it from the workoutStore
-  // or we can import it. Let's look at what useWorkout returns:
-  // We can view it or use workoutStore directly:
-  const { workouts: workoutsMap } = require('../../stores/WorkoutStore').workoutStore;
-  const workoutsList = Array.from(workoutsMap.values()) as any[];
+  // We access workouts list and steps list directly from stores
+  const workoutsList = Array.from(workoutStore.workouts.values()) as any[];
+  const stepEntries = stepsStore.weeklyEntries;
+  const weightEntries = weightStore.entries;
 
   useEffect(() => {
-    if (user?.id) {
-      loadWorkouts();
-      loadEntries();
-      loadStats();
-      loadTodaySteps();
-      loadWeeklySteps();
+    if (authStore.userId) {
+      workoutStore.loadWorkouts(authStore.userId);
+      weightStore.loadEntries(authStore.userId);
+      weightStore.loadStats(authStore.userId);
+      stepsStore.loadTodaySteps(authStore.userId);
+      stepsStore.loadWeeklySteps(authStore.userId);
     }
-  }, [user?.id, loadWorkouts, loadEntries, loadStats, loadTodaySteps, loadWeeklySteps]);
+  }, [authStore.userId, workoutStore, weightStore, stepsStore]);
 
   const filterByDateRange = (items: any[], dateField = 'date') => {
     const limitDate = new Date();

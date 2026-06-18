@@ -17,7 +17,7 @@ import { ExercisePicker } from '../../components/workout/ExercisePicker';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { Modal } from '../../components/common/Modal';
 import { Logo } from '../../components/common/Logo';
-import { useWorkout, useColors, useSettingsStore } from '../../hooks';
+import { useColors, useSettingsStore, useWorkoutStore, useAuthStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { getWeekDates, getDayOfWeekKey, storage, dateKey } from '../../utils/helpers';
 import type { DayOfWeek, WorkoutType } from '../../models';
@@ -40,24 +40,14 @@ const ROUTINE_OPTIONS: { type: WorkoutType; label: string }[] = [
 export const WorkoutScreen = () => {
   const colors = useColors();
   const navigation = useNavigation();
-  const {
-    activeWorkout,
-    activeWorkoutExercises,
-    totalVolume,
-    selectedDay,
-    selectedDate,
-    addSet,
-    updateSet,
-    toggleSetComplete,
-    removeSet,
-    removeExercise,
-    addExercise,
-    startWorkout,
-    setDay,
-    resetWorkoutRoutine,
-    completeWorkout,
-    cancelWorkout,
-  } = useWorkout();
+  const workoutStore = useWorkoutStore();
+  const authStore = useAuthStore();
+  
+  const activeWorkout = workoutStore.activeWorkout;
+  const activeWorkoutExercises = workoutStore.activeWorkoutExercises;
+  const totalVolume = workoutStore.totalVolume;
+  const selectedDay = workoutStore.selectedDay;
+  const selectedDate = workoutStore.selectedDate;
   const weightUnit = useSettingsStore().units.weight;
 
   const weekDates = getWeekDates();
@@ -66,6 +56,11 @@ export const WorkoutScreen = () => {
   // Rest day storage persistence
   const [restDays, setRestDays] = useState<Record<string, boolean>>(() => {
     return storage.get<Record<string, boolean>>('workout.rest_days') || {};
+  });
+
+  // ADD THIS: Planned routines storage persistence
+  const [plannedRoutines, setPlannedRoutines] = useState<Record<string, WorkoutType>>(() => {
+    return storage.get<Record<string, WorkoutType>>('workout.planned_routines') || {};
   });
   const dateStr = dateKey(selectedDate);
   const isRestDay = !!restDays[dateStr];
@@ -79,58 +74,46 @@ export const WorkoutScreen = () => {
   const [showResetAlert, setShowResetAlert] = useState(false);
   const [showRoutineModal, setShowRoutineModal] = useState(false);
 
-  // Live Timer State
-  const [elapsed, setElapsed] = useState(0);
 
-  useEffect(() => {
-    if (!activeWorkout || !activeWorkout.startTime) {
-      setElapsed(0);
-      return;
-    }
-    const start = new Date(activeWorkout.startTime).getTime();
-    const interval = setInterval(() => {
-      const diff = Math.floor((Date.now() - start) / 1000);
-      setElapsed(diff > 0 ? diff : 0);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activeWorkout]);
-
-  const formatTimer = (seconds: number) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    if (hrs > 0) {
-      return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
-    }
-    return `${pad(mins)}:${pad(secs)}`;
-  };
 
   const fabScale = useSharedValue(1);
 
   // Handle date selection
   const handleDayPress = (date: Date, index: number) => {
     const dayKey = getDayOfWeekKey(date);
-    setDay(dayKey, date);
+    workoutStore.setDay(dayKey, date);
   };
 
-  // Get workout type label from active workout
+  // Get workout type label from active workout OR planned routine
   const getWorkoutTypeLabel = () => {
     if (activeWorkout) {
       return activeWorkout.name || 'Workout';
     }
+    // If a routine is planned for this date, show its label
+    if (plannedRoutines[dateStr]) {
+      const planned = ROUTINE_OPTIONS.find(opt => opt.type === plannedRoutines[dateStr]);
+      return planned ? planned.label : 'Customize';
+    }
     return 'Customize';
   };
 
-  const handleStartWorkout = () => {
+  const handleStartWorkout = async () => {
     if (isRestDay) return;
-    setShowRoutineModal(true);
+    
+    // Check if user planned a specific day (Push, Pull, etc.), otherwise default to 'custom'
+    const plannedType = plannedRoutines[dateStr] || 'custom';
+    
+    // Small delay to ensure smooth transition
+    await workoutStore.startWorkout(authStore.userId!, plannedType);
   };
 
-  const handleSelectRoutine = async (type: WorkoutType) => {
+  const handleSelectRoutine = (type: WorkoutType) => {
     setShowRoutineModal(false);
-    // Small delay to let modal close before starting workout
-    await startWorkout(type);
+    
+    // Save the selected routine to state and local storage
+    const newPlannedRoutines = { ...plannedRoutines, [dateStr]: type };
+    setPlannedRoutines(newPlannedRoutines);
+    storage.set('workout.planned_routines', newPlannedRoutines);
   };
 
   const handleRestDay = () => {
@@ -152,10 +135,10 @@ export const WorkoutScreen = () => {
   const handleExerciseSelect = async (exercise: ExerciseItem) => {
     if (!activeWorkout) {
       // Start a custom workout first, then add exercise
-      const workout = await startWorkout('custom' as WorkoutType);
+      const workout = await workoutStore.startWorkout(authStore.userId!, 'custom' as WorkoutType);
       if (!workout) return;
     }
-    addExercise(exercise.id, exercise.name, exercise.muscleGroup);
+    workoutStore.addExercise(exercise.id, exercise.name, exercise.muscleGroup);
     setShowExercisePicker(false);
   };
 
@@ -337,27 +320,21 @@ export const WorkoutScreen = () => {
           ) : activeWorkout ? (
             /* Active Workout Exercise List & Timer */
             <View>
-              <AnimatedCard index={2} style={styles.timerCard}>
-                <Text style={[styles.timerLabel, { color: colors.textMuted }]}>
-                  WORKOUT TIMER
-                </Text>
-                <Text style={[styles.timerValue, { color: colors.text }]}>
-                  {formatTimer(elapsed)}
-                </Text>
-                <View style={styles.timerActions}>
+              <AnimatedCard index={2} style={styles.actionCard}>
+                <View style={styles.actionActions}>
                   <TouchableOpacity
-                    style={[styles.timerBtn, { borderColor: colors.cardBorder, backgroundColor: 'rgba(255,255,255,0.06)' }]}
+                    style={[styles.actionBtn, { borderColor: colors.cardBorder, backgroundColor: 'rgba(255,255,255,0.06)' }]}
                     onPress={handleCancelWorkout}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.timerBtnText, { color: colors.error }]}>Discard</Text>
+                    <Text style={[styles.actionBtnText, { color: colors.error }]}>Discard</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.timerBtn, { borderColor: colors.cardBorder, backgroundColor: colors.text }]}
+                    style={[styles.actionBtn, { borderColor: colors.cardBorder, backgroundColor: colors.text }]}
                     onPress={handleCompleteWorkout}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.timerBtnText, { color: colors.background }]}>Complete</Text>
+                    <Text style={[styles.actionBtnText, { color: colors.background }]}>Complete</Text>
                   </TouchableOpacity>
                 </View>
               </AnimatedCard>
@@ -371,14 +348,14 @@ export const WorkoutScreen = () => {
                     <ExerciseCard
                       exercise={exercise}
                       weightUnit={weightUnit}
-                      onAddSet={() => addSet(exercise.id)}
+                      onAddSet={() => workoutStore.addSet(exercise.id)}
                       onUpdateSet={(setId, updates) =>
-                        updateSet(exercise.id, setId, updates)
+                        workoutStore.updateSet(exercise.id, setId, updates)
                       }
                       onToggleSetComplete={(setId) =>
-                        toggleSetComplete(exercise.id, setId)
+                        workoutStore.toggleSetComplete(exercise.id, setId)
                       }
-                      onRemoveSet={(setId) => removeSet(exercise.id, setId)}
+                      onRemoveSet={(setId) => workoutStore.removeSet(exercise.id, setId)}
                       onRemoveExercise={() => handleConfirmRemoveExercise(exercise.id, exercise.exercise?.name)}
                     />
                   </Animated.View>
@@ -498,7 +475,7 @@ export const WorkoutScreen = () => {
             style: 'destructive',
             onPress: () => {
               if (exerciseToRemove) {
-                removeExercise(exerciseToRemove.id);
+                workoutStore.removeExercise(exerciseToRemove.id);
               }
               setShowRemoveAlert(false);
             },
@@ -517,7 +494,7 @@ export const WorkoutScreen = () => {
             text: 'Yes, Discard',
             style: 'destructive',
             onPress: async () => {
-              await cancelWorkout();
+              await workoutStore.cancelWorkout();
               setShowCancelAlert(false);
             },
           },
@@ -534,7 +511,7 @@ export const WorkoutScreen = () => {
           {
             text: 'Finish',
             onPress: async () => {
-              await completeWorkout();
+              await workoutStore.completeWorkout();
               setShowCompleteAlert(false);
             },
           },
@@ -552,7 +529,7 @@ export const WorkoutScreen = () => {
             text: 'Reset Routine',
             style: 'destructive',
             onPress: () => {
-              resetWorkoutRoutine();
+              workoutStore.resetWorkoutRoutine();
               setShowResetAlert(false);
             },
           },
@@ -749,36 +726,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  timerCard: {
-    alignItems: 'center',
-    paddingVertical: spacing.xl,
+  actionCard: {
+    padding: spacing.md,
     marginBottom: spacing.base,
   },
-  timerLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginBottom: spacing.xs,
-  },
-  timerValue: {
-    fontSize: 48,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-    marginBottom: spacing.lg,
-  },
-  timerActions: {
+  actionActions: {
     flexDirection: 'row',
     gap: spacing.base,
     width: '100%',
   },
-  timerBtn: {
+  actionBtn: {
     flex: 1,
     paddingVertical: spacing.md,
     borderRadius: radius.md,
     alignItems: 'center',
     borderWidth: 1,
   },
-  timerBtnText: {
+  actionBtnText: {
     fontSize: 15,
     fontWeight: '600',
   },

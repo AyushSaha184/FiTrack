@@ -46,19 +46,32 @@ export const LineChart = memo<LineChartProps>(({
       })
     : data;
 
+  // If there's only 1 data point, duplicate it to show a flat line from a day ago
+  const displayData = [...activeData];
+  if (displayData.length === 1 && !isEmpty) {
+    displayData.unshift({
+      date: '',
+      value: displayData[0].value,
+    });
+  }
+
   // Transform data for Victory Native - needs numeric x values
-  const chartData = activeData.map((d, i) => ({
+  const chartData = displayData.map((d, i) => ({
     x: i,
     y: d.value,
     label: d.date,
   }));
 
   const values = activeData.map((d) => d.value);
-  const minVal = isEmpty ? 0 : Math.floor(Math.min(...values) * 0.95);
-  const maxVal = isEmpty ? 100 : Math.ceil(Math.max(...values) * 1.05);
+  let minVal = isEmpty ? 0 : Math.floor(Math.min(...values) * 0.95);
+  let maxVal = isEmpty ? 100 : Math.ceil(Math.max(...values) * 1.05);
+  if (minVal === maxVal) {
+    minVal = Math.max(0, minVal - 10);
+    maxVal = maxVal + 10;
+  }
 
   // Determine which x-axis labels to show to prevent overlap
-  const showEvery = Math.max(1, Math.floor(activeData.length / 6));
+  const showEvery = Math.max(1, Math.floor(displayData.length / 6));
 
   return (
     <View style={[styles.container, { width, height }]}>
@@ -69,15 +82,14 @@ export const LineChart = memo<LineChartProps>(({
         domainPadding={{ left: 10, right: 10, top: 20, bottom: 10 }}
         domain={{ y: [minVal, maxVal] }}
         axisOptions={{
-          font: null,
-          tickCount: { x: Math.min(activeData.length, 7), y: 5 },
+          tickCount: { x: Math.min(displayData.length, 7), y: 5 },
           lineColor: 'transparent',
           labelColor: 'rgba(255,255,255,0.4)',
           formatXLabel: (val: number) => {
             const idx = Math.round(val);
-            if (idx < 0 || idx >= activeData.length) return '';
-            if (idx % showEvery !== 0 && idx !== activeData.length - 1) return '';
-            return activeData[idx]?.date || '';
+            if (idx < 0 || idx >= displayData.length) return '';
+            if (idx % showEvery !== 0 && idx !== displayData.length - 1) return '';
+            return displayData[idx]?.date || '';
           },
           formatYLabel: (val: number) => {
             if (val >= 1000) return `${(val / 1000).toFixed(0)}K`;

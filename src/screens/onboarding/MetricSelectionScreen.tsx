@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth, useColors, useSettingsStore, useWeight, useSteps } from '../../hooks';
+import { useColors, useSettingsStore, useWeightStore, useStepsStore, useAuthStore } from '../../hooks';
 import { Button } from '../../components/common/Button';
 import { spacing, typography, radius } from '../../theme';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -18,9 +18,9 @@ const ScaleIcon = () => (
 export const MetricSelectionScreen = () => {
   const colors = useColors();
   const settingsStore = useSettingsStore();
-  const { setGoalWeight } = useWeight();
-  const { setDailyGoal } = useSteps();
-  const { completeOnboarding } = useAuth();
+  const weightStore = useWeightStore();
+  const stepsStore = useStepsStore();
+  const authStore = useAuthStore();
 
   // Selected system of measurement
   const [selectedSystem, setSelectedSystem] = useState<'metric' | 'imperial'>('metric');
@@ -41,16 +41,16 @@ export const MetricSelectionScreen = () => {
 
       // Save goal weight if input is valid
       if (weightUnit === 'kg') {
-        setGoalWeight(75); // default kg weight goal
+        weightStore.setGoalWeight(75); // default kg weight goal
       } else {
-        setGoalWeight(165); // default lbs weight goal
+        weightStore.setGoalWeight(165); // default lbs weight goal
       }
 
       // Save daily steps goal
-      setDailyGoal(10000);
+      stepsStore.setDailyGoal(10000);
 
       // Finalize onboarding in database
-      await completeOnboarding();
+      await authStore.completeOnboarding();
     } catch (error) {
       console.error('Failed to save metrics:', error);
     } finally {
@@ -272,6 +272,7 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     height: 56,
+    paddingVertical: 0,
     borderRadius: 8,
     marginBottom: 24,
   },

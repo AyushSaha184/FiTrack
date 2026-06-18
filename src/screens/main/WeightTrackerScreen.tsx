@@ -12,7 +12,7 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
-import { useWeight, useColors, useSettingsStore, useAuth } from '../../hooks';
+import { useColors, useSettingsStore, useAuth, useWeightStore, useAuthStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { formatWeight, formatDate } from '../../utils/helpers';
 
@@ -50,32 +50,26 @@ export const WeightTrackerScreen = () => {
   const colors = useColors();
   const navigation = useNavigation();
   const { user } = useAuth();
-  const {
-    currentWeight: realCurrentWeight,
-    goalWeight: realGoalWeight,
-    progress,
-    trend,
-    stats,
-    entries: realEntries,
-    addEntry,
-    setGoalWeight,
-    loadEntries,
-    loadStats,
-  } = useWeight();
+  const weightStore = useWeightStore();
+  const authStore = useAuthStore();
+  
+  const currentWeight = weightStore.currentWeight;
+  const goalWeight = weightStore.goalWeight;
+  const progress = weightStore.progress;
+  const trend = weightStore.trend;
+  const stats = weightStore.stats;
+  const entries = weightStore.entries;
 
   useEffect(() => {
-    if (user?.id) {
-      loadEntries();
-      loadStats();
+    if (authStore.userId) {
+      weightStore.loadEntries(authStore.userId);
+      weightStore.loadStats(authStore.userId);
     }
-  }, [user?.id, loadEntries, loadStats]);
+  }, [authStore.userId, weightStore]);
 
   const weightUnit = useSettingsStore().units.weight;
 
-  // Real entries from store
-  const entries = realEntries;
-  const currentWeight = realCurrentWeight;
-  const goalWeight = realGoalWeight;
+
 
   const [timeRange, setTimeRange] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -289,7 +283,7 @@ export const WeightTrackerScreen = () => {
                       {formatDate(entry.date, 'short')}
                     </Text>
                     <Text style={[styles.historyTime, { color: colors.textMuted }]}>
-                      {formatDate(entry.date, 'time')}
+                      {formatDate(entry.createdAt, 'time')}
                     </Text>
                   </View>
                 </View>
@@ -326,9 +320,9 @@ export const WeightTrackerScreen = () => {
             const weight = parseFloat(newWeight);
             if (weight > 0) {
               try {
-                await addEntry(weight);
-                await loadEntries();
-                await loadStats();
+                await weightStore.addEntry(authStore.userId!, weight);
+                await weightStore.loadEntries(authStore.userId!);
+                await weightStore.loadStats(authStore.userId!);
                 setNewWeight('');
                 setShowAddModal(false);
               } catch (e: any) {
@@ -360,9 +354,9 @@ export const WeightTrackerScreen = () => {
             const weight = parseFloat(goalInput);
             if (weight > 0) {
               try {
-                await setGoalWeight(weight);
-                await loadEntries();
-                await loadStats();
+                weightStore.setGoalWeight(weight);
+                await weightStore.loadEntries(authStore.userId!);
+                await weightStore.loadStats(authStore.userId!);
                 setGoalInput('');
                 setShowGoalModal(false);
               } catch (e: any) {

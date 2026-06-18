@@ -217,7 +217,7 @@ export const LoginScreen = () => {
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Signup')} activeOpacity={0.7}>
               <Text style={[styles.footerLink, { color: '#FFFFFF' }]}>
-                Create Account
+                Sign Up
               </Text>
             </TouchableOpacity>
           </View>
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 'auto',
+    marginTop: 24,
     paddingVertical: 24,
   },
   footerText: {

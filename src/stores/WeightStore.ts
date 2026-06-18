@@ -51,6 +51,8 @@ export class WeightStore {
         this.entries = data.map((e: any) => ({
           ...e,
           date: new Date(e.date),
+          createdAt: e.createdAt ? new Date(e.createdAt) : new Date(e.date),
+          updatedAt: e.updatedAt ? new Date(e.updatedAt) : new Date(e.date),
         }));
         if (data.length > 0) {
           this.currentWeight = data[0].weight;
@@ -84,10 +86,18 @@ export class WeightStore {
 
   async addEntry(userId: string, weight: number, date?: Date, notes?: string) {
     try {
+      const { supabase } = await import('../services/supabase/client');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.user?.id) {
+        console.error("No valid user ID found in session");
+        throw new Error('Not authenticated');
+      }
+      
       const entryDate = date || new Date();
       const entry = await weightService.addEntry({
         id: generateUUID(),
-        userId,
+        userId: session.user.id,
         weight,
         date: entryDate.toISOString(),
         notes,
@@ -95,7 +105,12 @@ export class WeightStore {
         updatedAt: new Date().toISOString(),
       } as any);
       runInAction(() => {
-        const newEntry = { ...entry, date: new Date(entry.date) };
+        const newEntry = {
+          ...entry,
+          date: new Date(entry.date),
+          createdAt: entry.createdAt ? new Date(entry.createdAt) : new Date(),
+          updatedAt: entry.updatedAt ? new Date(entry.updatedAt) : new Date(),
+        };
         this.entries = [newEntry, ...this.entries].sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
@@ -117,7 +132,13 @@ export class WeightStore {
       runInAction(() => {
         const index = this.entries.findIndex((e) => e.id === entryId);
         if (index !== -1) {
-          this.entries[index] = { ...this.entries[index], ...updated, date: new Date(updated.date) };
+          this.entries[index] = {
+            ...this.entries[index],
+            ...updated,
+            date: new Date(updated.date),
+            createdAt: updated.createdAt ? new Date(updated.createdAt) : this.entries[index].createdAt,
+            updatedAt: updated.updatedAt ? new Date(updated.updatedAt) : new Date(),
+          };
           if (index === 0) {
             this.currentWeight = updated.weight;
           }

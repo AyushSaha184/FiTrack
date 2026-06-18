@@ -18,7 +18,7 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
-import { useSteps, useColors, useSettingsStore, useAuth, useWeight } from '../../hooks';
+import { useColors, useSettingsStore, useAuth, useStepsStore, useAuthStore, useWeightStore } from '../../hooks';
 import { spacing, typography, radius, durations } from '../../theme';
 import { formatDate, formatStepsWithCommas, formatCalories } from '../../utils/helpers';
 import { stepsToCalories } from '../../utils/calculations';
@@ -57,28 +57,22 @@ export const StepsTrackerScreen = () => {
   const colors = useColors();
   const navigation = useNavigation();
   const { user } = useAuth();
-  const {
-    todaySteps: realTodaySteps,
-    dailyGoal: goalSteps,
-    weeklyEntries: realEntries,
-    addSteps: addEntry,
-    setDailyGoal: setGoalSteps,
-    loadTodaySteps,
-    loadWeeklySteps,
-  } = useSteps();
+  const stepsStore = useStepsStore();
+  const authStore = useAuthStore();
+  const weightStore = useWeightStore();
+  
+  const todaySteps = stepsStore.todaySteps;
+  const goalSteps = stepsStore.dailyGoal;
+  const entries = stepsStore.weeklyEntries;
 
   useEffect(() => {
-    if (user?.id) {
-      loadTodaySteps();
-      loadWeeklySteps();
+    if (authStore.userId) {
+      stepsStore.loadTodaySteps(authStore.userId);
+      stepsStore.loadWeeklySteps(authStore.userId);
     }
-  }, [user?.id, loadTodaySteps, loadWeeklySteps]);
+  }, [authStore.userId, stepsStore]);
 
-  // Real entries and steps from store
-  const entries = realEntries;
-  const todaySteps = realTodaySteps;
-
-  const { currentWeight } = useWeight();
+  const currentWeight = weightStore.currentWeight;
 
   const weeklyStats = useMemo(() => {
     const cutOff = new Date();
@@ -351,9 +345,9 @@ export const StepsTrackerScreen = () => {
             const steps = parseInt(newSteps);
             if (steps > 0) {
               try {
-                await addEntry(steps);
-                await loadTodaySteps();
-                await loadWeeklySteps();
+                await stepsStore.addSteps(authStore.userId!, steps);
+                await stepsStore.loadTodaySteps(authStore.userId!);
+                await stepsStore.loadWeeklySteps(authStore.userId!);
                 setNewSteps('');
                 setShowAddModal(false);
               } catch (e: any) {
@@ -385,9 +379,9 @@ export const StepsTrackerScreen = () => {
             const steps = parseInt(goalInput);
             if (steps > 0) {
               try {
-                await setGoalSteps(steps);
-                await loadTodaySteps();
-                await loadWeeklySteps();
+                stepsStore.setDailyGoal(steps);
+                await stepsStore.loadTodaySteps(authStore.userId!);
+                await stepsStore.loadWeeklySteps(authStore.userId!);
                 setGoalInput('');
                 setShowGoalModal(false);
               } catch (e: any) {

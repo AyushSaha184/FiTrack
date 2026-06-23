@@ -33,26 +33,6 @@ const timeRangeOptions = [
   { value: '90', label: '90 Days' },
 ];
 
-// Sample data for when no real entries exist
-const generateSampleStepEntries = (): StepEntry[] => {
-  const entries: StepEntry[] = [];
-  const baseSteps = [8642, 8123, 6245, 9102, 9876, 7543, 8234];
-  for (let i = 0; i < 7; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    entries.push({
-      id: `sample-${i}`,
-      userId: 'sample',
-      date,
-      steps: baseSteps[i],
-      source: 'manual',
-      createdAt: date,
-      updatedAt: date,
-    });
-  }
-  return entries;
-};
-
 export const StepsTrackerScreen = () => {
   const colors = useColors();
   const navigation = useNavigation();
@@ -139,7 +119,7 @@ export const StepsTrackerScreen = () => {
           <View style={styles.header}>
             <Logo size="medium" />
             <TouchableOpacity
-              onPress={() => (navigation as any).navigate('Settings')}
+              onPress={() => navigation.navigate('HomeTab', { screen: 'Settings' })}
               style={[styles.settingsButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">

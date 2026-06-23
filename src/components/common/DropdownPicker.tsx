@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback } from 'react';
+import React, { memo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -38,18 +38,31 @@ export const DropdownPicker = memo<DropdownPickerProps>(({
   const colors = useColors();
   const [isOpen, setIsOpen] = useState(false);
   const opacity = useSharedValue(0);
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const selectedLabel =
     options.find((o) => o.value === selectedValue)?.label || placeholder;
 
   const handleOpen = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
     setIsOpen(true);
     opacity.value = withTiming(1, { duration: 200 });
   };
 
   const handleClose = () => {
     opacity.value = withTiming(0, { duration: 150 });
-    setTimeout(() => setIsOpen(false), 150);
+    closeTimeoutRef.current = setTimeout(() => setIsOpen(false), 150);
   };
 
   const handleSelect = (value: string) => {

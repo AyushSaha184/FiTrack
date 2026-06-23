@@ -78,10 +78,6 @@ export class AuthStore {
     try {
       const session = customSession !== undefined ? customSession : (await authService.getSession()).session;
       console.log('[AuthStore] fetchUser got session user:', session?.user?.email);
-      console.log('[AuthStore] customSession access_token:', session?.access_token ? session.access_token.substring(0, 20) + '...' : 'none');
-      
-      const clientSession = (await supabase.auth.getSession()).data.session;
-      console.log('[AuthStore] supabase client current session access_token:', clientSession?.access_token ? clientSession.access_token.substring(0, 20) + '...' : 'none');
       
       if (session?.user) {
         // Explicitly sync the session to the supabase client if it's not set or has changed

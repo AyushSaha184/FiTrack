@@ -1,7 +1,7 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { WeightEntry } from '../models';
 import { weightService } from '../services/supabase/weight';
-import { generateUUID } from '../utils/helpers';
+import { generateUUID, dateKey } from '../utils/helpers';
 
 export class WeightStore {
   entries: WeightEntry[] = [];
@@ -29,11 +29,21 @@ export class WeightStore {
   get progress(): number {
     if (!this.currentWeight || !this.goalWeight) return 0;
     if (this.goalWeight === this.currentWeight) return 100;
-    const diff = Math.abs(this.currentWeight - this.goalWeight);
-    const startWeight = this.stats.change !== null && this.stats.change > 0
-      ? this.currentWeight + diff
-      : this.currentWeight - diff;
-    const progress = 100 - (diff / Math.abs(startWeight - this.goalWeight)) * 100;
+
+    const sortedEntries = [...this.entries].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
+    const baselineEntry = sortedEntries[0];
+    const baselineWeight = baselineEntry?.weight ?? null;
+
+    if (!baselineWeight || baselineWeight === this.goalWeight) return 0;
+
+    const totalDistance = Math.abs(baselineWeight - this.goalWeight);
+    if (totalDistance === 0) return 100;
+
+    const currentDistance = Math.abs(baselineWeight - this.currentWeight);
+
+    const progress = (1 - currentDistance / totalDistance) * 100;
     return Math.max(0, Math.min(100, progress));
   }
 
@@ -44,8 +54,8 @@ export class WeightStore {
       startDate.setDate(startDate.getDate() - days);
       const data = await weightService.getEntries(
         userId,
-        startDate.toISOString().split('T')[0],
-        new Date().toISOString().split('T')[0],
+        dateKey(startDate),
+        dateKey(new Date()),
       );
       runInAction(() => {
         this.entries = data.map((e: any) => ({

@@ -17,7 +17,7 @@ import { ExercisePicker } from '../../components/workout/ExercisePicker';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { Modal } from '../../components/common/Modal';
 import { Logo } from '../../components/common/Logo';
-import { useColors, useSettingsStore, useWorkoutStore, useAuthStore } from '../../hooks';
+import { useColors, useSettingsStore, useWorkoutStore, useAuthStore, useRestTimer } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { getWeekDates, getDayOfWeekKey, storage, dateKey } from '../../utils/helpers';
 import type { DayOfWeek, WorkoutType } from '../../models';
@@ -42,6 +42,7 @@ export const WorkoutScreen = () => {
   const navigation = useNavigation();
   const workoutStore = useWorkoutStore();
   const authStore = useAuthStore();
+  const restTimer = useRestTimer();
   
   const activeWorkout = workoutStore.activeWorkout;
   const activeWorkoutExercises = workoutStore.activeWorkoutExercises;
@@ -132,13 +133,12 @@ export const WorkoutScreen = () => {
     storage.set('workout.rest_days', newRestDays);
   };
 
-  const handleExerciseSelect = async (exercise: ExerciseItem) => {
+const handleExerciseSelect = async (exercise: ExerciseItem) => {
     if (!activeWorkout) {
-      // Start a custom workout first, then add exercise
       const workout = await workoutStore.startWorkout(authStore.userId!, 'custom' as WorkoutType);
       if (!workout) return;
     }
-    workoutStore.addExercise(exercise.id, exercise.name, exercise.muscleGroup);
+    workoutStore.addExercise(exercise.id, exercise.name, exercise.muscleGroup, exercise.equipment);
     setShowExercisePicker(false);
   };
 
@@ -173,9 +173,21 @@ export const WorkoutScreen = () => {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Logo size="medium" />
+            <View style={styles.headerLeft}>
+              <Logo size="medium" />
+              {workoutStore.isSyncing && (
+                <View style={[styles.syncIndicator, { backgroundColor: colors.warning }]}>
+                  <Text style={styles.syncIndicatorText}>↻</Text>
+                </View>
+              )}
+              {!workoutStore.isSyncing && activeWorkout && (
+                <View style={[styles.syncIndicator, { backgroundColor: colors.success }]}>
+                  <Text style={styles.syncIndicatorText}>✓</Text>
+                </View>
+              )}
+            </View>
             <TouchableOpacity
-              onPress={() => (navigation as any).navigate('Settings')}
+              onPress={() => navigation.navigate('HomeTab', { screen: 'Settings' })}
               style={[styles.settingsButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -339,6 +351,24 @@ export const WorkoutScreen = () => {
                 </View>
               </AnimatedCard>
 
+              {/* Rest Timer Banner */}
+              {restTimer.isVisible && restTimer.isActive && (
+                <AnimatedCard index={1} style={[styles.restTimerCard, { backgroundColor: colors.warning + '20', borderColor: colors.warning }]}>
+                  <View style={styles.restTimerContent}>
+                    <Text style={[styles.restTimerLabel, { color: colors.warning }]}>REST</Text>
+                    <Text style={[styles.restTimerTime, { color: colors.text }]}>
+                      {Math.floor(restTimer.timeRemaining / 60)}:{(restTimer.timeRemaining % 60).toString().padStart(2, '0')}
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.restTimerDismiss, { borderColor: colors.warning }]}
+                      onPress={restTimer.dismissTimer}
+                    >
+                      <Text style={[styles.restTimerDismissText, { color: colors.warning }]}>Skip</Text>
+                    </TouchableOpacity>
+                  </View>
+                </AnimatedCard>
+              )}
+
               <View style={styles.exercisesSection}>
                 {activeWorkoutExercises.map((exercise, index) => (
                   <Animated.View
@@ -357,6 +387,7 @@ export const WorkoutScreen = () => {
                       }
                       onRemoveSet={(setId) => workoutStore.removeSet(exercise.id, setId)}
                       onRemoveExercise={() => handleConfirmRemoveExercise(exercise.id, exercise.exercise?.name)}
+                      onStartRest={() => restTimer.startTimer()}
                     />
                   </Animated.View>
                 ))}
@@ -448,13 +479,14 @@ export const WorkoutScreen = () => {
         visible={showRestDayAlert}
         onClose={() => setShowRestDayAlert(false)}
         title="Switch to Rest Day?"
-        message="You have an active workout. Marking today as a rest day will keep your workout saved."
+        message="You have an active workout. Marking today as a rest day will cancel your current workout."
         actions={[
           { text: 'Cancel', style: 'cancel', onPress: () => setShowRestDayAlert(false) },
           {
             text: 'Rest Day',
-            onPress: () => {
+            onPress: async () => {
               setShowRestDayAlert(false);
+              await workoutStore.cancelWorkout();
               const newRestDays = { ...restDays, [dateStr]: true };
               setRestDays(newRestDays);
               storage.set('workout.rest_days', newRestDays);
@@ -550,6 +582,54 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: spacing.base,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  syncIndicator: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+  },
+  syncIndicatorText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  restTimerCard: {
+    marginBottom: spacing.base,
+    borderWidth: 1,
+  },
+  restTimerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+  },
+  restTimerLabel: {
+    fontSize: typography.caption.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  restTimerTime: {
+    fontSize: 24,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  restTimerDismiss: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.base,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  restTimerDismissText: {
+    fontSize: typography.caption.fontSize,
+    fontWeight: '600',
   },
   settingsButton: {
     width: 40,

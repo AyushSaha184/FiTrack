@@ -1,5 +1,8 @@
 import { addDays, differenceInDays, format, startOfWeek, subDays } from 'date-fns';
 import type { DayOfWeek } from '../models';
+import { CONFIG } from '../config/constants';
+
+export { CONFIG };
 
 export const STORAGE_KEYS = {
   AUTH_TOKEN: 'auth.token',
@@ -72,12 +75,8 @@ export const WORKOUT_TYPE_LABELS: Record<string, string> = {
   custom: 'Custom',
 };
 
-export const APP_VERSION = '1.0.0';
-export const DEFAULT_STEP_GOAL = 10_000;
-export const DEFAULT_REST_TIME = 90;
-export const DEFAULT_DAILY_STEP_GOAL = 10_000;
-
-export const REST_TIMES = [30, 60, 90, 120, 180, 240] as const;
+export const APP_VERSION = CONFIG.APP_VERSION;
+export { DEFAULT_STEP_GOAL, DEFAULT_REST_TIME, REST_TIMES } from '../config/constants';
 
 export const getWeekDates = (date: Date = new Date()): Date[] => {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 });

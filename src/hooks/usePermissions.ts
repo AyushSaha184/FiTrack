@@ -40,13 +40,10 @@ export const usePermissions = () => {
   };
 
   const requestNotifications = useCallback(async (): Promise<boolean> => {
-    if (Platform.OS === 'ios') {
-      const settings = await notifee.requestPermission();
-      const status = mapAuthStatus(settings.authorizationStatus);
-      setNotificationsStatus(status);
-      return status === 'granted';
-    }
-    return true;
+    const settings = await notifee.requestPermission();
+    const status = mapAuthStatus(settings.authorizationStatus);
+    setNotificationsStatus(status);
+    return status === 'granted';
   }, []);
 
   const requestHealthAccess = useCallback(async (): Promise<boolean> => {

@@ -3,15 +3,7 @@ import type { Workout, WorkoutExercise, Set, WorkoutType, DayOfWeek } from '../m
 import { workoutsService } from '../services/supabase/workouts';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS } from '../utils/constants';
-import { generateId } from '../utils/helpers';
-
-const generateUUID = (): string => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-};
+import { generateUUID } from '../utils/helpers';
 
 export class WorkoutStore {
   workouts: Map<string, Workout> = new Map();
@@ -19,6 +11,7 @@ export class WorkoutStore {
   selectedDay: DayOfWeek = 'monday';
   selectedDate: Date = new Date();
   isLoading = false;
+  isSyncing = false;
   error: string | null = null;
   weeklyWorkouts: Map<string, Workout> = new Map();
 
@@ -73,11 +66,10 @@ export class WorkoutStore {
 
   async startWorkout(userId: string, type: WorkoutType = 'custom', name?: string) {
     const workoutId = generateUUID();
-    
-    // Check if we have a saved routine template for this day of the week
+
     const savedTemplate = storage.get<any[]>(`workout.routine.${this.selectedDay}`);
     let exercisesList: WorkoutExercise[] = [];
-    
+
     if (savedTemplate && Array.isArray(savedTemplate)) {
       exercisesList = savedTemplate.map((te, exIdx) => {
         const exerciseExerciseId = generateUUID();
@@ -116,8 +108,7 @@ export class WorkoutStore {
     };
 
     runInAction(() => {
-      this.activeWorkout = workout;
-      this.saveDraft();
+      this.isSyncing = true;
     });
 
     try {
@@ -131,31 +122,38 @@ export class WorkoutStore {
         completed: false,
       });
 
-      // Sync the saved exercises and sets to the database for this session
-      for (const ex of exercisesList) {
-        const dbEx = await workoutsService.addExercise(
-          workout.id,
-          ex.exerciseId,
-          ex.order
-        );
-        runInAction(() => {
-          ex.id = dbEx.id;
-        });
-
-        for (const s of ex.sets) {
-          await workoutsService.addSet(dbEx.id, {
-            id: s.id,
-            order: s.order,
-            weight: s.weight,
-            reps: s.reps,
-            completed: false,
+      await Promise.all(
+        exercisesList.map(async (ex) => {
+          const dbEx = await workoutsService.addExercise(
+            workout.id,
+            ex.exerciseId,
+            ex.order
+          );
+          runInAction(() => {
+            ex.id = dbEx.id;
           });
-        }
-      }
-      
-      this.saveDraft();
+
+          await Promise.all(
+            ex.sets.map(async (s) => {
+              await workoutsService.addSet(dbEx.id, {
+                id: s.id,
+                order: s.order,
+                weight: s.weight,
+                reps: s.reps,
+                completed: false,
+              });
+            })
+          );
+        })
+      );
     } catch (e) {
       console.error('[WorkoutStore] startWorkout DB error:', e);
+    } finally {
+      runInAction(() => {
+        this.activeWorkout = workout;
+        this.isSyncing = false;
+        this.saveDraft();
+      });
     }
 
     return workout;
@@ -182,16 +180,18 @@ export class WorkoutStore {
       this.isLoading = true;
 
       let updated;
-      try {
-        updated = await workoutsService.completeWorkout(
-          this.activeWorkout.id,
-          duration,
-          this.totalVolume,
-        );
-      } catch (err: any) {
-        if (err?.code === 'PGRST116') {
-          console.warn('[WorkoutStore] Workout not found in DB during complete, attempting to recreate and sync entire workout...');
-          
+try {
+      updated = await workoutsService.completeWorkout(
+        this.activeWorkout.id,
+        duration,
+        this.totalVolume,
+      );
+    } catch (err: any) {
+      if (err?.code === 'PGRST116') {
+        console.warn('[WorkoutStore] Workout not found in DB during complete, attempting to recreate and sync entire workout...');
+
+        const existingWorkout = await workoutsService.getWorkout(this.activeWorkout.id).catch(() => null);
+        if (!existingWorkout) {
           await workoutsService.createWorkout({
             id: this.activeWorkout.id,
             userId: this.activeWorkout.userId,
@@ -201,39 +201,46 @@ export class WorkoutStore {
             startTime: this.activeWorkout.startTime,
             completed: false,
           });
+        }
 
-          for (const ex of this.activeWorkout.exercises) {
-            const dbEx = await workoutsService.addExercise(
-              this.activeWorkout.id,
-              ex.exerciseId,
-              ex.order
-            );
-            
-            for (const s of ex.sets) {
-              if (s.completed) {
-                await workoutsService.addSet(dbEx.id, {
-                  id: s.id,
-                  order: s.order,
-                  weight: s.weight,
-                  reps: s.reps,
-                  completed: true,
-                });
-              }
+        const existingExerciseIds = new Set(
+          (existingWorkout?.exercises || []).map((ex: any) => ex.exerciseId)
+        );
+
+        for (const ex of this.activeWorkout.exercises) {
+          const dbEx = await workoutsService.addExercise(
+            this.activeWorkout.id,
+            ex.exerciseId,
+            ex.order
+          );
+
+          for (const s of ex.sets) {
+            if (s.completed) {
+              await workoutsService.addSet(dbEx.id, {
+                id: s.id,
+                order: s.order,
+                weight: s.weight,
+                reps: s.reps,
+                completed: true,
+              });
             }
           }
-
-          updated = await workoutsService.completeWorkout(
-            this.activeWorkout.id,
-            duration,
-            this.totalVolume,
-          );
-        } else {
-          throw err;
         }
+
+        updated = await workoutsService.completeWorkout(
+          this.activeWorkout.id,
+          duration,
+          this.totalVolume,
+        );
+      } else {
+        throw err;
       }
+    }
 
       // Reload workouts to sync history
       await this.loadWorkouts(this.activeWorkout.userId);
+
+      this.saveCurrentAsRoutineTemplate();
 
       runInAction(() => {
         this.activeWorkout = null;
@@ -274,13 +281,13 @@ export class WorkoutStore {
     }
   }
 
-  async addExercise(exerciseId: string, exerciseName: string, muscleGroup: string) {
+  async addExercise(exerciseId: string, exerciseName: string, muscleGroup: string, equipment: string = 'barbell') {
     if (!this.activeWorkout) return;
     const tempId = generateUUID();
     const workoutExercise: WorkoutExercise = {
       id: tempId,
       exerciseId,
-      exercise: { name: exerciseName, muscleGroup, equipment: 'barbell' },
+      exercise: { name: exerciseName, muscleGroup, equipment },
       order: this.activeWorkout.exercises.length,
       sets: [],
       createdAt: new Date(),
@@ -338,7 +345,7 @@ export class WorkoutStore {
     }
   }
 
-  addSet(workoutExerciseId: string, weight = 0, reps = 0) {
+  async addSet(workoutExerciseId: string, weight = 0, reps = 0) {
     if (!this.activeWorkout) return;
     const exercise = this.activeWorkout.exercises.find((e) => e.id === workoutExerciseId);
     if (!exercise) return;
@@ -355,12 +362,31 @@ export class WorkoutStore {
 
     runInAction(() => {
       exercise.sets = [...exercise.sets, set];
-      // Create new activeWorkout reference to trigger MobX reactivity
       if (this.activeWorkout) {
         this.activeWorkout = { ...this.activeWorkout, exercises: [...this.activeWorkout.exercises] };
       }
       this.saveDraft();
     });
+
+    try {
+      const dbSet = await workoutsService.addSet(workoutExerciseId, {
+        id: set.id,
+        order: set.order,
+        weight: set.weight,
+        reps: set.reps,
+        completed: false,
+      });
+      if (dbSet && dbSet.id !== set.id) {
+        runInAction(() => {
+          const ex = this.activeWorkout?.exercises.find((e) => e.id === workoutExerciseId);
+          const s = ex?.sets.find((item) => item.id === set.id);
+          if (s) s.id = dbSet.id;
+          this.saveDraft();
+        });
+      }
+    } catch (err) {
+      console.error('[WorkoutStore] addSet DB error:', err);
+    }
   }
 
   async updateSet(workoutExerciseId: string, setId: string, updates: Partial<Set>) {
@@ -380,19 +406,18 @@ export class WorkoutStore {
           updatedSet,
           ...exercise.sets.slice(setIndex + 1),
         ];
-        // Create new activeWorkout reference to trigger MobX reactivity
         this.activeWorkout = { ...this.activeWorkout, exercises: [...this.activeWorkout.exercises] };
         this.saveDraft();
       }
     });
 
     const set = exercise.sets[setIndex];
-    if (set && set.completed) {
+    if (set) {
       try {
         await workoutsService.updateSet(setId, {
           weight: set.weight,
           reps: set.reps,
-          completed: true,
+          completed: set.completed,
         });
       } catch (err) {
         console.error('[WorkoutStore] updateSet DB error:', err);
@@ -418,43 +443,18 @@ export class WorkoutStore {
         updatedSet,
         ...exercise.sets.slice(setIndex + 1),
       ];
-      // Create new activeWorkout reference to trigger MobX reactivity
       if (this.activeWorkout) {
         this.activeWorkout = { ...this.activeWorkout, exercises: [...this.activeWorkout.exercises] };
       }
       this.saveDraft();
     });
 
-    // Re-find the set after state update
-    const updatedExercise = this.activeWorkout?.exercises.find((e) => e.id === workoutExerciseId);
-    const updatedSet = updatedExercise?.sets.find((s) => s.id === setId);
-
-    if (nextCompleted && updatedSet) {
-      try {
-        const dbSet = await workoutsService.addSet(workoutExerciseId, {
-          id: setId,
-          order: updatedSet.order,
-          weight: updatedSet.weight,
-          reps: updatedSet.reps,
-          completed: true,
-        });
-        if (dbSet && dbSet.id !== setId) {
-          runInAction(() => {
-            const ex = this.activeWorkout?.exercises.find((e) => e.id === workoutExerciseId);
-            const s = ex?.sets.find((item) => item.id === setId);
-            if (s) s.id = dbSet.id;
-            this.saveDraft();
-          });
-        }
-      } catch (err) {
-        console.error('[WorkoutStore] toggleSetComplete add DB error:', err);
-      }
-    } else {
-      try {
-        await workoutsService.removeSet(setId);
-      } catch (err) {
-        console.error('[WorkoutStore] toggleSetComplete remove DB error:', err);
-      }
+    try {
+      await workoutsService.updateSet(setId, {
+        completed: nextCompleted,
+      });
+    } catch (err) {
+      console.error('[WorkoutStore] toggleSetComplete DB error:', err);
     }
   }
 
@@ -463,12 +463,14 @@ export class WorkoutStore {
     const exercise = this.activeWorkout.exercises.find((e) => e.id === workoutExerciseId);
     if (!exercise) return;
 
+    const setsToUpdate: { id: string; order: number }[] = [];
+
     runInAction(() => {
       exercise.sets = exercise.sets.filter((s) => s.id !== setId);
       exercise.sets.forEach((s, i) => {
         s.order = i + 1;
+        setsToUpdate.push({ id: s.id, order: s.order });
       });
-      // Create new activeWorkout reference to trigger MobX reactivity
       if (this.activeWorkout) {
         this.activeWorkout = { ...this.activeWorkout, exercises: [...this.activeWorkout.exercises] };
       }
@@ -477,6 +479,11 @@ export class WorkoutStore {
 
     try {
       await workoutsService.removeSet(setId);
+      await Promise.all(
+        setsToUpdate.map(({ id, order }) =>
+          workoutsService.updateSet(id, { order })
+        )
+      );
     } catch (err) {
       console.error('[WorkoutStore] removeSet DB error:', err);
     }
@@ -564,8 +571,11 @@ export class WorkoutStore {
   private saveDraft() {
     if (this.activeWorkout) {
       storage.set(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT, this.activeWorkout);
-      this.saveRoutineTemplate();
     }
+  }
+
+  saveCurrentAsRoutineTemplate() {
+    this.saveRoutineTemplate();
   }
 
   private getWorkoutName(type: WorkoutType): string {

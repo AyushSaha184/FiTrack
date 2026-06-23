@@ -88,10 +88,29 @@ export const SignupScreen = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [socialLoading, setSocialLoading] = useState(false);
+
+  const mapAuthError = (e: any): string => {
+    const msg = (e?.message || '').toLowerCase();
+    if (msg.includes('user already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
+      return 'An account with this email already exists.';
+    }
+    if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) {
+      return "Can't connect. Check your internet connection.";
+    }
+    if (msg.includes('rate limit') || msg.includes('429')) {
+      return 'Too many attempts. Try again shortly.';
+    }
+    if (msg.includes('google')) {
+      return 'Google sign-in failed. Please try again.';
+    }
+    return e?.message || 'Something went wrong. Please try again.';
+  };
 
   const handleSignup = async () => {
     console.log('[SignupScreen] handleSignup triggered with:', { name, email });
-    const result = signupSchema.safeParse({ name, email, password });
+    const normalizedEmail = email.trim().toLowerCase();
+    const result = signupSchema.safeParse({ name, email: normalizedEmail, password });
     if (!result.success) {
       console.log('[SignupScreen] Validation failed:', result.error.errors);
       const fieldErrors: Record<string, string> = {};
@@ -114,7 +133,26 @@ export const SignupScreen = () => {
       );
     } catch (e: any) {
       console.error('[SignupScreen] Signup caught error:', e);
-      setErrors({ email: e.message || 'Signup failed' });
+      const signupError = e?.message?.toLowerCase().includes('already')
+        ? 'An account with this email already exists.'
+        : mapAuthError(e);
+      setErrors({ email: signupError });
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setSocialLoading(true);
+    setErrors({});
+    try {
+      await socialLogin('google');
+    } catch (e: any) {
+      console.error('[SignupScreen] Google login error:', e);
+      const googleError = e?.message?.toLowerCase().includes('cancel')
+        ? 'Google sign-in was cancelled.'
+        : mapAuthError(e);
+      setErrors({ general: googleError });
+    } finally {
+      setSocialLoading(false);
     }
   };
 
@@ -148,6 +186,13 @@ export const SignupScreen = () => {
 
           {/* Credentials Card */}
           <View style={styles.form}>
+            {/* General Error Banner */}
+            {errors.general ? (
+              <View style={[styles.generalErrorBanner, { backgroundColor: 'rgba(255,80,80,0.1)', borderColor: colors.error }]}>
+                <Text style={[styles.generalErrorText, { color: colors.error }]}>{errors.general}</Text>
+              </View>
+            ) : null}
+
             <View style={[styles.inputCard, { borderColor: '#1F1F1F', backgroundColor: '#0A0A0C' }]}>
               {/* Full Name */}
               <View style={styles.inputRow}>
@@ -159,7 +204,7 @@ export const SignupScreen = () => {
                   placeholder="Full Name"
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={(text) => { setName(text); setErrors((prev) => { const { general, ...rest } = prev; return rest; }); }}
                   autoCapitalize="words"
                   autoCorrect={false}
                 />
@@ -177,7 +222,7 @@ export const SignupScreen = () => {
                   placeholder="Email Address"
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(text) => { setEmail(text); setErrors((prev) => { const { general, ...rest } = prev; return rest; }); }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -197,7 +242,7 @@ export const SignupScreen = () => {
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   secureTextEntry={!showPassword}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(text) => { setPassword(text); setErrors((prev) => { const { general, ...rest } = prev; return rest; }); }}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
@@ -245,15 +290,22 @@ export const SignupScreen = () => {
             <TouchableOpacity
               style={[
                 styles.googleButton,
-                { borderColor: '#1F1F1F', backgroundColor: '#000000' },
+                { borderColor: '#1F1F1F', backgroundColor: '#000000', opacity: socialLoading ? 0.6 : 1 },
               ]}
-              onPress={() => socialLogin('google')}
+              onPress={handleGoogleLogin}
+              disabled={socialLoading || isLoading}
               activeOpacity={0.8}
             >
-              <GoogleLogo />
-              <Text style={[styles.googleButtonText, { color: '#FFFFFF' }]}>
-                Continue with Google
-              </Text>
+              {socialLoading ? (
+                <Text style={[styles.googleButtonText, { color: '#FFFFFF' }]}>Signing in...</Text>
+              ) : (
+                <>
+                  <GoogleLogo />
+                  <Text style={[styles.googleButtonText, { color: '#FFFFFF' }]}>
+                    Continue with Google
+                  </Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -344,6 +396,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
     marginLeft: 8,
+  },
+  generalErrorBanner: {
+    padding: spacing.base,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: spacing.base,
+  },
+  generalErrorText: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   instructionText: {
     fontSize: 13,

@@ -55,7 +55,7 @@ export class StepsStore {
   async loadTodaySteps(userId: string) {
     try {
       this.isLoading = true;
-      const today = new Date().toISOString().split('T')[0];
+      const today = dateKey(new Date());
       const entry = await stepsService.getTodayEntry(userId, today);
       runInAction(() => {
         this.todayEntry = entry;
@@ -78,8 +78,8 @@ export class StepsStore {
       this.isLoading = true;
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = new Date().toISOString().split('T')[0];
+      const startDateStr = dateKey(startDate);
+      const endDateStr = dateKey(new Date());
       const data = await stepsService.getEntries(userId, startDateStr, endDateStr, days);
       runInAction(() => {
         this.weeklyEntries = data.map((e: any) => ({
@@ -101,14 +101,14 @@ export class StepsStore {
 
   async addSteps(userId: string, steps: number, date?: Date) {
     try {
-      const dateStr = (date || new Date()).toISOString().split('T')[0];
+      const dateStr = dateKey(date || new Date());
       const entry = await stepsService.upsertEntry(userId, dateStr, steps, 'manual');
       runInAction(() => {
         const newEntry = { ...entry, date: new Date(entry.date) };
         this.todayEntry = newEntry;
         this.todaySteps = steps;
         const existing = this.weeklyEntries.findIndex(
-          (e) => e.date.toISOString().split('T')[0] === dateStr,
+          (e) => dateKey(new Date(e.date)) === dateStr,
         );
         if (existing !== -1) {
           this.weeklyEntries[existing] = newEntry;
@@ -132,7 +132,7 @@ export class StepsStore {
 
   async syncFromHealthApp(userId: string, steps: number, source: StepSource = 'apple_health') {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = dateKey(new Date());
       const entry = await stepsService.upsertEntry(userId, today, steps, source);
       runInAction(() => {
         this.todayEntry = { ...entry, date: new Date(entry.date) };
@@ -160,7 +160,7 @@ export class StepsStore {
     return last7.map((date) => {
       const dateStr = dateKey(date);
       const entry = this.weeklyEntries.find(
-        (e) => e.date.toISOString().split('T')[0] === dateStr,
+        (e) => dateKey(new Date(e.date)) === dateStr,
       );
       return { date, steps: entry?.steps ?? 0 };
     });

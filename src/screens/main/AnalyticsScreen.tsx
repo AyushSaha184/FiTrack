@@ -61,7 +61,6 @@ export const AnalyticsScreen = () => {
       filteredWorkouts.reduce((sum, w) => sum + (w.duration || 0), 0) / 60
     );
 
-    // Calculate Streak
     const completedDates = completedWorkouts.map((w) =>
       new Date(w.date).toDateString()
     );
@@ -77,7 +76,6 @@ export const AnalyticsScreen = () => {
         (today.getTime() - uniqueDates[0].getTime()) / (1000 * 60 * 60 * 24)
       );
       
-      // Streak continues if last workout was today or yesterday
       if (diffToday <= 1) {
         streak = 1;
         let lastDate = uniqueDates[0];
@@ -95,12 +93,12 @@ export const AnalyticsScreen = () => {
       }
     }
 
-    // Fallback default values if no logged workouts yet to prevent empty screen on new users
     return {
-      workouts: workoutsCount > 0 ? workoutsCount : 4,
-      totalVolume: totalVolume > 0 ? totalVolume : 24500,
-      activeMinutes: activeMinutes > 0 ? activeMinutes : 180,
-      streak: streak > 0 ? streak : 7,
+      workouts: workoutsCount,
+      totalVolume: totalVolume,
+      activeMinutes: activeMinutes,
+      streak: streak,
+      isEmpty: workoutsCount === 0,
     };
   }, [workoutsList, timeRange]);
 
@@ -123,13 +121,7 @@ export const AnalyticsScreen = () => {
     });
 
     if (totalSets === 0) {
-      return [
-        { name: 'Chest', percentage: 35, color: colors.primary },
-        { name: 'Back', percentage: 25, color: colors.secondary },
-        { name: 'Legs', percentage: 20, color: colors.success },
-        { name: 'Shoulders', percentage: 12, color: colors.warning },
-        { name: 'Arms', percentage: 8, color: colors.error },
-      ];
+      return [];
     }
 
     const getColorForMuscleGroup = (name: string): string => {
@@ -172,11 +164,7 @@ export const AnalyticsScreen = () => {
 
     const entries = Object.entries(prs);
     if (entries.length === 0) {
-      return [
-        { name: 'Bench Press', value: '100 kg × 8' },
-        { name: 'Squat', value: '140 kg × 5' },
-        { name: 'Deadlift', value: '160 kg × 3' },
-      ];
+      return [];
     }
 
     return entries.map(([name, pr]) => ({

@@ -73,11 +73,33 @@ export const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
+  const [socialLoading, setSocialLoading] = useState(false);
+
+  const mapAuthError = (e: any): string => {
+    const msg = (e?.message || '').toLowerCase();
+    if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+      return 'Invalid email or password.';
+    }
+    if (msg.includes('email not confirmed')) {
+      return 'Please verify your email before logging in.';
+    }
+    if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) {
+      return "Can't connect. Check your internet connection.";
+    }
+    if (msg.includes('rate limit') || msg.includes('429')) {
+      return 'Too many attempts. Try again shortly.';
+    }
+    if (msg.includes('google')) {
+      return 'Google sign-in failed. Please try again.';
+    }
+    return e?.message || 'Something went wrong. Please try again.';
+  };
 
   const handleLogin = async () => {
     console.log('[LoginScreen] handleLogin triggered with email:', email);
-    const result = loginSchema.safeParse({ email, password });
+    const normalizedEmail = email.trim().toLowerCase();
+    const result = loginSchema.safeParse({ email: normalizedEmail, password });
     if (!result.success) {
       console.log('[LoginScreen] Validation failed:', result.error.errors);
       const fieldErrors: any = {};
@@ -96,7 +118,24 @@ export const LoginScreen = () => {
       console.log('[LoginScreen] Login completed successfully');
     } catch (e: any) {
       console.error('[LoginScreen] Login caught error:', e);
-      setErrors({ password: e.message || 'Login failed' });
+      const generalError = mapAuthError(e);
+      setErrors({ general: generalError });
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setSocialLoading(true);
+    setErrors({});
+    try {
+      await socialLogin('google');
+    } catch (e: any) {
+      console.error('[LoginScreen] Google login error:', e);
+      const googleError = e?.message?.toLowerCase().includes('cancel')
+        ? 'Google sign-in was cancelled.'
+        : mapAuthError(e);
+      setErrors({ general: googleError });
+    } finally {
+      setSocialLoading(false);
     }
   };
 
@@ -118,6 +157,13 @@ export const LoginScreen = () => {
 
           {/* Credentials Card */}
           <View style={styles.form}>
+            {/* General Error Banner */}
+            {errors.general ? (
+              <View style={[styles.generalErrorBanner, { backgroundColor: 'rgba(255,80,80,0.1)', borderColor: colors.error }]}>
+                <Text style={[styles.generalErrorText, { color: colors.error }]}>{errors.general}</Text>
+              </View>
+            ) : null}
+
             <View style={[styles.inputCard, { borderColor: '#1F1F1F', backgroundColor: '#0A0A0C' }]}>
               <View style={styles.inputRow}>
                 <View style={styles.iconContainer}>
@@ -128,7 +174,7 @@ export const LoginScreen = () => {
                   placeholder="Email Address"
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(text) => { setEmail(text); setErrors((prev) => ({ ...prev, email: undefined, general: undefined })); }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -147,7 +193,7 @@ export const LoginScreen = () => {
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   secureTextEntry={!showPassword}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(text) => { setPassword(text); setErrors((prev) => ({ ...prev, password: undefined, general: undefined })); }}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
@@ -157,7 +203,7 @@ export const LoginScreen = () => {
               </View>
             </View>
 
-            {/* Error Indicators */}
+            {/* Field Error Indicators */}
             {errors.email ? (
               <Text style={[styles.errorText, { color: colors.error }]}>{errors.email}</Text>
             ) : null}
@@ -198,15 +244,22 @@ export const LoginScreen = () => {
             <TouchableOpacity
               style={[
                 styles.googleButton,
-                { borderColor: '#1F1F1F', backgroundColor: '#000000' },
+                { borderColor: '#1F1F1F', backgroundColor: '#000000', opacity: socialLoading ? 0.6 : 1 },
               ]}
-              onPress={() => socialLogin('google')}
+              onPress={handleGoogleLogin}
+              disabled={socialLoading || isLoading}
               activeOpacity={0.8}
             >
-              <GoogleLogo />
-              <Text style={[styles.googleButtonText, { color: '#FFFFFF' }]}>
-                Continue with Google
-              </Text>
+              {socialLoading ? (
+                <Text style={[styles.googleButtonText, { color: '#FFFFFF' }]}>Signing in...</Text>
+              ) : (
+                <>
+                  <GoogleLogo />
+                  <Text style={[styles.googleButtonText, { color: '#FFFFFF' }]}>
+                    Continue with Google
+                  </Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -282,6 +335,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
     marginLeft: 8,
+  },
+  generalErrorBanner: {
+    padding: spacing.base,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: spacing.base,
+  },
+  generalErrorText: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   forgotPassword: {
     alignSelf: 'flex-end',

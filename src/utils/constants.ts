@@ -76,7 +76,9 @@ export const WORKOUT_TYPE_LABELS: Record<string, string> = {
 };
 
 export const APP_VERSION = CONFIG.APP_VERSION;
-export { DEFAULT_STEP_GOAL, DEFAULT_REST_TIME, REST_TIMES } from '../config/constants';
+export const DEFAULT_STEP_GOAL = CONFIG.DEFAULT_STEP_GOAL;
+export const DEFAULT_REST_TIME = CONFIG.DEFAULT_REST_TIME;
+export const REST_TIMES = CONFIG.REST_TIMES;
 
 export const getWeekDates = (date: Date = new Date()): Date[] => {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 });
@@ -109,6 +111,11 @@ export const sleep = (ms: number): Promise<void> => {
 
 export const generateId = (): string => {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 11)}`;
+};
+
+export const isValidUUID = (value: string | null | undefined): boolean => {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 };
 
 export const generateUUID = (): string => {

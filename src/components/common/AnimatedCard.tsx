@@ -1,5 +1,5 @@
 import React, { memo, ReactNode, useEffect } from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -12,7 +12,7 @@ import { spacing, radius, shadow, durations, staggerDelay } from '../../theme';
 
 interface AnimatedCardProps {
   children: ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   padding?: keyof typeof spacing;
   borderRadius?: keyof typeof radius;
   elevated?: boolean;

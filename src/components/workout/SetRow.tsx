@@ -54,23 +54,43 @@ export const SetRow = memo<SetRowProps>(({
     onToggleComplete();
   };
 
-  const handleWeightBlur = () => {
-    const val = parseFloat(weightText);
-    if (!isNaN(val) && val >= 0) {
-      onWeightChange(val);
-    } else {
-      setWeightText(set.weight > 0 ? String(set.weight) : '');
-    }
-  };
+const sanitizeWeightInput = (raw: string): string => {
+  return raw.replace(/[^0-9]/g, '').slice(0, 4);
+};
 
-  const handleRepsBlur = () => {
-    const val = parseInt(repsText);
-    if (!isNaN(val) && val >= 0) {
-      onRepsChange(val);
-    } else {
-      setRepsText(set.reps > 0 ? String(set.reps) : '');
-    }
-  };
+const sanitizeRepsInput = (raw: string): string => {
+  return raw.replace(/[^0-9]/g, '').slice(0, 4);
+};
+
+const handleWeightChange = (text: string) => {
+  const sanitized = sanitizeWeightInput(text);
+  setWeightText(sanitized);
+};
+
+const handleRepsChange = (text: string) => {
+  const sanitized = sanitizeRepsInput(text);
+  setRepsText(sanitized);
+};
+
+const handleWeightBlur = () => {
+  const val = parseFloat(weightText);
+  if (!isNaN(val) && val >= 0) {
+    onWeightChange(val);
+    setWeightText(String(val));
+  } else {
+    setWeightText(set.weight > 0 ? String(set.weight) : '');
+  }
+};
+
+const handleRepsBlur = () => {
+  const val = parseInt(repsText);
+  if (!isNaN(val) && val >= 0) {
+    onRepsChange(val);
+    setRepsText(String(val));
+  } else {
+    setRepsText(set.reps > 0 ? String(set.reps) : '');
+  }
+};
 
   const checkAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: checkScale.value }],
@@ -110,10 +130,10 @@ export const SetRow = memo<SetRowProps>(({
         <TextInput
           style={[styles.inputText, { color: colors.text }]}
           value={weightText}
-          onChangeText={setWeightText}
-          onBlur={handleWeightBlur}
-          keyboardType="decimal-pad"
-          placeholder="-"
+  onChangeText={handleWeightChange}
+  onBlur={handleWeightBlur}
+  keyboardType="number-pad"
+  placeholder="-"
           placeholderTextColor={colors.textMuted}
           textAlign="center"
           selectTextOnFocus
@@ -131,7 +151,7 @@ export const SetRow = memo<SetRowProps>(({
         <TextInput
           style={[styles.inputText, { color: colors.text }]}
           value={repsText}
-          onChangeText={setRepsText}
+          onChangeText={handleRepsChange}
           onBlur={handleRepsBlur}
           keyboardType="number-pad"
           placeholder="-"

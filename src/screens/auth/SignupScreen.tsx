@@ -126,11 +126,7 @@ export const SignupScreen = () => {
       console.log('[SignupScreen] Calling signup function...');
       await signup(result.data);
       console.log('[SignupScreen] Signup completed successfully');
-      Alert.alert(
-        'Account Created',
-        'Please check your email to verify your account before logging in.',
-        [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
-      );
+      navigation.navigate('Login');
     } catch (e: any) {
       console.error('[SignupScreen] Signup caught error:', e);
       const signupError = e?.message?.toLowerCase().includes('already')

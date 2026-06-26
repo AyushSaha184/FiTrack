@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -17,7 +17,7 @@ import { ExercisePicker } from '../../components/workout/ExercisePicker';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { Modal } from '../../components/common/Modal';
 import { Logo } from '../../components/common/Logo';
-import { useColors, useSettingsStore, useWorkoutStore, useAuthStore, useRestTimer } from '../../hooks';
+import { useColors, useSettingsStore, useWorkoutStore, useAuthStore, useRestTimer, useStopwatch } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { getWeekDates, getDayOfWeekKey, storage, dateKey } from '../../utils/helpers';
 import type { DayOfWeek, WorkoutType } from '../../models';
@@ -39,16 +39,20 @@ const ROUTINE_OPTIONS: { type: WorkoutType; label: string }[] = [
 
 export const WorkoutScreen = () => {
   const colors = useColors();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const workoutStore = useWorkoutStore();
   const authStore = useAuthStore();
   const restTimer = useRestTimer();
+  const stopwatch = useStopwatch();
   
+  // Store references
   const activeWorkout = workoutStore.activeWorkout;
   const activeWorkoutExercises = workoutStore.activeWorkoutExercises;
   const totalVolume = workoutStore.totalVolume;
+  
+  // Local state for day selection (React needs local state to re-render)
+  const [selectedDate, setSelectedDate] = useState<Date>(workoutStore.selectedDate);
   const selectedDay = workoutStore.selectedDay;
-  const selectedDate = workoutStore.selectedDate;
   const weightUnit = useSettingsStore().units.weight;
 
   const weekDates = getWeekDates();
@@ -59,7 +63,7 @@ export const WorkoutScreen = () => {
     return storage.get<Record<string, boolean>>('workout.rest_days') || {};
   });
 
-  // ADD THIS: Planned routines storage persistence
+  // Planned routines storage persistence
   const [plannedRoutines, setPlannedRoutines] = useState<Record<string, WorkoutType>>(() => {
     return storage.get<Record<string, WorkoutType>>('workout.planned_routines') || {};
   });
@@ -70,27 +74,24 @@ export const WorkoutScreen = () => {
   const [showRestDayAlert, setShowRestDayAlert] = useState(false);
   const [exerciseToRemove, setExerciseToRemove] = useState<{ id: string; name: string } | null>(null);
   const [showRemoveAlert, setShowRemoveAlert] = useState(false);
-  const [showCancelAlert, setShowCancelAlert] = useState(false);
-  const [showCompleteAlert, setShowCompleteAlert] = useState(false);
   const [showResetAlert, setShowResetAlert] = useState(false);
   const [showRoutineModal, setShowRoutineModal] = useState(false);
-
-
+  const [showStopwatchDialog, setShowStopwatchDialog] = useState(false);
 
   const fabScale = useSharedValue(1);
 
   // Handle date selection
-  const handleDayPress = (date: Date, index: number) => {
+  const handleDayPress = (date: Date) => {
     const dayKey = getDayOfWeekKey(date);
-    workoutStore.setDay(dayKey, date);
+    workoutStore.switchDay(dayKey, date);
+    setSelectedDate(date);
   };
 
-  // Get workout type label from active workout OR planned routine
+  // Get workout type label
   const getWorkoutTypeLabel = () => {
     if (activeWorkout) {
       return activeWorkout.name || 'Workout';
     }
-    // If a routine is planned for this date, show its label
     if (plannedRoutines[dateStr]) {
       const planned = ROUTINE_OPTIONS.find(opt => opt.type === plannedRoutines[dateStr]);
       return planned ? planned.label : 'Customize';
@@ -98,20 +99,8 @@ export const WorkoutScreen = () => {
     return 'Customize';
   };
 
-  const handleStartWorkout = async () => {
-    if (isRestDay) return;
-    
-    // Check if user planned a specific day (Push, Pull, etc.), otherwise default to 'custom'
-    const plannedType = plannedRoutines[dateStr] || 'custom';
-    
-    // Small delay to ensure smooth transition
-    await workoutStore.startWorkout(authStore.userId!, plannedType);
-  };
-
   const handleSelectRoutine = (type: WorkoutType) => {
     setShowRoutineModal(false);
-    
-    // Save the selected routine to state and local storage
     const newPlannedRoutines = { ...plannedRoutines, [dateStr]: type };
     setPlannedRoutines(newPlannedRoutines);
     storage.set('workout.planned_routines', newPlannedRoutines);
@@ -133,31 +122,37 @@ export const WorkoutScreen = () => {
     storage.set('workout.rest_days', newRestDays);
   };
 
-const handleExerciseSelect = async (exercise: ExerciseItem) => {
-    if (!activeWorkout) {
-      const workout = await workoutStore.startWorkout(authStore.userId!, 'custom' as WorkoutType);
-      if (!workout) return;
-    }
+  const handleExerciseSelect = (exercise: ExerciseItem) => {
     workoutStore.addExercise(exercise.id, exercise.name, exercise.muscleGroup, exercise.equipment);
     setShowExercisePicker(false);
   };
 
-  // Workout confirmation dialogs
-  const handleCompleteWorkout = () => {
-    setShowCompleteAlert(true);
-  };
-
-  const handleCancelWorkout = () => {
-    setShowCancelAlert(true);
-  };
-
   const handleConfirmRemoveExercise = (id: string, name?: string) => {
-    setExerciseToRemove({ id, name: name || 'Exercise' });
+    setExerciseToRemove({ id, name: name || 'this exercise' });
     setShowRemoveAlert(true);
   };
 
   const handleResetWeek = () => {
     setShowResetAlert(true);
+  };
+
+  // Stopwatch button handler - toggles start/stop and shows dialog when running
+  const handleStopwatchPress = () => {
+    if (stopwatch.isRunning) {
+      stopwatch.stop();
+      setShowStopwatchDialog(true);
+    } else {
+      stopwatch.start();
+    }
+  };
+
+  const handleStopwatchDialogClose = () => {
+    setShowStopwatchDialog(false);
+  };
+
+  const handleStopwatchReset = () => {
+    stopwatch.reset();
+    setShowStopwatchDialog(false);
   };
 
   const fabAnimatedStyle = useAnimatedStyle(() => ({
@@ -176,12 +171,7 @@ const handleExerciseSelect = async (exercise: ExerciseItem) => {
             <View style={styles.headerLeft}>
               <Logo size="medium" />
               {workoutStore.isSyncing && (
-                <View style={[styles.syncIndicator, { backgroundColor: colors.warning }]}>
-                  <Text style={styles.syncIndicatorText}>↻</Text>
-                </View>
-              )}
-              {!workoutStore.isSyncing && activeWorkout && (
-                <View style={[styles.syncIndicator, { backgroundColor: colors.success }]}>
+                <View style={[styles.syncIndicator, { backgroundColor: colors.primary }]}>
                   <Text style={styles.syncIndicatorText}>✓</Text>
                 </View>
               )}
@@ -192,7 +182,7 @@ const handleExerciseSelect = async (exercise: ExerciseItem) => {
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Circle cx="12" cy="12" r="3" />
-                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </Svg>
             </TouchableOpacity>
           </View>
@@ -223,7 +213,7 @@ const handleExerciseSelect = async (exercise: ExerciseItem) => {
                       ],
                     ]}
                     activeOpacity={0.7}
-                    onPress={() => handleDayPress(date, index)}
+                    onPress={() => handleDayPress(date)}
                   >
                     <Text
                       style={[
@@ -239,65 +229,84 @@ const handleExerciseSelect = async (exercise: ExerciseItem) => {
             </View>
           </AnimatedCard>
 
-          {/* Workout Type Pills */}
+          {/* Workout Type Pills with Stopwatch Button */}
           <AnimatedCard index={1} padding="none" style={styles.typePillsCard}>
-            <View style={styles.typePills}>
-              <TouchableOpacity
-                style={[
-                  styles.pill,
-                  !isRestDay && styles.pillActive,
-                  {
-                    backgroundColor: !isRestDay
-                      ? 'rgba(255,255,255,0.1)'
-                      : 'transparent',
-                    borderColor: colors.cardBorder,
-                  },
-                ]}
-                onPress={() => {
-                  if (isRestDay) {
-                    handleCancelRestDay();
-                  }
-                  // Only open routine modal if there's no active workout
-                  if (!activeWorkout) {
-                    setShowRoutineModal(true);
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
+            <View style={styles.typePillsWithTimer}>
+              <View style={styles.typePills}>
+                <TouchableOpacity
                   style={[
-                    styles.pillText,
-                    { color: !isRestDay ? colors.text : colors.textMuted },
-                  ]}
-                >
-                  {getWorkoutTypeLabel()}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.pill,
-                  isRestDay && styles.pillActive,
-                  {
-                    backgroundColor: isRestDay
-                      ? 'rgba(255,255,255,0.9)'
-                      : 'transparent',
-                    borderColor: colors.cardBorder,
-                  },
-                ]}
-                onPress={handleRestDay}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.pillIcon}>☕</Text>
-                <Text
-                  style={[
-                    styles.pillText,
+                    styles.pill,
+                    !isRestDay && styles.pillActive,
                     {
-                      color: isRestDay ? '#000000' : colors.textMuted,
+                      backgroundColor: !isRestDay
+                        ? 'rgba(255,255,255,0.1)'
+                        : 'transparent',
+                      borderColor: colors.cardBorder,
                     },
                   ]}
+                  onPress={() => {
+                    if (isRestDay) {
+                      handleCancelRestDay();
+                    }
+                    if (!activeWorkout) {
+                      setShowRoutineModal(true);
+                    }
+                  }}
+                  activeOpacity={0.7}
                 >
-                  Rest Day
+                  <Text
+                    style={[
+                      styles.pillText,
+                      { color: !isRestDay ? colors.text : colors.textMuted },
+                    ]}
+                  >
+                    {getWorkoutTypeLabel()}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.pill,
+                    isRestDay && styles.pillActive,
+                    {
+                      backgroundColor: isRestDay
+                        ? 'rgba(255,255,255,0.9)'
+                        : 'transparent',
+                      borderColor: colors.cardBorder,
+                    },
+                  ]}
+                  onPress={handleRestDay}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.pillIcon}>☕</Text>
+                  <Text
+                    style={[
+                      styles.pillText,
+                      {
+                        color: isRestDay ? '#000000' : colors.textMuted,
+                      },
+                    ]}
+                  >
+                    Rest Day
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Stopwatch Button */}
+              <TouchableOpacity
+                style={[
+                  styles.stopwatchButton,
+                  {
+                    backgroundColor: stopwatch.isRunning ? colors.primary : 'rgba(255,255,255,0.08)',
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
+                onPress={handleStopwatchPress}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.stopwatchIcon}>⏱</Text>
+                <Text style={[styles.stopwatchText, { color: colors.text }]}>
+                  {stopwatch.getFormattedTime()}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -330,27 +339,8 @@ const handleExerciseSelect = async (exercise: ExerciseItem) => {
               </View>
             </AnimatedCard>
           ) : activeWorkout ? (
-            /* Active Workout Exercise List & Timer */
+            /* Active Workout Exercise List */
             <View>
-              <AnimatedCard index={2} style={styles.actionCard}>
-                <View style={styles.actionActions}>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { borderColor: colors.cardBorder, backgroundColor: 'rgba(255,255,255,0.06)' }]}
-                    onPress={handleCancelWorkout}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.actionBtnText, { color: colors.error }]}>Discard</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { borderColor: colors.cardBorder, backgroundColor: colors.text }]}
-                    onPress={handleCompleteWorkout}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.actionBtnText, { color: colors.background }]}>Complete</Text>
-                  </TouchableOpacity>
-                </View>
-              </AnimatedCard>
-
               {/* Rest Timer Banner */}
               {restTimer.isVisible && restTimer.isActive && (
                 <AnimatedCard index={1} style={[styles.restTimerCard, { backgroundColor: colors.warning + '20', borderColor: colors.warning }]}>
@@ -396,20 +386,11 @@ const handleExerciseSelect = async (exercise: ExerciseItem) => {
           ) : (
             <AnimatedCard index={2} style={styles.emptyCard}>
               <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                Ready to train?
+                No Workout Planned
               </Text>
               <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                Start your workout or add exercises
+                Tap + below to add exercises to your workout
               </Text>
-              <TouchableOpacity
-                style={[styles.startButton, { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1 }]}
-                onPress={handleStartWorkout}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.startButtonText, { color: colors.text }]}>
-                  Start Workout
-                </Text>
-              </TouchableOpacity>
             </AnimatedCard>
           )}
 
@@ -475,6 +456,48 @@ const handleExerciseSelect = async (exercise: ExerciseItem) => {
         </ScrollView>
       </Modal>
 
+      {/* Stopwatch Dialog */}
+      <Modal
+        visible={showStopwatchDialog}
+        onClose={handleStopwatchDialogClose}
+        title="Workout Timer"
+        sheet
+      >
+        <View style={styles.stopwatchDialog}>
+          <Text style={[styles.stopwatchDialogTime, { color: colors.text }]}>
+            {stopwatch.getFormattedTime()}
+          </Text>
+          <View style={styles.stopwatchDialogStats}>
+            <View style={styles.statItem}>
+              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Started</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {stopwatch.startTime ? new Date(stopwatch.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Ended</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {stopwatch.endTime ? new Date(stopwatch.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Running'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.stopwatchDialogActions}>
+            <TouchableOpacity
+              style={[styles.stopwatchDialogBtn, { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+              onPress={handleStopwatchReset}
+            >
+              <Text style={[styles.stopwatchDialogBtnText, { color: colors.text }]}>Reset</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.stopwatchDialogBtn, { backgroundColor: colors.primary }]}
+              onPress={handleStopwatchDialogClose}
+            >
+              <Text style={[styles.stopwatchDialogBtnText, { color: colors.background }]}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <CustomAlert
         visible={showRestDayAlert}
         onClose={() => setShowRestDayAlert(false)}
@@ -510,41 +533,6 @@ const handleExerciseSelect = async (exercise: ExerciseItem) => {
                 workoutStore.removeExercise(exerciseToRemove.id);
               }
               setShowRemoveAlert(false);
-            },
-          },
-        ]}
-      />
-
-      <CustomAlert
-        visible={showCancelAlert}
-        onClose={() => setShowCancelAlert(false)}
-        title="Discard Workout?"
-        message="Are you sure you want to discard this workout? All progress will be deleted."
-        actions={[
-          { text: 'No', style: 'cancel', onPress: () => setShowCancelAlert(false) },
-          {
-            text: 'Yes, Discard',
-            style: 'destructive',
-            onPress: async () => {
-              await workoutStore.cancelWorkout();
-              setShowCancelAlert(false);
-            },
-          },
-        ]}
-      />
-
-      <CustomAlert
-        visible={showCompleteAlert}
-        onClose={() => setShowCompleteAlert(false)}
-        title="Finish Workout"
-        message="Are you sure you want to end this workout?"
-        actions={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setShowCompleteAlert(false) },
-          {
-            text: 'Finish',
-            onPress: async () => {
-              await workoutStore.completeWorkout();
-              setShowCompleteAlert(false);
             },
           },
         ]}
@@ -600,46 +588,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  restTimerCard: {
-    marginBottom: spacing.base,
-    borderWidth: 1,
-  },
-  restTimerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.base,
-  },
-  restTimerLabel: {
-    fontSize: typography.caption.fontSize,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  restTimerTime: {
-    fontSize: 24,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  restTimerDismiss: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.base,
-    borderRadius: radius.md,
-    borderWidth: 1,
-  },
-  restTimerDismissText: {
-    fontSize: typography.caption.fontSize,
-    fontWeight: '600',
-  },
   settingsButton: {
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 20,
-  },
-  settingsIcon: {
-    fontSize: 20,
   },
   title: {
     fontSize: 26,
@@ -669,13 +623,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     marginBottom: 4,
   },
-  dayNumber: {
-    fontSize: 18,
-  },
   typePillsCard: {
     marginBottom: spacing.lg,
     backgroundColor: 'transparent',
     borderWidth: 0,
+  },
+  typePillsWithTimer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   typePills: {
     flexDirection: 'row',
@@ -698,7 +655,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  // Rest Day styles
+  stopwatchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    gap: spacing.xs,
+    justifyContent: 'center',
+  },
+  stopwatchIcon: {
+    fontSize: 16,
+    lineHeight: 20,
+    opacity: 0.9,
+  },
+  stopwatchText: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    lineHeight: 20,
+  },
   restDayCard: {
     marginTop: spacing.base,
     alignItems: 'center',
@@ -735,7 +712,6 @@ const styles = StyleSheet.create({
   restTipText: {
     fontSize: 16,
   },
-  // Exercise section
   exercisesSection: {
     marginTop: spacing.sm,
   },
@@ -798,63 +774,104 @@ const styles = StyleSheet.create({
   resetButton: {
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
+    borderRadius: radius.md,
     borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   resetButtonText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  actionCard: {
-    padding: spacing.md,
+  restTimerCard: {
     marginBottom: spacing.base,
-  },
-  actionActions: {
-    flexDirection: 'row',
-    gap: spacing.base,
-    width: '100%',
-  },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    alignItems: 'center',
     borderWidth: 1,
   },
-  actionBtnText: {
-    fontSize: 15,
+  restTimerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+  },
+  restTimerLabel: {
+    fontSize: typography.caption.fontSize,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  restTimerTime: {
+    fontSize: 24,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  restTimerDismiss: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.base,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  restTimerDismissText: {
+    fontSize: typography.caption.fontSize,
     fontWeight: '600',
   },
   modalScroll: {
-    maxHeight: 320,
+    maxHeight: 400,
   },
   modalSubtitle: {
     fontSize: 14,
-    marginBottom: spacing.md,
-    textAlign: 'center',
+    marginBottom: spacing.lg,
   },
   routineGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    paddingBottom: spacing.sm,
+    gap: spacing.sm,
   },
   routineItem: {
-    width: '48%',
-    padding: spacing.md,
-    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  routineIcon: {
-    fontSize: 26,
-    marginBottom: spacing.xs,
   },
   routineLabel: {
-    fontSize: 13,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  stopwatchDialog: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+  },
+  stopwatchDialogTime: {
+    fontSize: 48,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    marginBottom: spacing.xl,
+  },
+  stopwatchDialogStats: {
+    flexDirection: 'row',
+    gap: spacing.xl,
+    marginBottom: spacing.xl,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: spacing.xs,
+  },
+  statValue: {
+    fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
+  },
+  stopwatchDialogActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    width: '100%',
+  },
+  stopwatchDialogBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+  },
+  stopwatchDialogBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

@@ -7,7 +7,6 @@ yarn-debug.log*
 yarn-error.log*
 *.tsbuildinfo
 package-lock.json.bak
-package.json
 # ============================================================
 # Env & secrets (NEVER commit)
 # ============================================================
@@ -102,14 +101,3 @@ scripts/output/
 *.aab
 !android/app/debug.keystore
 context.md
-scripts
-ios
-assets
-supabase
-tsconfig.json
-jest.config.js
-metro.config.js
-babel.config.js 
-Gemfile
-index.js
-app.json

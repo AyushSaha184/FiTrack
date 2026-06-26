@@ -3,8 +3,9 @@ export const calculate1RM = (
   reps: number,
   formula: 'epley' | 'brzycki' | 'lombardi' = 'epley',
 ): number => {
-  if (reps <= 0) return 0;
+  if (reps <= 0 || weight <= 0) return 0;
   if (reps === 1) return weight;
+  if (reps >= 37) return weight * 1.05;
   switch (formula) {
     case 'epley':
       return weight * (1 + reps / 30);

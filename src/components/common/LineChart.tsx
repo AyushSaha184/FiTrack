@@ -1,13 +1,14 @@
 import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { CartesianChart, Line, Area, useChartPressState } from 'victory-native';
-import { Circle, useFont, vec, LinearGradient as SkiaLinearGradient } from '@shopify/react-native-skia';
+import { CartesianChart, Line, Area } from 'victory-native';
+import { Circle, vec, LinearGradient as SkiaLinearGradient } from '@shopify/react-native-skia';
 import { useColors } from '../../hooks';
 import { spacing, typography } from '../../theme';
 
 interface ChartDataPoint {
   date: string;
   value: number;
+  timestamp?: number;
 }
 
 interface LineChartProps {
@@ -34,6 +35,10 @@ export const LineChart = memo<LineChartProps>(({
   const colors = useColors();
   const color = lineColor || colors.text;
 
+  const getY = (d: ChartDataPoint) => ((d as any).y !== undefined ? (d as any).y : d.value);
+  const getX = (d: ChartDataPoint) => ((d as any).x !== undefined ? (d as any).x : (d as any).timestamp);
+  const getLabel = (d: ChartDataPoint) => d.date || '';
+
   const isEmpty = data.length === 0;
   const activeData = isEmpty
     ? Array.from({ length: 7 }, (_, i) => {
@@ -42,7 +47,7 @@ export const LineChart = memo<LineChartProps>(({
         return {
           date: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
           value: 0,
-        };
+        } as ChartDataPoint;
       })
     : data;
 
@@ -51,27 +56,52 @@ export const LineChart = memo<LineChartProps>(({
   if (displayData.length === 1 && !isEmpty) {
     displayData.unshift({
       date: '',
-      value: displayData[0].value,
-    });
+      value: getY(displayData[0]),
+    } as ChartDataPoint);
   }
 
   // Transform data for Victory Native - needs numeric x values
   const chartData = displayData.map((d, i) => ({
-    x: i,
-    y: d.value,
-    label: d.date,
+    x: getX(d) !== undefined ? getX(d) : i,
+    y: getY(d),
+    label: getLabel(d) || String(getX(d) || i),
   }));
 
-  const values = activeData.map((d) => d.value);
+  const values = displayData.map((d) => getY(d));
   let minVal = isEmpty ? 0 : Math.floor(Math.min(...values) * 0.95);
   let maxVal = isEmpty ? 100 : Math.ceil(Math.max(...values) * 1.05);
-  if (minVal === maxVal) {
-    minVal = Math.max(0, minVal - 10);
-    maxVal = maxVal + 10;
+  if (minVal === maxVal || !Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
+    minVal = 0;
+    maxVal = 100;
   }
 
   // Determine which x-axis labels to show to prevent overlap
   const showEvery = Math.max(1, Math.floor(displayData.length / 6));
+
+  // Format Y-axis labels based on data magnitude
+  const formatYLabel = (val: number): string => {
+    // For steps (large numbers)
+    if (val >= 10000) {
+      return `${(val / 1000).toFixed(0)}K`;
+    }
+    // For weight (smaller numbers with decimals)
+    if (val < 200 && val % 1 !== 0) {
+      return val.toFixed(1);
+    }
+    // For other values
+    if (val >= 1000) {
+      return `${(val / 1000).toFixed(0)}K`;
+    }
+    return val % 1 !== 0 ? val.toFixed(1) : val.toFixed(0);
+  };
+
+  // Calculate Y-axis tick values
+  const yTicks = [];
+  const tickCount = 5;
+  const tickStep = (maxVal - minVal) / (tickCount - 1);
+  for (let i = 0; i < tickCount; i++) {
+    yTicks.push(minVal + tickStep * i);
+  }
 
   return (
     <View style={[styles.container, { width, height }]}>
@@ -79,22 +109,24 @@ export const LineChart = memo<LineChartProps>(({
         data={chartData}
         xKey="x"
         yKeys={["y"]}
-        domainPadding={{ left: 10, right: 10, top: 20, bottom: 10 }}
+        domainPadding={{ left: 10, right: 10, top: 20, bottom: 30 }}
         domain={{ y: [minVal, maxVal] }}
         axisOptions={{
           tickCount: { x: Math.min(displayData.length, 7), y: 5 },
           lineColor: 'transparent',
           labelColor: 'rgba(255,255,255,0.4)',
           formatXLabel: (val: number) => {
-            const idx = Math.round(val);
-            if (idx < 0 || idx >= displayData.length) return '';
-            if (idx % showEvery !== 0 && idx !== displayData.length - 1) return '';
-            return displayData[idx]?.date || '';
+            // In timestamp mode val is the actual x value, not an index.
+            // Try to match by x value first, then fall back to index.
+            const idxByX = chartData.findIndex((pt) => pt.x === val);
+            const idx = idxByX >= 0 ? idxByX : Math.round(val);
+            if (idx < 0 || idx >= chartData.length) return '';
+            if (idx % showEvery !== 0 && idx !== chartData.length - 1) return '';
+            const label = chartData[idx]?.label || '';
+            // Truncate long labels
+            return label.length > 8 ? label.substring(0, 6) + '..' : label;
           },
-          formatYLabel: (val: number) => {
-            if (val >= 1000) return `${(val / 1000).toFixed(0)}K`;
-            return val % 1 !== 0 ? val.toFixed(1) : val.toFixed(0);
-          },
+          formatYLabel: formatYLabel,
           labelOffset: { x: 4, y: 4 },
         }}
       >
@@ -174,7 +206,7 @@ export const LineChart = memo<LineChartProps>(({
           ]}
         >
           <Text style={[styles.tooltipText, { color: colors.text }]}>
-            {tooltipValue || data[data.length - 1].value.toLocaleString()}
+            {tooltipValue || formatYLabel(getY(data[data.length - 1]))}
           </Text>
         </View>
       )}

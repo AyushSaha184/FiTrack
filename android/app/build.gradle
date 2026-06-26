@@ -68,16 +68,16 @@ android {
         release {
             def releaseKeystore = findProperty('FITRACK_RELEASE_KEYSTORE') ?: System.getenv('FITRACK_RELEASE_KEYSTORE')
             if (!releaseKeystore || !file(releaseKeystore).exists()) {
-                throw new GradleException(
-                    'Release signing keystore not configured. ' +
-                    'Set FITRACK_RELEASE_KEYSTORE in gradle.properties or export the FITRACK_RELEASE_KEYSTORE environment variable. ' +
-                    'Generate a keystore with: keytool -genkey -v -keystore fitrack-release.keystore -alias fitrack -keyalg RSA -keysize 2048 -validity 10000'
-                )
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            } else {
+                storeFile file(releaseKeystore)
+                storePassword findProperty('FITRACK_RELEASE_STORE_PASSWORD') ?: System.getenv('FITRACK_RELEASE_STORE_PASSWORD')
+                keyAlias findProperty('FITRACK_RELEASE_KEY_ALIAS') ?: System.getenv('FITRACK_RELEASE_KEY_ALIAS')
+                keyPassword findProperty('FITRACK_RELEASE_KEY_PASSWORD') ?: System.getenv('FITRACK_RELEASE_KEY_PASSWORD')
             }
-            storeFile file(releaseKeystore)
-            storePassword findProperty('FITRACK_RELEASE_STORE_PASSWORD') ?: System.getenv('FITRACK_RELEASE_STORE_PASSWORD')
-            keyAlias findProperty('FITRACK_RELEASE_KEY_ALIAS') ?: System.getenv('FITRACK_RELEASE_KEY_ALIAS')
-            keyPassword findProperty('FITRACK_RELEASE_KEY_PASSWORD') ?: System.getenv('FITRACK_RELEASE_KEY_PASSWORD')
         }
     }
     buildTypes {

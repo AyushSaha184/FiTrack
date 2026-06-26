@@ -1,7 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Platform } from 'react-native';
-import notifee, { TimestampTrigger, TriggerType, AndroidImportance } from '@notifee/react-native';
+import { Platform, AppState, AppStateStatus } from 'react-native';
+import notifee, { TimestampTrigger, TriggerType, AndroidImportance, AuthorizationStatus } from '@notifee/react-native';
 import { useSettingsStore } from '../stores';
+
+const CHANNEL_ID = 'rest-timer';
+
+const ensureChannel = async () => {
+  if (Platform.OS === 'android') {
+    await notifee.createChannel({
+      id: CHANNEL_ID,
+      name: 'Rest Timer',
+      importance: AndroidImportance.HIGH,
+    });
+  }
+};
 
 export const useRestTimer = () => {
   const [isActive, setIsActive] = useState(false);
@@ -10,8 +22,8 @@ export const useRestTimer = () => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const settingsStore = useSettingsStore();
 
-  const defaultRestTime = settingsStore.preferences.workout?.defaultRestTime ?? 90;
-  const autoStartRestTimer = settingsStore.preferences.workout?.autoStartRestTimer ?? false;
+  const defaultRestTime = settingsStore.workout?.defaultRestTime ?? 90;
+  const autoStartRestTimer = settingsStore.workout?.autoStartRestTimer ?? false;
 
   const clearTimer = useCallback(() => {
     if (intervalRef.current) {
@@ -23,41 +35,57 @@ export const useRestTimer = () => {
     setIsVisible(false);
   }, []);
 
-  const stopTimer = useCallback(() => {
-    notifee.cancelTriggerNotification('rest-timer');
+  const stopTimer = useCallback(async () => {
+    await notifee.cancelTriggerNotification('rest-timer');
     clearTimer();
   }, [clearTimer]);
 
-  const scheduleNotification = useCallback((seconds: number) => {
-    if (Platform.OS === 'android') {
-      const trigger: TimestampTrigger = {
-        type: TriggerType.TIMESTAMP,
-        timestamp: Date.now() + seconds * 1000,
-      };
+  const scheduleNotification = useCallback(async (seconds: number) => {
+    await ensureChannel();
 
-      notifee.createTriggerNotification(
-        {
-          id: 'rest-timer',
-          title: '⏰ Rest Complete',
-          body: 'Time to get back to your workout!',
-          android: {
-            channelId: 'rest-timer',
-            importance: AndroidImportance.HIGH,
-            pressAction: { id: 'default' },
-            sound: settingsStore.preferences.notifications?.restTimerSound ? 'default' : undefined,
-            vibrationPattern: settingsStore.preferences.notifications?.restTimerVibration ? [0, 250, 250, 250] : undefined,
-          },
+    const trigger: TimestampTrigger = {
+      type: TriggerType.TIMESTAMP,
+      timestamp: Date.now() + seconds * 1000,
+    };
+
+    const notificationConfig = {
+      id: 'rest-timer',
+      title: '⏰ Rest Complete',
+      body: 'Time to get back to your workout!',
+      ...(Platform.OS === 'android' ? {
+        android: {
+          channelId: CHANNEL_ID,
+          importance: AndroidImportance.HIGH,
+          pressAction: { id: 'default' },
+          sound: settingsStore.notifications?.restTimerSound ? 'default' : undefined,
+          vibrationPattern: settingsStore.notifications?.restTimerVibration ? [0, 250, 250, 250] : undefined,
         },
-        trigger
-      );
-    }
-  }, [settingsStore.preferences.notifications]);
+      } : {
+        ios: {
+          sound: settingsStore.notifications?.restTimerSound ? 'default' : undefined,
+        },
+      }),
+    };
 
-  const startTimer = useCallback((duration?: number) => {
+    await notifee.createTriggerNotification(notificationConfig, trigger);
+  }, [settingsStore.notifications]);
+
+  const requestNotificationPermission = async (): Promise<boolean> => {
+    if (Platform.OS === 'ios') {
+      const settings = await notifee.requestPermission();
+      return settings.authorizationStatus >= AuthorizationStatus.AUTHORIZED;
+    }
+    return true;
+  };
+
+  const startTimer = useCallback(async (duration?: number) => {
     const restTime = duration ?? defaultRestTime;
 
     if (autoStartRestTimer) {
-      scheduleNotification(restTime);
+      const hasPermission = await requestNotificationPermission();
+      if (hasPermission) {
+        await scheduleNotification(restTime);
+      }
     }
 
     setTimeRemaining(restTime);

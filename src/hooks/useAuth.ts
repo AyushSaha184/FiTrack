@@ -1,30 +1,36 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuthStore } from '../stores';
-import { autorun } from 'mobx';
+import { reaction } from 'mobx';
 import type { LoginInput, SignupInput } from '../utils/validators';
+
+const shallowEqual = (a: Record<string, any>, b: Record<string, any>): boolean => {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((key) => a[key] === b[key]);
+};
 
 export const useAuth = () => {
   const store = useAuthStore();
-  const [state, setState] = useState({
-    user: store.user,
-    isLoading: store.isLoading,
-    isInitialized: store.isInitialized,
-    isAuthenticated: store.isAuthenticated,
-    isOnboarded: store.isOnboarded,
-    error: store.error,
-  });
+  const [, forceUpdate] = useState({});
 
   useEffect(() => {
-    const disposer = autorun(() => {
-      setState({
+    const disposer = reaction(
+      () => ({
         user: store.user,
         isLoading: store.isLoading,
         isInitialized: store.isInitialized,
         isAuthenticated: store.isAuthenticated,
         isOnboarded: store.isOnboarded,
+        isNameRequired: store.isNameRequired,
         error: store.error,
-      });
-    });
+      }),
+      (current, previous) => {
+        if (!shallowEqual(current, previous)) {
+          forceUpdate({});
+        }
+      }
+    );
 
     const init = async () => {
       await store.initialize();
@@ -62,13 +68,22 @@ export const useAuth = () => {
     await store.updateProfile(updates);
   }, [store]);
 
+  const setUserName = useCallback(async (name: string) => {
+    await store.setUserName(name);
+  }, [store]);
+
+  const clearError = useCallback(() => {
+    store.clearError();
+  }, [store]);
+
   return {
-    user: state.user,
-    isLoading: state.isLoading,
-    isInitialized: state.isInitialized,
-    isAuthenticated: state.isAuthenticated,
-    isOnboarded: state.isOnboarded,
-    error: state.error,
+    user: store.user,
+    isLoading: store.isLoading,
+    isInitialized: store.isInitialized,
+    isAuthenticated: store.isAuthenticated,
+    isOnboarded: store.isOnboarded,
+    isNameRequired: store.isNameRequired,
+    error: store.error,
     login,
     signup,
     socialLogin,
@@ -76,6 +91,7 @@ export const useAuth = () => {
     resetPassword,
     completeOnboarding,
     updateProfile,
-    clearError: store.clearError.bind(store),
+    setUserName,
+    clearError,
   };
 };

@@ -12,28 +12,27 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
-import { useColors, useSettingsStore, useAuth, useWeightStore, useAuthStore } from '../../hooks';
+import { useColors, useAuth, useWeightStore, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { formatWeight, formatDate } from '../../utils/helpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const timeRangeOptions = [
-  { value: '7', label: 'Last 7 Days' },
-  { value: '30', label: 'Last 30 Days' },
-  { value: '90', label: 'Last 90 Days' },
-  { value: '180', label: 'Last 6 Months' },
-  { value: '365', label: 'Last Year' },
+  { value: '7', label: '7 Days' },
+  { value: '30', label: '30 Days' },
+  { value: '90', label: '90 Days' },
+  { value: '180', label: '6 Months' },
+  { value: '365', label: '1 Year' },
   { value: 'all', label: 'All Time' },
 ];
 
 export const WeightTrackerScreen = () => {
   const colors = useColors();
-  const navigation = useNavigation();
-  const { user } = useAuth();
+  const navigation = useNavigation<any>();
+  const auth = useAuth();
   const weightStore = useWeightStore();
-  const authStore = useAuthStore();
-  
+
   const currentWeight = weightStore.currentWeight;
   const goalWeight = weightStore.goalWeight;
   const progress = weightStore.progress;
@@ -42,11 +41,14 @@ export const WeightTrackerScreen = () => {
   const entries = weightStore.entries;
 
   useEffect(() => {
-    if (authStore.userId) {
-      weightStore.loadEntries(authStore.userId);
-      weightStore.loadStats(authStore.userId);
-    }
-  }, [authStore.userId, weightStore]);
+    const loadWeightData = async () => {
+      if (auth.user?.id) {
+        await weightStore.loadEntries(auth.user.id);
+        await weightStore.loadStats(auth.user.id);
+      }
+    };
+    loadWeightData();
+  }, [auth.isAuthenticated, auth.user?.id, weightStore]);
 
   const weightUnit = useSettingsStore().units.weight;
 
@@ -54,22 +56,68 @@ export const WeightTrackerScreen = () => {
 
   const [timeRange, setTimeRange] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const sanitizeWeightInput = (raw: string): string => {
+    let text = raw.replace(/[^0-9.]/g, '');
+    const dotIndex = text.indexOf('.');
+    if (dotIndex !== -1) {
+      text = text.slice(0, dotIndex + 1) + text.slice(dotIndex + 1).replace(/\./g, '');
+    }
+    if (text.length > 5) text = text.slice(0, 5);
+    return text;
+  };
   const [newWeight, setNewWeight] = useState('');
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalInput, setGoalInput] = useState('');
 
   const chartData = useMemo(() => {
-    const limit = timeRange === 'all' ? entries.length : parseInt(timeRange);
-    return entries
-      .slice(0, limit)
-      .reverse()
+    const now = new Date();
+    let filteredEntries: WeightEntry[];
+    
+    if (timeRange === 'all') {
+      filteredEntries = [...entries];
+    } else {
+      const days = parseInt(timeRange);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
+    }
+    
+    return filteredEntries
       .map((e) => ({
         date: formatDate(e.date, 'dayMonth'),
         value: e.weight,
-      }));
+        timestamp: new Date(e.date).getTime(),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
   }, [entries, timeRange]);
 
   const chartWidth = SCREEN_WIDTH - spacing.xl * 2 - spacing.xl * 2;
+
+  // Calculate stats for the selected time range
+  const filteredStats = useMemo(() => {
+    const now = new Date();
+    let filteredEntries: WeightEntry[];
+    
+    if (timeRange === 'all') {
+      filteredEntries = [...entries];
+    } else {
+      const days = parseInt(timeRange);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
+    }
+    
+    if (filteredEntries.length === 0) {
+      return { highest: null, lowest: null, average: null };
+    }
+    
+    const weights = filteredEntries.map(e => e.weight);
+    const highest = filteredEntries.reduce((max, e) => e.weight > max.weight ? e : max, filteredEntries[0]);
+    const lowest = filteredEntries.reduce((min, e) => e.weight < min.weight ? e : min, filteredEntries[0]);
+    const average = weights.reduce((sum, w) => sum + w, 0) / weights.length;
+    
+    return { highest, lowest, average };
+  }, [entries, timeRange]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -185,11 +233,11 @@ export const WeightTrackerScreen = () => {
                   Highest Weight
                 </Text>
                 <Text style={[styles.statValue, { color: colors.text }]}>
-                  {stats.highest?.weight?.toFixed(1) || '--'} {weightUnit}
+                  {filteredStats.highest?.weight?.toFixed(1) || '--'} {weightUnit}
                 </Text>
                 <Text style={[styles.statDate, { color: colors.textMuted }]}>
-                  {stats.highest?.date
-                    ? formatDate(stats.highest.date, 'short')
+                  {filteredStats.highest?.date
+                    ? formatDate(filteredStats.highest.date, 'short')
                     : ''}
                 </Text>
               </View>
@@ -204,11 +252,11 @@ export const WeightTrackerScreen = () => {
                   Lowest Weight
                 </Text>
                 <Text style={[styles.statValue, { color: colors.text }]}>
-                  {stats.lowest?.weight?.toFixed(1) || '--'} {weightUnit}
+                  {filteredStats.lowest?.weight?.toFixed(1) || '--'} {weightUnit}
                 </Text>
                 <Text style={[styles.statDate, { color: colors.textMuted }]}>
-                  {stats.lowest?.date
-                    ? formatDate(stats.lowest.date, 'short')
+                  {filteredStats.lowest?.date
+                    ? formatDate(filteredStats.lowest.date, 'short')
                     : ''}
                 </Text>
               </View>
@@ -223,10 +271,10 @@ export const WeightTrackerScreen = () => {
                   Average Weight
                 </Text>
                 <Text style={[styles.statValue, { color: colors.text }]}>
-                  {stats.average?.toFixed(1) || '--'} {weightUnit}
+                  {filteredStats.average?.toFixed(1) || '--'} {weightUnit}
                 </Text>
                 <Text style={[styles.statDate, { color: colors.textMuted }]}>
-                  Last 30 days
+                  {timeRange === 'all' ? 'All time' : `Last ${timeRange} days`}
                 </Text>
               </View>
             </View>
@@ -239,7 +287,7 @@ export const WeightTrackerScreen = () => {
             </Text>
 
             {entries.slice(0, 5).map((entry, index) => (
-              <TouchableOpacity
+              <View
                 key={entry.id}
                 style={[
                   styles.historyItem,
@@ -248,7 +296,6 @@ export const WeightTrackerScreen = () => {
                     borderBottomColor: colors.cardBorder,
                   },
                 ]}
-                activeOpacity={0.7}
               >
                 <View style={styles.historyLeft}>
                   <View
@@ -272,9 +319,8 @@ export const WeightTrackerScreen = () => {
                   <Text style={[styles.historyWeight, { color: colors.text }]}>
                     {entry.weight.toFixed(1)} {weightUnit}
                   </Text>
-                  <Text style={[styles.historyChevron, { color: colors.textMuted }]}>›</Text>
                 </View>
-              </TouchableOpacity>
+              </View>
             ))}
           </AnimatedCard>
 
@@ -288,22 +334,23 @@ export const WeightTrackerScreen = () => {
         onClose={() => setShowAddModal(false)}
         title="Add Weight"
       >
-        <Input
-          label="Weight"
-          value={newWeight}
-          onChangeText={setNewWeight}
-          placeholder={`Enter weight in ${weightUnit}`}
-          keyboardType="decimal-pad"
-        />
+<Input
+        label="Weight"
+        value={newWeight}
+        onChangeText={(text) => setNewWeight(sanitizeWeightInput(text))}
+        placeholder={`Enter weight in ${weightUnit}`}
+        keyboardType="number-pad"
+        maxLength={5}
+      />
         <Button
           title="Save"
           onPress={async () => {
             const weight = parseFloat(newWeight);
             if (weight > 0) {
               try {
-                await weightStore.addEntry(authStore.userId!, weight);
-                await weightStore.loadEntries(authStore.userId!);
-                await weightStore.loadStats(authStore.userId!);
+                await weightStore.addEntry(auth.user!.id, weight);
+                await weightStore.loadEntries(auth.user!.id);
+                await weightStore.loadStats(auth.user!.id);
                 setNewWeight('');
                 setShowAddModal(false);
               } catch (e: any) {
@@ -336,8 +383,8 @@ export const WeightTrackerScreen = () => {
             if (weight > 0) {
               try {
                 weightStore.setGoalWeight(weight);
-                await weightStore.loadEntries(authStore.userId!);
-                await weightStore.loadStats(authStore.userId!);
+                await weightStore.loadEntries(auth.user!.id);
+                await weightStore.loadStats(auth.user!.id);
                 setGoalInput('');
                 setShowGoalModal(false);
               } catch (e: any) {

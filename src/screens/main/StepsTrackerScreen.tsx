@@ -18,7 +18,7 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
-import { useColors, useSettingsStore, useAuth, useStepsStore, useAuthStore, useWeightStore } from '../../hooks';
+import { useColors, useSettingsStore, useAuth, useStepsStore, useWeightStore } from '../../hooks';
 import { spacing, typography, radius, durations } from '../../theme';
 import { formatDate, formatStepsWithCommas, formatCalories } from '../../utils/helpers';
 import { stepsToCalories } from '../../utils/calculations';
@@ -31,50 +31,59 @@ const timeRangeOptions = [
   { value: '14', label: '14 Days' },
   { value: '30', label: '30 Days' },
   { value: '90', label: '90 Days' },
+  { value: 'all', label: 'All Time' },
 ];
 
 export const StepsTrackerScreen = () => {
   const colors = useColors();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { user } = useAuth();
   const stepsStore = useStepsStore();
-  const authStore = useAuthStore();
   const weightStore = useWeightStore();
-  
+  const [timeRange, setTimeRange] = useState('7');
+
   const todaySteps = stepsStore.todaySteps;
   const goalSteps = stepsStore.dailyGoal;
   const entries = stepsStore.weeklyEntries;
 
   useEffect(() => {
-    if (authStore.userId) {
-      stepsStore.loadTodaySteps(authStore.userId);
-      stepsStore.loadWeeklySteps(authStore.userId);
+    if (user?.id) {
+      stepsStore.loadTodaySteps(user.id);
+      stepsStore.loadWeeklySteps(user.id);
     }
-  }, [authStore.userId, stepsStore]);
+  }, [user?.id, stepsStore]);
 
   const currentWeight = weightStore.currentWeight;
 
   const weeklyStats = useMemo(() => {
-    const cutOff = new Date();
-    cutOff.setDate(cutOff.getDate() - 7);
-    const last7Entries = entries.filter((e) => new Date(e.date) >= cutOff);
+    const now = new Date();
+    let filteredEntries: StepEntry[];
 
-    const totalSteps = last7Entries.reduce((sum, e) => sum + e.steps, 0);
+    if (timeRange === 'all') {
+      filteredEntries = [...entries];
+    } else {
+      const days = parseInt(timeRange);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
+    }
+
+    const totalSteps = filteredEntries.reduce((sum, e) => sum + e.steps, 0);
     const userWeight = currentWeight || 70;
     const caloriesBurned = stepsToCalories(totalSteps, userWeight);
-    const achievedDays = last7Entries.filter((e) => e.steps >= goalSteps).length;
-    const goalAchievedPercent = last7Entries.length > 0
-      ? Math.round((achievedDays / last7Entries.length) * 100)
+    const achievedDays = filteredEntries.filter((e) => e.steps >= goalSteps).length;
+    const goalAchievedPercent = filteredEntries.length > 0
+      ? Math.round((achievedDays / filteredEntries.length) * 100)
       : 0;
 
     return {
       totalSteps,
       caloriesBurned,
       goalAchievedPercent,
+      entryCount: filteredEntries.length,
     };
-  }, [entries, goalSteps, currentWeight]);
+  }, [entries, goalSteps, currentWeight, timeRange]);
 
-  const [timeRange, setTimeRange] = useState('7');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newSteps, setNewSteps] = useState('');
   const [showGoalModal, setShowGoalModal] = useState(false);
@@ -96,14 +105,25 @@ export const StepsTrackerScreen = () => {
   }));
 
   const chartData = useMemo(() => {
-    const limit = parseInt(timeRange);
-    return entries
-      .slice(0, limit)
-      .reverse()
+    const now = new Date();
+    let filteredEntries: StepEntry[];
+
+    if (timeRange === 'all') {
+      filteredEntries = [...entries];
+    } else {
+      const days = parseInt(timeRange);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
+    }
+
+    return filteredEntries
       .map((e: StepEntry) => ({
         date: formatDate(e.date, 'dayMonth'),
         value: e.steps,
-      }));
+        timestamp: new Date(e.date).getTime(),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
   }, [entries, timeRange]);
 
   const chartWidth = SCREEN_WIDTH - spacing.xl * 2 - spacing.xl * 2;
@@ -241,7 +261,9 @@ export const StepsTrackerScreen = () => {
                 <Text style={[styles.statValue, { color: colors.text }]}>
                   {formatStepsWithCommas(weeklyStats.totalSteps)}
                 </Text>
-                <Text style={[styles.statUnit, { color: colors.textMuted }]}>This Week</Text>
+                <Text style={[styles.statUnit, { color: colors.textMuted }]}>
+                  {timeRange === 'all' ? 'All time' : `Last ${timeRange} days`}
+                </Text>
               </View>
 
               <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
@@ -256,7 +278,9 @@ export const StepsTrackerScreen = () => {
                 <Text style={[styles.statValue, { color: colors.text }]}>
                   {formatStepsWithCommas(weeklyStats.caloriesBurned)}
                 </Text>
-                <Text style={[styles.statUnit, { color: colors.textMuted }]}>kcal</Text>
+                <Text style={[styles.statUnit, { color: colors.textMuted }]}>
+                  {timeRange === 'all' ? 'All time (kcal)' : `Last ${timeRange} days (kcal)`}
+                </Text>
               </View>
             </View>
           </AnimatedCard>
@@ -325,9 +349,9 @@ export const StepsTrackerScreen = () => {
             const steps = parseInt(newSteps);
             if (steps > 0) {
               try {
-                await stepsStore.addSteps(authStore.userId!, steps);
-                await stepsStore.loadTodaySteps(authStore.userId!);
-                await stepsStore.loadWeeklySteps(authStore.userId!);
+                await stepsStore.addSteps(user!.id, steps);
+                await stepsStore.loadTodaySteps(user!.id);
+                await stepsStore.loadWeeklySteps(user!.id);
                 setNewSteps('');
                 setShowAddModal(false);
               } catch (e: any) {
@@ -360,8 +384,8 @@ export const StepsTrackerScreen = () => {
             if (steps > 0) {
               try {
                 stepsStore.setDailyGoal(steps);
-                await stepsStore.loadTodaySteps(authStore.userId!);
-                await stepsStore.loadWeeklySteps(authStore.userId!);
+                await stepsStore.loadTodaySteps(user!.id);
+                await stepsStore.loadWeeklySteps(user!.id);
                 setGoalInput('');
                 setShowGoalModal(false);
               } catch (e: any) {

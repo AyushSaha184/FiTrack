@@ -1,5 +1,5 @@
 export function camelToSnakeCase(str: string): string {
-  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+  return str.replace(/[A-Z]/g, (letter, index) => (index > 0 ? `_${letter.toLowerCase()}` : letter.toLowerCase()));
 }
 
 export function snakeToCamelCase(str: string): string {

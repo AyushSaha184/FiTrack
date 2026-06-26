@@ -30,6 +30,15 @@ export class ExerciseStore {
     return this.exerciseList.filter((e) => e.isCustom);
   }
 
+  get slugToIdMap(): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const e of this.exerciseList.values()) {
+      if (e.id && !map[e.id]) map[e.id] = e.id;
+      if ((e as any).slug) map[(e as any).slug] = e.id;
+    }
+    return map;
+  }
+
   getExercisesByMuscleGroup(muscleGroup: MuscleGroup): Exercise[] {
     return this.exerciseList.filter((e) => e.muscleGroup === muscleGroup);
   }

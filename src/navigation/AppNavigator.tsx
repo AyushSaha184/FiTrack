@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthNavigator } from './AuthNavigator';
 import { MainTabNavigator } from './MainTabNavigator';
 import { MetricSelectionScreen } from '../screens/onboarding/MetricSelectionScreen';
+import { NameInputScreen } from '../screens/auth/NameInputScreen';
 import { useAuth } from '../hooks';
 import { Loading } from '../components/common/Loading';
 import { useColors } from '../hooks';
@@ -11,7 +12,7 @@ import { useColors } from '../hooks';
 const Stack = createNativeStackNavigator();
 
 export const AppNavigator = () => {
-  const { isInitialized, isAuthenticated, isOnboarded } = useAuth();
+  const { isInitialized, isAuthenticated, isOnboarded, isNameRequired } = useAuth();
   const colors = useColors();
 
   const theme = {
@@ -35,6 +36,8 @@ export const AppNavigator = () => {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
+        ) : isNameRequired ? (
+          <Stack.Screen name="NameInput" component={NameInputScreen} />
         ) : !isOnboarded ? (
           <Stack.Screen name="MetricSelection" component={MetricSelectionScreen} />
         ) : (

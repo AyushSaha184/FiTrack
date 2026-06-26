@@ -2,13 +2,13 @@ import { makeAutoObservable, runInAction } from 'mobx';
 import type { StepEntry, StepSource } from '../models';
 import { stepsService } from '../services/supabase/steps';
 import { storage } from '../utils/storage';
-import { STORAGE_KEYS, DEFAULT_STEP_GOAL, getLast7Days, dateKey } from '../utils/helpers';
+import { STORAGE_KEYS, DEFAULT_STEP_GOAL, getLast7Days, dateKey, isValidUUID } from '../utils/helpers';
 import { generateId } from '../utils/helpers';
 import { stepsToCalories } from '../utils/calculations';
 
 export class StepsStore {
   todaySteps = 0;
-  dailyGoal = DEFAULT_STEP_GOAL;
+  dailyGoal: number = DEFAULT_STEP_GOAL;
   weeklyEntries: StepEntry[] = [];
   todayEntry: StepEntry | null = null;
   isLoading = false;
@@ -53,6 +53,10 @@ export class StepsStore {
   }
 
   async loadTodaySteps(userId: string) {
+    if (!isValidUUID(userId)) {
+      console.warn('[StepsStore] Skipping loadTodaySteps: invalid userId', userId);
+      return;
+    }
     try {
       this.isLoading = true;
       const today = dateKey(new Date());
@@ -74,6 +78,10 @@ export class StepsStore {
   }
 
   async loadWeeklySteps(userId: string, days = 90) {
+    if (!isValidUUID(userId)) {
+      console.warn('[StepsStore] Skipping loadWeeklySteps: invalid userId', userId);
+      return;
+    }
     try {
       this.isLoading = true;
       const startDate = new Date();
@@ -100,6 +108,10 @@ export class StepsStore {
   }
 
   async addSteps(userId: string, steps: number, date?: Date) {
+    if (!isValidUUID(userId)) {
+      console.warn('[StepsStore] Skipping addSteps: invalid userId', userId);
+      return;
+    }
     try {
       const dateStr = dateKey(date || new Date());
       const entry = await stepsService.upsertEntry(userId, dateStr, steps, 'manual');
@@ -127,10 +139,18 @@ export class StepsStore {
   }
 
   async updateTodaySteps(userId: string, steps: number) {
+    if (!isValidUUID(userId)) {
+      console.warn('[StepsStore] Skipping updateTodaySteps: invalid userId', userId);
+      return;
+    }
     return this.addSteps(userId, steps);
   }
 
   async syncFromHealthApp(userId: string, steps: number, source: StepSource = 'apple_health') {
+    if (!isValidUUID(userId)) {
+      console.warn('[StepsStore] Skipping syncFromHealthApp: invalid userId', userId);
+      return;
+    }
     try {
       const today = dateKey(new Date());
       const entry = await stepsService.upsertEntry(userId, today, steps, source);

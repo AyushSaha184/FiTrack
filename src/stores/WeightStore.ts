@@ -96,18 +96,15 @@ export class WeightStore {
 
   async addEntry(userId: string, weight: number, date?: Date, notes?: string) {
     try {
-      const { supabase } = await import('../services/supabase/client');
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session?.user?.id) {
-        console.error("No valid user ID found in session");
+      if (!userId) {
+        console.error("No valid user ID found");
         throw new Error('Not authenticated');
       }
       
       const entryDate = date || new Date();
       const entry = await weightService.addEntry({
         id: generateUUID(),
-        userId: session.user.id,
+        userId: userId,
         weight,
         date: entryDate.toISOString(),
         notes,

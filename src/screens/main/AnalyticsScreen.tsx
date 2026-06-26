@@ -5,7 +5,7 @@ import { Card } from '../../components/common/Card';
 import { SegmentedControl } from '../../components/common/SegmentedControl';
 import { ProgressBar } from '../../components/common/ProgressBar';
 import { Logo } from '../../components/common/Logo';
-import { useAuth, useColors, useWorkoutStore, useWeightStore, useStepsStore, useAuthStore } from '../../hooks';
+import { useAuth, useColors, useWorkoutStore, useWeightStore, useStepsStore } from '../../hooks';
 import { spacing, typography } from '../../theme';
 
 const timeRangeOptions = [
@@ -22,7 +22,6 @@ export const AnalyticsScreen = () => {
   const workoutStore = useWorkoutStore();
   const weightStore = useWeightStore();
   const stepsStore = useStepsStore();
-  const authStore = useAuthStore();
 
   // We access workouts list and steps list directly from stores
   const workoutsList = Array.from(workoutStore.workouts.values()) as any[];
@@ -30,14 +29,14 @@ export const AnalyticsScreen = () => {
   const weightEntries = weightStore.entries;
 
   useEffect(() => {
-    if (authStore.userId) {
-      workoutStore.loadWorkouts(authStore.userId);
-      weightStore.loadEntries(authStore.userId);
-      weightStore.loadStats(authStore.userId);
-      stepsStore.loadTodaySteps(authStore.userId);
-      stepsStore.loadWeeklySteps(authStore.userId);
+    if (user?.id) {
+      workoutStore.loadWorkouts(user.id);
+      weightStore.loadEntries(user.id);
+      weightStore.loadStats(user.id);
+      stepsStore.loadTodaySteps(user.id);
+      stepsStore.loadWeeklySteps(user.id);
     }
-  }, [authStore.userId, workoutStore, weightStore, stepsStore]);
+  }, [user?.id, workoutStore, weightStore, stepsStore]);
 
   const filterByDateRange = (items: any[], dateField = 'date') => {
     const limitDate = new Date();

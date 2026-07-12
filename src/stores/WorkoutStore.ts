@@ -173,10 +173,11 @@ export class WorkoutStore {
           this.saveDraft();
         });
       }
-return workout;
+      return workout;
+    }
   }
 
-async restoreActiveWorkout() {
+  async restoreActiveWorkout() {
     const dayDraft = storage.get<Workout>(this.getDayDraftKey(this.selectedDay));
     if (dayDraft) {
       runInAction(() => {

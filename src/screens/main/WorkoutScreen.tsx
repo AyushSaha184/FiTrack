@@ -89,14 +89,11 @@ export const WorkoutScreen = () => {
 
   // Get workout type label
   const getWorkoutTypeLabel = () => {
-    if (activeWorkout) {
-      return activeWorkout.name || 'Workout';
-    }
     if (plannedRoutines[dateStr]) {
       const planned = ROUTINE_OPTIONS.find(opt => opt.type === plannedRoutines[dateStr]);
-      return planned ? planned.label : 'Customize';
+      return planned ? planned.label : 'Customise';
     }
-    return 'Customize';
+    return 'Customise';
   };
 
   const handleSelectRoutine = (type: WorkoutType) => {
@@ -248,9 +245,7 @@ export const WorkoutScreen = () => {
                     if (isRestDay) {
                       handleCancelRestDay();
                     }
-                    if (!activeWorkout) {
-                      setShowRoutineModal(true);
-                    }
+                    setShowRoutineModal(true);
                   }}
                   activeOpacity={0.7}
                 >
@@ -431,7 +426,7 @@ export const WorkoutScreen = () => {
       >
         <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
           <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-            Choose a workout routine to start today:
+            Choose a workout routine for today:
           </Text>
           <View style={styles.routineGrid}>
             {ROUTINE_OPTIONS.map((item) => (

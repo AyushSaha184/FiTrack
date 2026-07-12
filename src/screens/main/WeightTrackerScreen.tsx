@@ -349,8 +349,6 @@ export const WeightTrackerScreen = () => {
             if (weight > 0) {
               try {
                 await weightStore.addEntry(auth.user!.id, weight);
-                await weightStore.loadEntries(auth.user!.id);
-                await weightStore.loadStats(auth.user!.id);
                 setNewWeight('');
                 setShowAddModal(false);
               } catch (e: any) {

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors, useSettingsStore, useWeightStore, useStepsStore, useAuthStore } from '../../hooks';
 import { Button } from '../../components/common/Button';
 import { spacing, typography, radius } from '../../theme';
+import { logger } from '../../utils/logger';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 // Custom premium Scale SVG Icon for metrics header
@@ -52,7 +53,7 @@ export const MetricSelectionScreen = () => {
       // Finalize onboarding in database
       await authStore.completeOnboarding();
     } catch (error) {
-      console.error('Failed to save metrics:', error);
+      logger.error('Failed to save metrics:', error);
     } finally {
       setIsSubmitting(false);
     }

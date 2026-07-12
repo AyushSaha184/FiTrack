@@ -10,6 +10,7 @@ import {
   Share,
   Platform,
   Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -24,6 +25,8 @@ import { Logo } from '../../components/common/Logo';
 import { useAuth, useColors, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { errorLogs } from '../../utils/logger';
+import { CONFIG } from '../../config/constants';
+import { crashReportsService } from '../../services/supabase/crashReports';
 
 export const SettingsScreen = () => {
   const colors = useColors();
@@ -40,23 +43,10 @@ export const SettingsScreen = () => {
   };
 
   const handleSendCrashReport = async () => {
-    const reportData = {
-      reportType: "FiTrack Bug & Crash Report",
-      timestamp: new Date().toISOString(),
-      app: {
-        name: "FiTrack",
-        version: "1.0.0",
-      },
-      device: {
-        os: Platform.OS,
-        osVersion: Platform.Version,
-        isDevMode: __DEV__,
-      },
-      user: {
-        name: user?.name || "Athlete",
-        email: user?.email || "unauthenticated",
-        id: user?.id || "unknown",
-      },
+    const payload = crashReportsService.buildPayload({
+      userName: user?.name,
+      userEmail: user?.email,
+      userId: user?.id,
       settings: {
         theme: settingsStore.theme,
         units: settingsStore.units,
@@ -65,17 +55,27 @@ export const SettingsScreen = () => {
         recordBugReports: settingsStore.recordBugReports,
       },
       diagnosticLogs: errorLogs,
-    };
+    });
 
-    const crashReport = JSON.stringify(reportData, null, 2);
+    const crashReport = JSON.stringify(payload, null, 2);
+
+    crashReportsService.submit(payload);
+
+    const subject = `FiTrack Crash Report - v${payload.app.version}`;
+    const emailUrl = `mailto:ayushsaha184@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(crashReport)}`;
 
     try {
-      await Share.share({
-        title: 'FiTrack Crash Report',
-        message: crashReport,
-      });
+      const canOpen = await Linking.canOpenURL(emailUrl);
+      if (canOpen) {
+        await Linking.openURL(emailUrl);
+      } else {
+        await Share.share({
+          title: 'FiTrack Crash Report',
+          message: crashReport,
+        });
+      }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to share crash report');
+      Alert.alert('Error', error.message || 'Failed to send crash report');
     }
   };
 
@@ -233,10 +233,10 @@ export const SettingsScreen = () => {
             </Text>
 
             {[
-              'Enable "Record Bug Reports" toggle above to capture errors.',
-              'If you encounter an issue, tap "Send Crash Report" above.',
-              'Select your email or messaging client to share the report.',
-              'Your report helps us make FiTrack better for everyone.',
+              'Crash reports are sent automatically when an error occurs.',
+              'The "Record Bug Reports" toggle controls local error logging.',
+              'Tap "Send Crash Report" to manually send a report anytime.',
+              'Your reports help us make FiTrack better for everyone.',
             ].map((step, index) => (
               <View key={index} style={styles.stepRow}>
                 <View style={[styles.stepNumber, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
@@ -253,7 +253,7 @@ export const SettingsScreen = () => {
 
           <View style={styles.footer}>
             <Text style={[styles.version, { color: colors.textMuted }]}>
-              FiTrack v1.0.0
+              FiTrack v{CONFIG.APP_VERSION}
             </Text>
           </View>
         </ScrollView>

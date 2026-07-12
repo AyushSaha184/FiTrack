@@ -2,6 +2,7 @@ import { makeAutoObservable, runInAction } from 'mobx';
 import type { WeightEntry } from '../models';
 import { weightService } from '../services/supabase/weight';
 import { generateUUID, dateKey } from '../utils/helpers';
+import { logger } from '../utils/logger';
 
 export class WeightStore {
   entries: WeightEntry[] = [];
@@ -69,7 +70,7 @@ export class WeightStore {
         }
       });
     } catch (error: any) {
-      console.error('[WeightStore] loadEntries error:', error);
+      logger.error('[WeightStore] loadEntries error:', error);
       runInAction(() => {
         this.error = error.message;
       });
@@ -87,7 +88,7 @@ export class WeightStore {
         this.stats = stats;
       });
     } catch (error: any) {
-      console.error('[WeightStore] loadStats error:', error);
+      logger.error('[WeightStore] loadStats error:', error);
       runInAction(() => {
         this.error = error.message;
       });
@@ -97,7 +98,7 @@ export class WeightStore {
   async addEntry(userId: string, weight: number, date?: Date, notes?: string) {
     try {
       if (!userId) {
-        console.error("No valid user ID found");
+        logger.error("No valid user ID found");
         throw new Error('Not authenticated');
       }
       
@@ -125,7 +126,7 @@ export class WeightStore {
       });
       return entry;
     } catch (error: any) {
-      console.error('[WeightStore] addEntry error:', error);
+      logger.error('[WeightStore] addEntry error:', error);
       runInAction(() => {
         this.error = error.message;
       });

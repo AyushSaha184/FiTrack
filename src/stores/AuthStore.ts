@@ -1,11 +1,12 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { createContext, useContext } from 'react';
-import { firebaseAuthService } from '../services/firebase/auth';
+import { supabaseAuthService } from '../services/supabase/auth';
+import { supabase } from '../services/supabase/client';
 import type { User, UserPreferences, Units } from '../models';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS } from '../utils/constants';
 import type { LoginInput, SignupInput } from '../utils/validators';
-import firestore from '@react-native-firebase/firestore';
+import { logger } from '../utils/logger';
 
 const defaultPreferences: UserPreferences = {
   units: { weight: 'kg', height: 'cm', temperature: 'celsius' },
@@ -34,8 +35,10 @@ export class AuthStore {
   isInitialized = false;
   error: string | null = null;
   isAuthenticated = false;
-  // New: Track if user needs to set their name (for Google sign-in)
+  // Track if user needs to set their name (for Google sign-in)
   isNameRequired = false;
+
+  private authUnsubscribe: (() => void) | null = null;
 
   constructor() {
     makeAutoObservable(this);
@@ -57,12 +60,32 @@ export class AuthStore {
     if (this.isInitialized) return;
     try {
       this.isLoading = true;
-      const { user } = await firebaseAuthService.getUser();
-      if (user) {
-        await this.fetchUser(user);
+
+      // Check for existing session
+      const { session } = await supabaseAuthService.getSession();
+      if (session?.user) {
+        await this.fetchUser(session.user);
       }
+
+      // Listen for auth state changes (token refresh, sign-out from another tab, etc.)
+      this.authUnsubscribe = supabaseAuthService.onAuthStateChange(
+        (event, newSession) => {
+          console.log('[AuthStore] onAuthStateChange event:', event);
+          if (event === 'SIGNED_OUT') {
+            runInAction(() => {
+              this.user = null;
+              this.isAuthenticated = false;
+              this.isNameRequired = false;
+            });
+          } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
+            runInAction(() => {
+              this.fetchUser(newSession.user);
+            });
+          }
+        },
+      );
     } catch (error) {
-      console.error('[AuthStore] initialize error:', error);
+      logger.error('[AuthStore] initialize error:', error);
     } finally {
       runInAction(() => {
         this.isLoading = false;
@@ -71,72 +94,104 @@ export class AuthStore {
     }
   }
 
-  async fetchUser(firebaseUser: any, isGoogleSignIn = false) {
+  async fetchUser(supabaseUser: any, isGoogleSignIn = false) {
     console.log('[AuthStore] fetchUser starting...');
     try {
-      const user = firebaseUser !== undefined ? firebaseUser : (await firebaseAuthService.getUser()).user;
-      console.log('[AuthStore] fetchUser got user:', user?.email);
-      
-      if (user) {
-        const userDoc = await firestore().collection('users').doc(user.uid).get();
-        
-        if (!userDoc.exists) {
-          console.log('[AuthStore] User document not found in Firestore, creating...');
-          await firestore().collection('users').doc(user.uid).set({
-            uid: user.uid,
-            email: user.email,
-            displayName: user.displayName || null,
-            photoURL: user.photoURL || null,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-            onboardingCompleted: false,
-          });
-        }
-
-        const userData = userDoc.data() || {};
-        const displayName = userData.displayName || user.displayName;
-        const onboardingCompleted = userData.onboardingCompleted ?? false;
-
-        // For Google sign-in: if no name is set, require name input
-        const needsName = isGoogleSignIn && !displayName;
-
-        runInAction(() => {
-          this.user = {
-            id: user.uid,
-            email: user.email || '',
-            name: displayName || 'Athlete',
-            avatarUrl: userData.photoURL || user.photoURL,
-            createdAt: new Date(user.metadata.creationTime),
-            updatedAt: new Date(user.metadata.lastSignInTime),
-            preferences: defaultPreferences,
-            profile: { fitnessLevel: 'beginner' },
-            onboardingCompleted: onboardingCompleted,
-          };
-          this.isAuthenticated = true;
-          this.isNameRequired = needsName;
-        });
-        console.log('[AuthStore] fetchUser completed, isAuthenticated =', this.isAuthenticated, 'isNameRequired =', needsName);
-      } else {
+      const user = supabaseUser;
+      if (!user) {
         console.log('[AuthStore] fetchUser: no user');
+        return;
       }
+
+      console.log('[AuthStore] fetchUser got user:', user.email);
+
+      // Read profile from profiles table (handle_new_user trigger auto-creates it)
+      let { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        logger.error('[AuthStore] Error reading profile:', profileError);
+      }
+
+      // If profile doesn't exist yet (trigger may not have fired yet), create it
+      if (!profile) {
+        console.log('[AuthStore] Profile not found, inserting...');
+        const metadata = user.user_metadata || {};
+        const { data: inserted, error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            email: user.email,
+            name: metadata.name || metadata.full_name || 'Athlete',
+            avatar_url: metadata.avatar_url || metadata.picture || null,
+            onboarding_completed: false,
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          logger.error('[AuthStore] Failed to insert profile:', insertError);
+          return;
+        }
+        profile = inserted;
+      }
+
+      const displayName = profile?.name || user.user_metadata?.name || 'Athlete';
+      const onboardingCompleted = profile?.onboarding_completed ?? false;
+
+      // For Google sign-in: if no name is set, require name input
+      const needsName = isGoogleSignIn && (!displayName || displayName === 'Athlete');
+
+      runInAction(() => {
+        this.user = {
+          id: user.id,
+          email: user.email || '',
+          name: displayName,
+          avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url,
+          createdAt: new Date(user.created_at),
+          updatedAt: new Date(),
+          preferences: defaultPreferences,
+          profile: {
+            fitnessLevel: profile?.fitness_level || 'beginner',
+            age: profile?.age,
+            gender: profile?.gender,
+            height: profile?.height ? Number(profile.height) : undefined,
+            goalWeight: profile?.goal_weight ? Number(profile.goal_weight) : undefined,
+            weeklyGoal: profile?.weekly_goal,
+          },
+          onboardingCompleted,
+        };
+        this.isAuthenticated = true;
+        this.isNameRequired = needsName;
+      });
+      console.log('[AuthStore] fetchUser completed, isAuthenticated =', this.isAuthenticated, 'isNameRequired =', needsName);
     } catch (error) {
-      console.error('[AuthStore] fetchUser error:', error);
+      logger.error('[AuthStore] fetchUser error:', error);
     }
   }
 
-  // New: Set user's name after Google sign-in
+  // Set user's name after Google sign-in
   async setUserName(name: string) {
     if (!this.user) return;
     try {
       this.isLoading = true;
-      await firestore().collection('users').doc(this.user.id).update({
-        displayName: name,
-      });
+      await supabase
+        .from('profiles')
+        .update({ name })
+        .eq('id', this.user.id);
+
+      // Also update auth metadata
+      await supabase.auth.updateUser({ data: { name, full_name: name } });
+
       runInAction(() => {
         this.user!.name = name;
         this.isNameRequired = false;
       });
     } catch (error: any) {
-      console.error('[AuthStore] setUserName error:', error);
+      logger.error('[AuthStore] setUserName error:', error);
       throw error;
     } finally {
       runInAction(() => {
@@ -150,16 +205,16 @@ export class AuthStore {
     try {
       this.error = null;
       this.isLoading = true;
-      console.log('[AuthStore] calling firebaseAuthService.login...');
-      const response = await firebaseAuthService.login(input);
-      console.log('[AuthStore] firebaseAuthService.login succeeded, response:', response);
+      console.log('[AuthStore] calling supabaseAuthService.login...');
+      const response = await supabaseAuthService.login(input);
+      console.log('[AuthStore] supabaseAuthService.login succeeded');
       console.log('[AuthStore] calling fetchUser...');
       await this.fetchUser(response.user, false);
       if (!this.isAuthenticated) {
         throw new Error('Failed to load user profile. Please try logging in again.');
       }
     } catch (error: any) {
-      console.error('[AuthStore] login encountered error:', error);
+      logger.error('[AuthStore] login encountered error:', error);
       runInAction(() => {
         this.error = error.message || 'Login failed';
       });
@@ -177,15 +232,16 @@ export class AuthStore {
     try {
       this.error = null;
       this.isLoading = true;
-      console.log('[AuthStore] calling firebaseAuthService.signup...');
-      const response = await firebaseAuthService.signup(input);
-      console.log('[AuthStore] firebaseAuthService.signup succeeded, response:', response);
-      if (response.user) {
-        console.log('[AuthStore] signup receivedesticular user, fetching user data...');
+      console.log('[AuthStore] calling supabaseAuthService.signup...');
+      const response = await supabaseAuthService.signup(input);
+      console.log('[AuthStore] supabaseAuthService.signup succeeded');
+      // If auto-confirm is enabled (dev mode), session is returned immediately
+      if (response.session && response.user) {
+        console.log('[AuthStore] signup received session (auto-confirm), fetching user...');
         await this.fetchUser(response.user, false);
       }
     } catch (error: any) {
-      console.error('[AuthStore] signup encountered error:', error);
+      logger.error('[AuthStore] signup encountered error:', error);
       runInAction(() => {
         this.error = error.message || 'Signup failed';
       });
@@ -204,7 +260,7 @@ export class AuthStore {
       this.error = null;
       this.isLoading = true;
       if (provider === 'google') {
-        const response = await firebaseAuthService.signInWithGoogle();
+        const response = await supabaseAuthService.signInWithGoogle();
         console.log('[AuthStore] socialLogin signInWithGoogle succeeded, fetching user...');
         await this.fetchUser(response.user, true);
         if (!this.isAuthenticated) {
@@ -212,7 +268,7 @@ export class AuthStore {
         }
       }
     } catch (error: any) {
-      console.error('[AuthStore] socialLogin encountered error:', error);
+      logger.error('[AuthStore] socialLogin encountered error:', error);
       runInAction(() => {
         this.error = error.message || 'Social login failed';
       });
@@ -228,9 +284,9 @@ export class AuthStore {
   async logout() {
     try {
       this.isLoading = true;
-      await firebaseAuthService.signOut();
+      await supabaseAuthService.signOut();
     } catch (error) {
-      console.error('[AuthStore] logout error:', error);
+      logger.error('[AuthStore] logout error:', error);
     } finally {
       runInAction(() => {
         this.user = null;
@@ -244,7 +300,7 @@ export class AuthStore {
   async resetPassword(email: string) {
     try {
       this.error = null;
-      await firebaseAuthService.resetPassword(email);
+      await supabaseAuthService.resetPassword(email);
     } catch (error: any) {
       runInAction(() => {
         this.error = error.message || 'Password reset failed';
@@ -259,7 +315,18 @@ export class AuthStore {
     runInAction(() => {
       this.user = { ...this.user!, onboardingCompleted: true };
     });
-    await firebaseAuthService.updateProfile({
+
+    // Update profiles table
+    const { error } = await supabase
+      .from('profiles')
+      .update({ onboarding_completed: true })
+      .eq('id', userId);
+    if (error) {
+      logger.error('[AuthStore] Failed to update onboarding_completed in profiles:', error);
+    }
+
+    // Also update auth metadata
+    await supabaseAuthService.updateProfile({
       name: this.user!.name,
       onboardingCompleted: true,
     });
@@ -268,7 +335,7 @@ export class AuthStore {
   async updateProfile(updates: { name?: string; email?: string }) {
     if (!this.user) return;
     try {
-      await firebaseAuthService.updateProfile(updates);
+      await supabaseAuthService.updateProfile(updates);
       runInAction(() => {
         if (updates.name) this.user!.name = updates.name;
       });
@@ -282,6 +349,13 @@ export class AuthStore {
 
   clearError() {
     this.error = null;
+  }
+
+  dispose() {
+    if (this.authUnsubscribe) {
+      this.authUnsubscribe();
+      this.authUnsubscribe = null;
+    }
   }
 }
 

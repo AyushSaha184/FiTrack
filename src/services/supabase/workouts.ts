@@ -8,6 +8,7 @@ export const workoutsService = {
       .from('exercises')
       .select('id')
       .eq('slug', slug)
+      .order('user_id', { nullsFirst: false })
       .limit(1);
     if (error || !data || data.length === 0) return null;
     return data[0].id;
@@ -61,10 +62,10 @@ export const workoutsService = {
     const { error } = await supabase.from('workouts').delete().eq('id', workoutId);
     if (error) throw error;
   },
-  async addExercise(workoutId: string, exerciseId: string, order: number) {
+  async addExercise(workoutId: string, exerciseId: string, orderIndex: number) {
     const { data, error } = await supabase
       .from('workout_exercises')
-      .insert({ workout_id: workoutId, exercise_id: exerciseId, order })
+      .insert({ workout_id: workoutId, exercise_id: exerciseId, order_index: orderIndex })
       .select()
       .single();
     if (error) throw error;

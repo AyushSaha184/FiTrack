@@ -1,4 +1,4 @@
-import { addDays, differenceInDays, format, startOfWeek, subDays } from 'date-fns';
+import { addDays, format, startOfWeek, subDays } from 'date-fns';
 import type { DayOfWeek } from '../models';
 import { CONFIG } from '../config/constants';
 
@@ -98,16 +98,8 @@ export const getDayOfWeekKey = (date: Date): DayOfWeek => {
   return keys[date.getDay()];
 };
 
-export const daysBetween = (a: Date, b: Date): number => {
-  return Math.abs(differenceInDays(a, b));
-};
-
 export const todayKey = (): string => format(new Date(), 'yyyy-MM-dd');
 export const dateKey = (date: Date): string => format(date, 'yyyy-MM-dd');
-
-export const sleep = (ms: number): Promise<void> => {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-};
 
 export const generateId = (): string => {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 11)}`;
@@ -124,21 +116,6 @@ export const generateUUID = (): string => {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
-};
-
-export const clamp = (value: number, min: number, max: number): number => {
-  return Math.min(Math.max(value, min), max);
-};
-
-export const debounce = <T extends (...args: any[]) => void>(
-  fn: T,
-  delay: number,
-): ((...args: Parameters<T>) => void) => {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeoutId) clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
 };
 
 export const getLast7Days = (): Date[] => {

@@ -70,11 +70,4 @@ export const storage = {
       }
     }
   },
-  getAllKeys: (): string[] => {
-    try {
-      return getStorage().getAllKeys();
-    } catch {
-      return [];
-    }
-  },
 };

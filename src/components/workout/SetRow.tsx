@@ -55,7 +55,12 @@ export const SetRow = memo<SetRowProps>(({
   };
 
 const sanitizeWeightInput = (raw: string): string => {
-  return raw.replace(/[^0-9]/g, '').slice(0, 4);
+  let text = raw.replace(/[^0-9.]/g, '');
+  const dotIndex = text.indexOf('.');
+  if (dotIndex !== -1) {
+    text = text.slice(0, dotIndex + 1) + text.slice(dotIndex + 1).replace(/\./g, '');
+  }
+  return text.slice(0, 6);
 };
 
 const sanitizeRepsInput = (raw: string): string => {

@@ -1,6 +1,6 @@
 export type Set = {
   id: string;
-  order: number;
+  orderIndex: number;
   weight: number;
   reps: number;
   rpe?: number;
@@ -19,7 +19,7 @@ export type WorkoutExercise = {
     muscleGroup: string;
     equipment: string;
   };
-  order: number;
+  orderIndex: number;
   sets: Set[];
   notes?: string;
   createdAt: Date;

@@ -38,7 +38,7 @@ export const weightService = {
     const dbEntry = toSnakeCaseKeys(rest);
     const { data, error } = await supabase
       .from('weight_entries')
-      .insert({ ...dbEntry, user_id: userId })
+      .upsert({ ...dbEntry, user_id: userId }, { onConflict: 'user_id,date' })
       .select()
       .single();
     if (error) throw error;

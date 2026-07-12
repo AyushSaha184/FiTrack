@@ -84,8 +84,7 @@ export const StepsTrackerScreen = () => {
     };
   }, [entries, goalSteps, currentWeight, timeRange]);
 
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newSteps, setNewSteps] = useState('');
+  
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalInput, setGoalInput] = useState('');
 
@@ -329,40 +328,6 @@ export const StepsTrackerScreen = () => {
           <View style={{ height: 100 }} />
         </ScrollView>
       </AnimatedScreen>
-
-      {/* Add Steps Modal */}
-      <Modal
-        visible={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        title="Add Steps"
-      >
-        <Input
-          label="Steps"
-          value={newSteps}
-          onChangeText={setNewSteps}
-          placeholder="Enter step count"
-          keyboardType="number-pad"
-        />
-        <Button
-          title="Save"
-          onPress={async () => {
-            const steps = parseInt(newSteps);
-            if (steps > 0) {
-              try {
-                await stepsStore.addSteps(user!.id, steps);
-                await stepsStore.loadTodaySteps(user!.id);
-                await stepsStore.loadWeeklySteps(user!.id);
-                setNewSteps('');
-                setShowAddModal(false);
-              } catch (e: any) {
-                Alert.alert('Error', e.message || 'Failed to add steps');
-              }
-            }
-          }}
-          fullWidth
-          style={{ marginTop: spacing.base }}
-        />
-      </Modal>
 
       {/* Goal Modal */}
       <Modal

@@ -18,6 +18,7 @@ import { useAuth, useColors } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { signupSchema } from '../../utils/validators';
 import type { AuthStackParamList } from '../../types/navigation';
+import { logger } from '../../utils/logger';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Signup'>;
@@ -81,7 +82,7 @@ const GoogleLogo = () => (
 export const SignupScreen = () => {
   const colors = useColors();
   const navigation = useNavigation<NavigationProp>();
-  const { signup, socialLogin, isLoading } = useAuth();
+  const { signup, socialLogin, isLoading, isAuthenticated } = useAuth();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -126,9 +127,11 @@ export const SignupScreen = () => {
       console.log('[SignupScreen] Calling signup function...');
       await signup(result.data);
       console.log('[SignupScreen] Signup completed successfully');
-      navigation.navigate('Login');
+      if (!isAuthenticated) {
+        navigation.navigate('Login');
+      }
     } catch (e: any) {
-      console.error('[SignupScreen] Signup caught error:', e);
+      logger.error('[SignupScreen] Signup caught error:', e);
       const signupError = e?.message?.toLowerCase().includes('already')
         ? 'An account with this email already exists.'
         : mapAuthError(e);
@@ -142,7 +145,7 @@ export const SignupScreen = () => {
     try {
       await socialLogin('google');
     } catch (e: any) {
-      console.error('[SignupScreen] Google login error:', e);
+      logger.error('[SignupScreen] Google login error:', e);
       const googleError = e?.message?.toLowerCase().includes('cancel')
         ? 'Google sign-in was cancelled.'
         : mapAuthError(e);

@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  FlatList,
 } from 'react-native';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -170,16 +169,7 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
                 RESULTS ({searchResults.length})
               </Text>
               {searchResults.length > 0 ? (
-                <FlatList
-                  data={searchResults}
-                  keyExtractor={(item) => item.id}
-                  renderItem={({ item, index }) => renderExerciseItem(item, index)}
-                  scrollEnabled={false}
-                  initialNumToRender={10}
-                  maxToRenderPerBatch={10}
-                  windowSize={5}
-                  removeClippedSubviews={true}
-                />
+                searchResults.map((item, index) => renderExerciseItem(item, index))
               ) : (
                 <Text style={[styles.emptyText, { color: colors.textMuted }]}>
                   No exercises found for "{searchQuery}"

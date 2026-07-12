@@ -8,5 +8,4 @@ export { Input } from './Input';
 export { Loading } from './Loading';
 export { Modal } from './Modal';
 export { ProgressBar } from './ProgressBar';
-export { SegmentedControl } from './SegmentedControl';
 export { Logo } from './Logo';

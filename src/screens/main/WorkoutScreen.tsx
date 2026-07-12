@@ -504,7 +504,9 @@ export const WorkoutScreen = () => {
             text: 'Rest Day',
             onPress: async () => {
               setShowRestDayAlert(false);
-              await workoutStore.cancelWorkout();
+              storage.delete('workout.active.draft');
+              storage.delete(`workout.draft.${selectedDay}`);
+              workoutStore.activeWorkout = null;
               const newRestDays = { ...restDays, [dateStr]: true };
               setRestDays(newRestDays);
               storage.set('workout.rest_days', newRestDays);

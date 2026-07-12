@@ -4,6 +4,7 @@ import { stepsService } from '../services/supabase/steps';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS, DEFAULT_STEP_GOAL, getLast7Days, dateKey, isValidUUID } from '../utils/helpers';
 import { generateId } from '../utils/helpers';
+import { logger } from '../utils/logger';
 import { stepsToCalories } from '../utils/calculations';
 
 export class StepsStore {
@@ -66,7 +67,7 @@ export class StepsStore {
         this.todaySteps = entry?.steps ?? 0;
       });
     } catch (error: any) {
-      console.error('[StepsStore] loadTodaySteps error:', error);
+      logger.error('[StepsStore] loadTodaySteps error:', error);
       runInAction(() => {
         this.error = error.message;
       });
@@ -96,7 +97,7 @@ export class StepsStore {
         }));
       });
     } catch (error: any) {
-      console.error('[StepsStore] loadWeeklySteps error:', error);
+      logger.error('[StepsStore] loadWeeklySteps error:', error);
       runInAction(() => {
         this.error = error.message;
       });
@@ -130,7 +131,7 @@ export class StepsStore {
       });
       return entry;
     } catch (error: any) {
-      console.error('[StepsStore] addSteps error:', error);
+      logger.error('[StepsStore] addSteps error:', error);
       runInAction(() => {
         this.error = error.message;
       });

@@ -18,6 +18,7 @@ import { useAuth, useColors } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { loginSchema } from '../../utils/validators';
 import type { AuthStackParamList } from '../../types/navigation';
+import { logger } from '../../utils/logger';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
@@ -117,7 +118,7 @@ export const LoginScreen = () => {
       await login(result.data);
       console.log('[LoginScreen] Login completed successfully');
     } catch (e: any) {
-      console.error('[LoginScreen] Login caught error:', e);
+      logger.error('[LoginScreen] Login caught error:', e);
       const generalError = mapAuthError(e);
       setErrors({ general: generalError });
     }
@@ -129,7 +130,7 @@ export const LoginScreen = () => {
     try {
       await socialLogin('google');
     } catch (e: any) {
-      console.error('[LoginScreen] Google login error:', e);
+      logger.error('[LoginScreen] Google login error:', e);
       const googleError = e?.message?.toLowerCase().includes('cancel')
         ? 'Google sign-in was cancelled.'
         : mapAuthError(e);

@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "https://deno.land/x/jose@v5.2.0/index.ts": "https://deno.land/x/jose@v5.2.0/index.ts"
+  },
+  "compilerOptions": {
+    "lib": ["deno.window"]
+  }
+}

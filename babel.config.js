@@ -11,6 +11,7 @@ module.exports = {
           'EXPO_PUBLIC_APP_ENV',
           'EXPO_PUBLIC_SENTRY_DSN',
           'EXPO_PUBLIC_ENABLE_ANALYTICS',
+          'EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID',
         ],
       },
     ],

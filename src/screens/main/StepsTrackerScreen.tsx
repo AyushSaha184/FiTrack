@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { observer } from 'mobx-react-lite';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -18,6 +19,7 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
+import { CustomAlert } from '../../components/common/CustomAlert';
 import { useColors, useSettingsStore, useAuth, useStepsStore, useWeightStore } from '../../hooks';
 import { spacing, typography, radius, durations } from '../../theme';
 import { formatDate, formatStepsWithCommas, formatCalories } from '../../utils/helpers';
@@ -34,7 +36,7 @@ const timeRangeOptions = [
   { value: 'all', label: 'All Time' },
 ];
 
-export const StepsTrackerScreen = () => {
+export const StepsTrackerScreen = observer(() => {
   const colors = useColors();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -116,16 +118,33 @@ export const StepsTrackerScreen = () => {
       filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
     }
 
-    return filteredEntries
-      .map((e: StepEntry) => ({
-        date: formatDate(e.date, 'dayMonth'),
-        value: e.steps,
-        timestamp: new Date(e.date).getTime(),
-      }))
-      .sort((a, b) => a.timestamp - b.timestamp);
+    const getTimestamp = (e: StepEntry) => {
+      const d = e.createdAt ? new Date(e.createdAt) : new Date(e.date);
+      const t = d.getTime();
+      return isNaN(t) ? 0 : t;
+    };
+
+    const sorted = [...filteredEntries].sort((a, b) => {
+      const tA = getTimestamp(a);
+      const tB = getTimestamp(b);
+      if (tA !== tB) return tA - tB;
+      return filteredEntries.indexOf(b) - filteredEntries.indexOf(a);
+    });
+
+    return sorted.map((e: StepEntry) => ({
+      date: formatDate(e.date, 'dayMonth'),
+      value: e.steps,
+      timestamp: getTimestamp(e),
+    }));
   }, [entries, timeRange]);
 
   const chartWidth = SCREEN_WIDTH - spacing.xl * 2 - spacing.xl * 2;
+
+  const [deleteTarget, setDeleteTarget] = useState<StepEntry | null>(null);
+
+  const handleDeleteEntry = (entry: StepEntry) => {
+    setDeleteTarget(entry);
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -289,40 +308,56 @@ export const StepsTrackerScreen = () => {
             <Text style={[styles.cardTitle, { color: colors.text }]}>
               History
             </Text>
-            {entries.slice(0, 7).map((entry: StepEntry, index: number) => (
-              <View
-                key={entry.id}
-                style={[
-                  styles.historyItem,
-                  index < 6 && {
-                    borderBottomWidth: 1,
-                    borderBottomColor: colors.cardBorder,
-                  },
-                ]}
-              >
-                <View style={styles.historyLeft}>
-                  <View
-                    style={[
-                      styles.historyIcon,
-                      { backgroundColor: 'rgba(255,255,255,0.05)' },
-                    ]}
-                  >
-                    <Text style={styles.historyIconText}>👟</Text>
+            {entries.slice(0, 6).map((entry: StepEntry, index: number) => {
+              const displayLimit = Math.min(entries.length, 6);
+              return (
+                <View
+                  key={entry.id}
+                  style={[
+                    styles.historyItem,
+                    index < displayLimit - 1 && {
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.cardBorder,
+                    },
+                  ]}
+                >
+                  <View style={styles.historyLeft}>
+                    <View
+                      style={[
+                        styles.historyIcon,
+                        { backgroundColor: 'rgba(255,255,255,0.05)' },
+                      ]}
+                    >
+                      <Text style={styles.historyIconText}>👟</Text>
+                    </View>
+                    <View>
+                      <Text style={[styles.historyDate, { color: colors.text }]}>
+                        {formatDate(entry.date, 'short')}
+                      </Text>
+                      <Text style={[styles.historyDay, { color: colors.textMuted }]}>
+                        {formatDate(entry.date, 'long').split(',')[0]}
+                      </Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={[styles.historyDate, { color: colors.text }]}>
-                      {formatDate(entry.date, 'short')}
+                  <View style={styles.historyRight}>
+                    <Text style={[styles.historySteps, { color: colors.text }]}>
+                      {formatStepsWithCommas(entry.steps)} steps
                     </Text>
-                    <Text style={[styles.historyDay, { color: colors.textMuted }]}>
-                      {formatDate(entry.date, 'long').split(',')[0]}
-                    </Text>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteEntry(entry)}
+                      style={styles.deleteButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      activeOpacity={0.7}
+                    >
+                      <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FF453A" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                        <Path d="M3 6h18" />
+                        <Path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                      </Svg>
+                    </TouchableOpacity>
                   </View>
                 </View>
-                <Text style={[styles.historySteps, { color: colors.text }]}>
-                  {formatStepsWithCommas(entry.steps)} steps
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </AnimatedCard>
 
           <View style={{ height: 100 }} />
@@ -362,9 +397,35 @@ export const StepsTrackerScreen = () => {
           style={{ marginTop: spacing.base }}
         />
       </Modal>
+
+      {/* Custom Delete Confirmation Alert */}
+      <CustomAlert
+        visible={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Step Entry"
+        message={deleteTarget ? `Are you sure you want to delete ${formatStepsWithCommas(deleteTarget.steps)} steps from ${formatDate(deleteTarget.date, 'short')}?` : ''}
+        actions={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setDeleteTarget(null) },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              if (deleteTarget) {
+                try {
+                  await stepsStore.deleteEntry(deleteTarget.id);
+                } catch (e: any) {
+                  Alert.alert('Error', e.message || 'Failed to delete step entry');
+                } finally {
+                  setDeleteTarget(null);
+                }
+              }
+            },
+          },
+        ]}
+      />
     </SafeAreaView>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -561,6 +622,15 @@ const styles = StyleSheet.create({
   historySteps: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  historyRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  deleteButton: {
+    padding: spacing.xs,
+    marginLeft: spacing.xs,
   },
   addButton: {
     flexDirection: 'row',

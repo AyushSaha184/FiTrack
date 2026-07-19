@@ -2,7 +2,7 @@ import { makeAutoObservable, runInAction } from 'mobx';
 import type { Workout, WorkoutExercise, Set, WorkoutType, DayOfWeek } from '../models';
 import { workoutsService } from '../services/supabase/workouts';
 import { storage } from '../utils/storage';
-import { STORAGE_KEYS } from '../utils/constants';
+import { STORAGE_KEYS, getDayOfWeekKey } from '../utils/constants';
 import { generateUUID, isValidUUID, dateKey } from '../utils/helpers';
 import { logger } from '../utils/logger';
 import { authStore } from './AuthStore';
@@ -10,7 +10,7 @@ import { authStore } from './AuthStore';
 export class WorkoutStore {
   workouts: Map<string, Workout> = new Map();
   activeWorkout: Workout | null = null;
-  selectedDay: DayOfWeek = 'monday';
+  selectedDay: DayOfWeek = getDayOfWeekKey(new Date());
   selectedDate: Date = new Date();
   isLoading = false;
   isSyncing = false;
@@ -19,6 +19,8 @@ export class WorkoutStore {
 
   constructor() {
     makeAutoObservable(this);
+    this.selectedDay = getDayOfWeekKey(new Date());
+    this.selectedDate = new Date();
     this.restoreActiveWorkout();
   }
 
@@ -50,8 +52,8 @@ export class WorkoutStore {
   }
 
   async loadWorkouts(userId: string, startDate?: string, endDate?: string) {
-    if (!isValidUUID(userId)) {
-      console.warn('[WorkoutStore] Skipping loadWorkouts: invalid userId', userId);
+    if (!userId) {
+      console.warn('[WorkoutStore] Skipping loadWorkouts: missing userId');
       return;
     }
     try {
@@ -159,7 +161,7 @@ export class WorkoutStore {
                   weight: s.weight,
                   reps: s.reps,
                   completed: false,
-                });
+                }, workout.id);
               }),
             );
           }),
@@ -227,6 +229,22 @@ export class WorkoutStore {
         updatedAt: new Date(),
         startTime: new Date(),
       };
+
+      try {
+        await workoutsService.createWorkout({
+          id: workout.id,
+          userId: workout.userId,
+          name: workout.name,
+          type: workout.type,
+          date: workout.date,
+          startTime: workout.startTime,
+          completed: false,
+        });
+      } catch (err) {
+        logger.error('[WorkoutStore] Failed to auto-create workout in DB:', err);
+        return;
+      }
+
       runInAction(() => {
         this.activeWorkout = workout;
         this.saveDraft();
@@ -301,6 +319,40 @@ async removeExercise(workoutExerciseId: string) {
     }
   }
 
+  reorderExercises(fromIndex: number, toIndex: number) {
+    if (!this.activeWorkout) return;
+    const exercises = [...this.activeWorkout.exercises];
+    if (
+      fromIndex < 0 ||
+      fromIndex >= exercises.length ||
+      toIndex < 0 ||
+      toIndex >= exercises.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+
+    const [moved] = exercises.splice(fromIndex, 1);
+    exercises.splice(toIndex, 0, moved);
+    exercises.forEach((ex, idx) => {
+      ex.orderIndex = idx;
+    });
+
+    runInAction(() => {
+      if (this.activeWorkout) {
+        this.activeWorkout.exercises = exercises;
+      }
+    });
+
+    setTimeout(() => {
+      this.saveDraft();
+      this.saveRoutineTemplate();
+      Promise.all(
+        exercises.map((ex) => workoutsService.updateExerciseOrder(ex.id, ex.orderIndex))
+      ).catch((err) => logger.error('[WorkoutStore] reorderExercises DB error:', err));
+    }, 0);
+  }
+
   async addSet(workoutExerciseId: string, weight = 0, reps = 0) {
     if (!this.activeWorkout) return;
     const exercise = this.activeWorkout.exercises.find((e) => e.id === workoutExerciseId);
@@ -331,7 +383,7 @@ async removeExercise(workoutExerciseId: string) {
         weight: set.weight,
         reps: set.reps,
         completed: false,
-      });
+      }, this.activeWorkout!.id);
       if (dbSet && dbSet.id !== set.id && this.activeWorkout) {
         runInAction(() => {
           const ex = this.activeWorkout!.exercises.find((e) => e.id === workoutExerciseId);
@@ -555,6 +607,25 @@ async removeExercise(workoutExerciseId: string) {
 
   private getDayDraftKey(day: DayOfWeek): string {
     return `workout.draft.${day}`;
+  }
+
+  private persistSelectedDay() {
+    storage.set(STORAGE_KEYS.LAST_WORKOUT_DAY, this.selectedDay);
+    storage.set(STORAGE_KEYS.LAST_WORKOUT_DATE, this.selectedDate.toISOString());
+  }
+
+  private restoreSelectedDay() {
+    const savedDay = storage.get<DayOfWeek>(STORAGE_KEYS.LAST_WORKOUT_DAY);
+    const savedDateStr = storage.get<string>(STORAGE_KEYS.LAST_WORKOUT_DATE);
+    if (savedDay) {
+      this.selectedDay = savedDay;
+    }
+    if (savedDateStr) {
+      const parsed = new Date(savedDateStr);
+      if (!isNaN(parsed.getTime())) {
+        this.selectedDate = parsed;
+      }
+    }
   }
 
   private saveRoutineTemplate() {

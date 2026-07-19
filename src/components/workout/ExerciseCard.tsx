@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import React, { memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
@@ -16,6 +16,7 @@ interface ExerciseCardProps {
   onRemoveSet: (setId: string) => void;
   onRemoveExercise: () => void;
   onStartRest?: (setId: string) => void;
+  isDragging?: boolean;
 }
 
 // Get appropriate emoji icon based on equipment type
@@ -49,12 +50,23 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
   onRemoveSet,
   onRemoveExercise,
   onStartRest,
+  isDragging = false,
 }) => {
   const colors = useColors();
   const icon = getEquipmentIcon(exercise.exercise?.equipment);
 
   return (
-    <Card padding="base" style={styles.container}>
+    <Card
+      padding="base"
+      style={[
+        styles.container,
+        isDragging && {
+          borderColor: 'rgba(255, 255, 255, 0.7)',
+          borderWidth: 2.5,
+          backgroundColor: '#1C1C1E',
+        },
+      ]}
+    >
       <View style={styles.header}>
         <View style={styles.exerciseInfo}>
           <View

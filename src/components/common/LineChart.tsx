@@ -1,7 +1,7 @@
-import React, { memo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { memo, useMemo } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { CartesianChart, Line, Area } from 'victory-native';
-import { Circle, vec, LinearGradient as SkiaLinearGradient } from '@shopify/react-native-skia';
+import { Circle, vec, LinearGradient as SkiaLinearGradient, matchFont } from '@shopify/react-native-skia';
 import { useColors } from '../../hooks';
 import { spacing, typography } from '../../theme';
 
@@ -35,8 +35,17 @@ export const LineChart = memo<LineChartProps>(({
   const colors = useColors();
   const color = lineColor || colors.text;
 
+  // Load Skia font for Victory Native canvas axis labels
+  const font = useMemo(() => {
+    const fontFamily = Platform.select({ ios: 'Helvetica', android: 'sans-serif' }) || 'sans-serif';
+    return matchFont({
+      fontFamily,
+      fontSize: 10,
+      fontWeight: '500',
+    });
+  }, []);
+
   const getY = (d: ChartDataPoint) => ((d as any).y !== undefined ? (d as any).y : d.value);
-  const getX = (d: ChartDataPoint) => ((d as any).x !== undefined ? (d as any).x : (d as any).timestamp);
   const getLabel = (d: ChartDataPoint) => d.date || '';
 
   const isEmpty = data.length === 0;
@@ -60,11 +69,11 @@ export const LineChart = memo<LineChartProps>(({
     } as ChartDataPoint);
   }
 
-  // Transform data for Victory Native - needs numeric x values
+  // Transform data for Victory Native - needs index-based x values (0, 1, 2, ...)
   const chartData = displayData.map((d, i) => ({
-    x: getX(d) !== undefined ? getX(d) : i,
+    x: i,
     y: getY(d),
-    label: getLabel(d) || String(getX(d) || i),
+    label: getLabel(d) || String(i + 1),
   }));
 
   const values = displayData.map((d) => getY(d));
@@ -84,24 +93,12 @@ export const LineChart = memo<LineChartProps>(({
     if (val >= 10000) {
       return `${(val / 1000).toFixed(0)}K`;
     }
-    // For weight (smaller numbers with decimals)
-    if (val < 200 && val % 1 !== 0) {
-      return val.toFixed(1);
-    }
-    // For other values
     if (val >= 1000) {
-      return `${(val / 1000).toFixed(0)}K`;
+      return `${(val / 1000).toFixed(1)}K`;
     }
+    // For weight / small numbers
     return val % 1 !== 0 ? val.toFixed(1) : val.toFixed(0);
   };
-
-  // Calculate Y-axis tick values
-  const yTicks = [];
-  const tickCount = 5;
-  const tickStep = (maxVal - minVal) / (tickCount - 1);
-  for (let i = 0; i < tickCount; i++) {
-    yTicks.push(minVal + tickStep * i);
-  }
 
   return (
     <View style={[styles.container, { width, height }]}>
@@ -109,21 +106,18 @@ export const LineChart = memo<LineChartProps>(({
         data={chartData}
         xKey="x"
         yKeys={["y"]}
-        domainPadding={{ left: 10, right: 10, top: 20, bottom: 30 }}
+        domainPadding={{ left: 16, right: 16, top: 20, bottom: 30 }}
         domain={{ y: [minVal, maxVal] }}
         axisOptions={{
-          tickCount: { x: Math.min(displayData.length, 7), y: 5 },
-          lineColor: 'transparent',
-          labelColor: 'rgba(255,255,255,0.4)',
+          font,
+          tickCount: { x: Math.min(displayData.length, 6), y: 4 },
+          lineColor: 'rgba(255,255,255,0.08)',
+          labelColor: 'rgba(255,255,255,0.5)',
           formatXLabel: (val: number) => {
-            // In timestamp mode val is the actual x value, not an index.
-            // Try to match by x value first, then fall back to index.
-            const idxByX = chartData.findIndex((pt) => pt.x === val);
-            const idx = idxByX >= 0 ? idxByX : Math.round(val);
+            const idx = Math.round(val);
             if (idx < 0 || idx >= chartData.length) return '';
             if (idx % showEvery !== 0 && idx !== chartData.length - 1) return '';
             const label = chartData[idx]?.label || '';
-            // Truncate long labels
             return label.length > 8 ? label.substring(0, 6) + '..' : label;
           },
           formatYLabel: formatYLabel,

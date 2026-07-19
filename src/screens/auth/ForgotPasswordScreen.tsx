@@ -26,8 +26,9 @@ export const ForgotPasswordScreen = () => {
       return;
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
     try {
-      await resetPassword(email);
+      await resetPassword(normalizedEmail);
       setSent(true);
     } catch (e: any) {
       setError(e.message || 'Failed to send reset email');

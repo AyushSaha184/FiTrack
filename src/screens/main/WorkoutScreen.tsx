@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { observer } from 'mobx-react-lite';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -13,6 +14,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { AnimatedCard } from '../../components/common/AnimatedCard';
 import { AnimatedScreen } from '../../components/common/AnimatedScreen';
 import { ExerciseCard } from '../../components/workout/ExerciseCard';
+import { DraggableExerciseList } from '../../components/workout/DraggableExerciseList';
 import { ExercisePicker } from '../../components/workout/ExercisePicker';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { Modal } from '../../components/common/Modal';
@@ -37,7 +39,7 @@ const ROUTINE_OPTIONS: { type: WorkoutType; label: string }[] = [
   { type: 'cardio', label: 'Cardio' },
 ];
 
-export const WorkoutScreen = () => {
+export const WorkoutScreen = observer(() => {
   const colors = useColors();
   const navigation = useNavigation<any>();
   const workoutStore = useWorkoutStore();
@@ -299,7 +301,12 @@ export const WorkoutScreen = () => {
                 onPress={handleStopwatchPress}
                 activeOpacity={0.7}
               >
-                <Text style={styles.stopwatchIcon}>⏱</Text>
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.9 }}>
+                  <Circle cx="12" cy="13" r="8" />
+                  <Path d="M12 9v4l2 2" />
+                  <Path d="M12 2v3" />
+                  <Path d="M9 2h6" />
+                </Svg>
                 <Text style={[styles.stopwatchText, { color: colors.text }]}>
                   {stopwatch.getFormattedTime()}
                 </Text>
@@ -355,27 +362,21 @@ export const WorkoutScreen = () => {
               )}
 
               <View style={styles.exercisesSection}>
-                {activeWorkoutExercises.map((exercise, index) => (
-                  <Animated.View
-                    key={exercise.id}
-                    entering={FadeInDown.delay(index * 80).springify().damping(18)}
-                  >
-                    <ExerciseCard
-                      exercise={exercise}
-                      weightUnit={weightUnit}
-                      onAddSet={() => workoutStore.addSet(exercise.id)}
-                      onUpdateSet={(setId, updates) =>
-                        workoutStore.updateSet(exercise.id, setId, updates)
-                      }
-                      onToggleSetComplete={(setId) =>
-                        workoutStore.toggleSetComplete(exercise.id, setId)
-                      }
-                      onRemoveSet={(setId) => workoutStore.removeSet(exercise.id, setId)}
-                      onRemoveExercise={() => handleConfirmRemoveExercise(exercise.id, exercise.exercise?.name)}
-                      onStartRest={() => restTimer.startTimer()}
-                    />
-                  </Animated.View>
-                ))}
+                <DraggableExerciseList
+                  exercises={activeWorkoutExercises}
+                  weightUnit={weightUnit}
+                  onAddSet={(exId) => workoutStore.addSet(exId)}
+                  onUpdateSet={(exId, setId, updates) =>
+                    workoutStore.updateSet(exId, setId, updates)
+                  }
+                  onToggleSetComplete={(exId, setId) =>
+                    workoutStore.toggleSetComplete(exId, setId)
+                  }
+                  onRemoveSet={(exId, setId) => workoutStore.removeSet(exId, setId)}
+                  onRemoveExercise={(exId, name) => handleConfirmRemoveExercise(exId, name)}
+                  onStartRest={() => restTimer.startTimer()}
+                  onReorder={(fromIdx, toIdx) => workoutStore.reorderExercises(fromIdx, toIdx)}
+                />
               </View>
             </View>
           ) : (
@@ -554,7 +555,7 @@ export const WorkoutScreen = () => {
       />
     </SafeAreaView>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -641,7 +642,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
-    borderWidth: 1,
+    borderWidth: 1.5,
     gap: spacing.xs,
   },
   pillActive: {},
@@ -658,7 +659,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
-    borderWidth: 1,
+    borderWidth: 1.5,
     gap: spacing.xs,
     justifyContent: 'center',
   },
@@ -742,8 +743,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.25)',
     paddingVertical: spacing.base,
     paddingHorizontal: spacing.xl,
     borderRadius: radius.pill,
@@ -772,7 +773,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
   resetButtonText: {
     fontSize: 12,

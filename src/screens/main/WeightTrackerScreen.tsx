@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert
 import type { WeightEntry } from '../../models';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { observer } from 'mobx-react-lite';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { AnimatedCard } from '../../components/common/AnimatedCard';
 import { AnimatedScreen } from '../../components/common/AnimatedScreen';
@@ -12,6 +13,7 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
+import { CustomAlert } from '../../components/common/CustomAlert';
 import { useColors, useAuth, useWeightStore, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { formatWeight, formatDate } from '../../utils/helpers';
@@ -27,7 +29,7 @@ const timeRangeOptions = [
   { value: 'all', label: 'All Time' },
 ];
 
-export const WeightTrackerScreen = () => {
+export const WeightTrackerScreen = observer(() => {
   const colors = useColors();
   const navigation = useNavigation<any>();
   const auth = useAuth();
@@ -81,14 +83,25 @@ export const WeightTrackerScreen = () => {
       cutoffDate.setDate(cutoffDate.getDate() - days);
       filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
     }
+
+    const getTimestamp = (e: WeightEntry) => {
+      const d = e.createdAt ? new Date(e.createdAt) : new Date(e.date);
+      const t = d.getTime();
+      return isNaN(t) ? 0 : t;
+    };
     
-    return filteredEntries
-      .map((e) => ({
-        date: formatDate(e.date, 'dayMonth'),
-        value: e.weight,
-        timestamp: new Date(e.date).getTime(),
-      }))
-      .sort((a, b) => a.timestamp - b.timestamp);
+    const sorted = [...filteredEntries].sort((a, b) => {
+      const tA = getTimestamp(a);
+      const tB = getTimestamp(b);
+      if (tA !== tB) return tA - tB;
+      return filteredEntries.indexOf(b) - filteredEntries.indexOf(a);
+    });
+
+    return sorted.map((e) => ({
+      date: formatDate(e.date, 'dayMonth'),
+      value: e.weight,
+      timestamp: getTimestamp(e),
+    }));
   }, [entries, timeRange]);
 
   const chartWidth = SCREEN_WIDTH - spacing.xl * 2 - spacing.xl * 2;
@@ -119,6 +132,12 @@ export const WeightTrackerScreen = () => {
     return { highest, lowest, average };
   }, [entries, timeRange]);
 
+  const [deleteTarget, setDeleteTarget] = useState<WeightEntry | null>(null);
+
+  const handleDeleteEntry = (entry: WeightEntry) => {
+    setDeleteTarget(entry);
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <AnimatedScreen>
@@ -135,7 +154,7 @@ export const WeightTrackerScreen = () => {
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Circle cx="12" cy="12" r="3" />
-                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </Svg>
             </TouchableOpacity>
           </View>
@@ -286,42 +305,56 @@ export const WeightTrackerScreen = () => {
               History
             </Text>
 
-            {entries.slice(0, 5).map((entry, index) => (
-              <View
-                key={entry.id}
-                style={[
-                  styles.historyItem,
-                  index < 4 && {
-                    borderBottomWidth: 1,
-                    borderBottomColor: colors.cardBorder,
-                  },
-                ]}
-              >
-                <View style={styles.historyLeft}>
-                  <View
-                    style={[
-                      styles.historyIcon,
-                      { backgroundColor: 'rgba(255,255,255,0.05)' },
-                    ]}
-                  >
-                    <Text style={styles.historyIconText}>📊</Text>
+            {entries.slice(0, 6).map((entry, index) => {
+              const displayLimit = Math.min(entries.length, 6);
+              return (
+                <View
+                  key={entry.id}
+                  style={[
+                    styles.historyItem,
+                    index < displayLimit - 1 && {
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.cardBorder,
+                    },
+                  ]}
+                >
+                  <View style={styles.historyLeft}>
+                    <View
+                      style={[
+                        styles.historyIcon,
+                        { backgroundColor: 'rgba(255,255,255,0.05)' },
+                      ]}
+                    >
+                      <Text style={styles.historyIconText}>📊</Text>
+                    </View>
+                    <View>
+                      <Text style={[styles.historyDate, { color: colors.text }]}>
+                        {formatDate(entry.date, 'short')}
+                      </Text>
+                      <Text style={[styles.historyTime, { color: colors.textMuted }]}>
+                        {formatDate(entry.createdAt, 'time')}
+                      </Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={[styles.historyDate, { color: colors.text }]}>
-                      {formatDate(entry.date, 'short')}
+                  <View style={styles.historyRight}>
+                    <Text style={[styles.historyWeight, { color: colors.text }]}>
+                      {entry.weight.toFixed(1)} {weightUnit}
                     </Text>
-                    <Text style={[styles.historyTime, { color: colors.textMuted }]}>
-                      {formatDate(entry.createdAt, 'time')}
-                    </Text>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteEntry(entry)}
+                      style={styles.deleteButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      activeOpacity={0.7}
+                    >
+                      <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FF453A" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                        <Path d="M3 6h18" />
+                        <Path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                      </Svg>
+                    </TouchableOpacity>
                   </View>
                 </View>
-                <View style={styles.historyRight}>
-                  <Text style={[styles.historyWeight, { color: colors.text }]}>
-                    {entry.weight.toFixed(1)} {weightUnit}
-                  </Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </AnimatedCard>
 
           <View style={{ height: 100 }} />
@@ -394,9 +427,35 @@ export const WeightTrackerScreen = () => {
           style={{ marginTop: spacing.base }}
         />
       </Modal>
+
+      {/* Custom Delete Confirmation Alert */}
+      <CustomAlert
+        visible={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Weight Entry"
+        message={deleteTarget ? `Are you sure you want to delete ${deleteTarget.weight.toFixed(1)} ${weightUnit} from ${formatDate(deleteTarget.date, 'short')}?` : ''}
+        actions={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setDeleteTarget(null) },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              if (deleteTarget) {
+                try {
+                  await weightStore.deleteEntry(deleteTarget.id);
+                } catch (e: any) {
+                  Alert.alert('Error', e.message || 'Failed to delete entry');
+                } finally {
+                  setDeleteTarget(null);
+                }
+              }
+            },
+          },
+        ]}
+      />
     </SafeAreaView>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -534,6 +593,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  deleteButton: {
+    padding: spacing.xs,
+    marginLeft: spacing.xs,
   },
   historyWeight: {
     fontSize: 16,

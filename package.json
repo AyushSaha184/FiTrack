@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@notifee/react-native": "^9.1.8",
+    "@react-native-firebase/app": "^25.1.0",
+    "@react-native-firebase/auth": "^25.1.0",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
@@ -24,6 +26,7 @@
     "@tanstack/react-query": "^5.101.0",
     "date-fns": "^3.6.0",
     "mobx": "^6.16.0",
+    "mobx-react-lite": "^4.1.1",
     "react": "18.3.1",
     "react-native": "^0.77.3",
     "react-native-gesture-handler": "2.25.0",

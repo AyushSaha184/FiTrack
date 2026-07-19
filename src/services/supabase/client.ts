@@ -5,7 +5,7 @@ import { storage } from '../../utils/storage';
 import { STORAGE_KEYS } from '../../utils/constants';
 
 const supabaseUrl = ENV.SUPABASE_URL || '';
-const supabaseAnonKey = ENV.SUPABASE_ANON_KEY || '';
+export const supabaseAnonKey = ENV.SUPABASE_ANON_KEY || '';
 
 if (!ENV.SUPABASE_URL || !ENV.SUPABASE_ANON_KEY) {
   console.warn('[Supabase] Missing configuration. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY');
@@ -13,31 +13,51 @@ if (!ENV.SUPABASE_URL || !ENV.SUPABASE_ANON_KEY) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: {
-      getItem: (key) => {
-        return Promise.resolve(storage.getString(key));
-      },
-      setItem: (key, value) => {
-        storage.set(key, value);
-        return Promise.resolve();
-      },
-      removeItem: (key) => {
-        storage.delete(key);
-        return Promise.resolve();
-      },
-    },
-    autoRefreshToken: true,
-    persistSession: true,
+    persistSession: false,
+    autoRefreshToken: false,
     detectSessionInUrl: false,
   },
 });
 
-export const getSession = async () => {
-  const { data } = await supabase.auth.getSession();
-  return data.session;
+export const setSupabaseToken = async (token: string | null): Promise<void> => {
+  const authHeader = token ? `Bearer ${token}` : `Bearer ${supabaseAnonKey}`;
+  const headers = (supabase as any).rest?.headers;
+
+  if (headers) {
+    if (typeof headers.set === 'function') {
+      headers.set('Authorization', authHeader);
+    } else {
+      headers['Authorization'] = authHeader;
+    }
+  }
 };
 
-export const getUser = async () => {
-  const { data } = await supabase.auth.getUser();
-  return data.user;
+/**
+ * Exchange a Firebase ID token for a Supabase-compatible JWT via the
+ * `firebase-token-exchange` Edge Function, then set it as the active
+ * Authorization header for all subsequent Supabase REST calls.
+ */
+export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> => {
+  const response = await fetch(
+    `${supabaseUrl}/functions/v1/firebase-token-exchange`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${supabaseAnonKey}`,
+      },
+      body: JSON.stringify({ firebase_token: firebaseIdToken }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      (errorData as any).error || `Token exchange failed (${response.status})`,
+    );
+  }
+
+  const { token } = await response.json();
+  console.log('[Supabase client] Exchanged token:', token);
+  await setSupabaseToken(token);
 };

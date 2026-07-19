@@ -78,11 +78,24 @@ export const workoutsService = {
       .eq('id', workoutExerciseId);
     if (error) throw error;
   },
-  async addSet(workoutExerciseId: string, set: Partial<Set>) {
+  async updateExerciseOrder(workoutExerciseId: string, orderIndex: number) {
+    const { error } = await supabase
+      .from('workout_exercises')
+      .update({ order_index: orderIndex })
+      .eq('id', workoutExerciseId);
+    if (error) throw error;
+  },
+  async addSet(workoutExerciseId: string, set: Partial<Set>, workoutId?: string) {
     const dbSet = toSnakeCaseKeys(set);
+    const insertPayload: Record<string, any> = { workout_exercise_id: workoutExerciseId, ...dbSet };
+    // Explicitly include workout_id so the RLS WITH CHECK policy can evaluate
+    // it before the BEFORE INSERT trigger (populate_set_workout_id) fires.
+    if (workoutId) {
+      insertPayload.workout_id = workoutId;
+    }
     const { data, error } = await supabase
       .from('sets')
-      .insert({ workout_exercise_id: workoutExerciseId, ...dbSet })
+      .insert(insertPayload)
       .select();
     if (error) throw error;
     if (!data || data.length === 0) return null;

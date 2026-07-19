@@ -1,5 +1,5 @@
 export const ENV = {
-  FIREBASE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID || '388469335990-ljk1q5lug4v9tq77i1k7g7u4ffujqvec.apps.googleusercontent.com',
+  FIREBASE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID || '388469335990-78v3vqdvseci16e9acbifss6mdcqr7om.apps.googleusercontent.com',
   SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
   SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   APP_ENV: (process.env.EXPO_PUBLIC_APP_ENV as 'development' | 'staging' | 'production') || 'development',

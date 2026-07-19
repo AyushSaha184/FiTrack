@@ -271,7 +271,7 @@ export const LoginScreen = () => {
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Signup')} activeOpacity={0.7}>
               <Text style={[styles.footerLink, { color: '#FFFFFF' }]}>
-                Sign Up
+                Sign In
               </Text>
             </TouchableOpacity>
           </View>

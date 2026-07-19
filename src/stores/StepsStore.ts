@@ -54,7 +54,7 @@ export class StepsStore {
   }
 
   async loadTodaySteps(userId: string) {
-    if (!isValidUUID(userId)) {
+    if (!userId) {
       console.warn('[StepsStore] Skipping loadTodaySteps: invalid userId', userId);
       return;
     }
@@ -79,7 +79,7 @@ export class StepsStore {
   }
 
   async loadWeeklySteps(userId: string, days = 90) {
-    if (!isValidUUID(userId)) {
+    if (!userId) {
       console.warn('[StepsStore] Skipping loadWeeklySteps: invalid userId', userId);
       return;
     }
@@ -109,7 +109,7 @@ export class StepsStore {
   }
 
   async addSteps(userId: string, steps: number, date?: Date) {
-    if (!isValidUUID(userId)) {
+    if (!userId) {
       console.warn('[StepsStore] Skipping addSteps: invalid userId', userId);
       return;
     }
@@ -140,7 +140,7 @@ export class StepsStore {
   }
 
   async updateTodaySteps(userId: string, steps: number) {
-    if (!isValidUUID(userId)) {
+    if (!userId) {
       console.warn('[StepsStore] Skipping updateTodaySteps: invalid userId', userId);
       return;
     }
@@ -148,7 +148,7 @@ export class StepsStore {
   }
 
   async syncFromHealthApp(userId: string, steps: number, source: StepSource = 'apple_health') {
-    if (!isValidUUID(userId)) {
+    if (!userId) {
       console.warn('[StepsStore] Skipping syncFromHealthApp: invalid userId', userId);
       return;
     }
@@ -162,6 +162,25 @@ export class StepsStore {
       });
       return entry;
     } catch (error: any) {
+      runInAction(() => {
+        this.error = error.message;
+      });
+      throw error;
+    }
+  }
+
+  async deleteEntry(entryId: string) {
+    try {
+      await stepsService.deleteEntry(entryId);
+      runInAction(() => {
+        this.weeklyEntries = this.weeklyEntries.filter((e) => e.id !== entryId);
+        if (this.todayEntry?.id === entryId) {
+          this.todayEntry = null;
+          this.todaySteps = 0;
+        }
+      });
+    } catch (error: any) {
+      logger.error('[StepsStore] deleteEntry error:', error);
       runInAction(() => {
         this.error = error.message;
       });

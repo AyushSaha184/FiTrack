@@ -21,6 +21,8 @@ export const STORAGE_KEYS = {
   SYNC_QUEUE: 'sync.queue',
   RECORD_BUG_REPORTS: 'developer.bugReports',
   LAST_SYNC_AT: 'sync.lastAt',
+  LAST_WORKOUT_DAY: 'workout.lastSelectedDay',
+  LAST_WORKOUT_DATE: 'workout.lastSelectedDate',
 } as const;
 
 export const DAY_ORDER: DayOfWeek[] = [

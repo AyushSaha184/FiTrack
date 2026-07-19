@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
+    borderBottomWidth: 1.5,
   },
   setNumber: {
     width: 32,
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: spacing.xs,
     borderRadius: radius.sm,
-    borderWidth: 1,
+    borderWidth: 1.5,
     height: 40,
   },
   repsContainer: {
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: spacing.xs,
     borderRadius: radius.sm,
-    borderWidth: 1,
+    borderWidth: 1.5,
     height: 40,
   },
   inputText: {

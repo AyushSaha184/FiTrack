@@ -55,7 +55,7 @@ export const AnimatedCard = memo<AnimatedCardProps>(({
   const cardStyles: ViewStyle = {
     backgroundColor: colors.cardSurface,
     borderRadius: radius[borderRadius],
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.cardBorder,
     padding: spacing[padding],
     ...(elevated && { ...shadow.md }),

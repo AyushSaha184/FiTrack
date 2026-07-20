@@ -25,10 +25,13 @@ import { spacing, typography, radius } from '../../theme';
 import type { AuthStackParamList } from '../../types/navigation';
 import Svg, { Path, Circle } from 'react-native-svg';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH * 0.72;
 const CARD_SPACING = 16;
 const SWIPE_THRESHOLD = CARD_WIDTH * 0.3;
+const CARD_HEIGHT = Math.min(420, Math.max(290, SCREEN_HEIGHT * 0.42));
+const CAROUSEL_HEIGHT = CARD_HEIGHT + 48;
+const IS_SMALL_SCREEN = SCREEN_HEIGHT < 720;
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Welcome'>;
 
@@ -446,71 +449,77 @@ export const WelcomeScreen = () => {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: '#000000' }]}>
-      {/* Top Left Header Section */}
-      <View style={styles.headerSection}>
-        <Logo size="large" />
-        <Text style={[styles.tagline, { color: '#FFFFFF' }]}>
-          Track. Improve. Become Stronger.
-        </Text>
-        <Text style={[styles.description, { color: 'rgba(255,255,255,0.6)' }]}>
-          Your all-in-one fitness tracker.
-        </Text>
-      </View>
-
-      {/* Center Previews Carousel */}
-      <GestureDetector gesture={gesture}>
-        <View style={styles.carouselContainer}>
-          <ScrollView
-            ref={scrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.carouselContent}
-            snapToInterval={CARD_WIDTH + CARD_SPACING}
-            decelerationRate="fast"
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-          >
-            {previewCards.map((card, index) => (
-              <PreviewCardComponent
-                key={card.id}
-                card={card}
-                index={index}
-                scrollX={scrollX}
-              />
-            ))}
-          </ScrollView>
-
-          {/* Dots Indicator */}
-          <View style={styles.pagination}>
-            {previewCards.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.paginationDot,
-                  {
-                    backgroundColor:
-                      index === activeIndex ? '#FFFFFF' : 'rgba(255,255,255,0.25)',
-                    width: index === activeIndex ? 8 : 6,
-                    height: index === activeIndex ? 8 : 6,
-                  },
-                ]}
-              />
-            ))}
-          </View>
-        </View>
-      </GestureDetector>
-
-      {/* Bottom Center Tappable Text Link */}
-      <TouchableOpacity
-        style={[styles.ctaSection, { borderColor: '#1F1F1F' }]}
-        onPress={() => navigation.navigate('Login')}
-        activeOpacity={0.7}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
       >
-        <Text style={[styles.ctaTitle, { color: '#FFFFFF' }]}>Get Started</Text>
-        <Text style={styles.ctaSubtitle}>
-          Join now and start your fitness journey.
-        </Text>
-      </TouchableOpacity>
+        {/* Top Left Header Section */}
+        <View style={styles.headerSection}>
+          <Logo size={IS_SMALL_SCREEN ? 'medium' : 'large'} />
+          <Text style={[styles.tagline, { color: '#FFFFFF' }]}>
+            Track. Improve. Become Stronger.
+          </Text>
+          <Text style={[styles.description, { color: 'rgba(255,255,255,0.6)' }]}>
+            Your all-in-one fitness tracker.
+          </Text>
+        </View>
+
+        {/* Center Previews Carousel */}
+        <GestureDetector gesture={gesture}>
+          <View style={styles.carouselContainer}>
+            <ScrollView
+              ref={scrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.carouselContent}
+              snapToInterval={CARD_WIDTH + CARD_SPACING}
+              decelerationRate="fast"
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+            >
+              {previewCards.map((card, index) => (
+                <PreviewCardComponent
+                  key={card.id}
+                  card={card}
+                  index={index}
+                  scrollX={scrollX}
+                />
+              ))}
+            </ScrollView>
+
+            {/* Dots Indicator */}
+            <View style={styles.pagination}>
+              {previewCards.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.paginationDot,
+                    {
+                      backgroundColor:
+                        index === activeIndex ? '#FFFFFF' : 'rgba(255,255,255,0.25)',
+                      width: index === activeIndex ? 8 : 6,
+                      height: index === activeIndex ? 8 : 6,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+          </View>
+        </GestureDetector>
+
+        {/* Bottom Center Tappable Text Link */}
+        <TouchableOpacity
+          style={[styles.ctaSection, { borderColor: '#1F1F1F' }]}
+          onPress={() => navigation.navigate('Login')}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.ctaTitle, { color: '#FFFFFF' }]}>Get Started</Text>
+          <Text style={styles.ctaSubtitle}>
+            Join now and start your fitness journey.
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -519,22 +528,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+  },
   headerSection: {
     paddingHorizontal: 32,
-    paddingTop: 48,
+    paddingTop: IS_SMALL_SCREEN ? 16 : 36,
   },
   tagline: {
-    fontSize: 20,
+    fontSize: IS_SMALL_SCREEN ? 18 : 20,
     fontWeight: '600',
-    marginTop: 16,
+    marginTop: IS_SMALL_SCREEN ? 8 : 16,
   },
   description: {
-    fontSize: 15,
-    marginTop: 6,
+    fontSize: IS_SMALL_SCREEN ? 13 : 15,
+    marginTop: IS_SMALL_SCREEN ? 3 : 6,
   },
   carouselContainer: {
-    marginTop: 24,
-    height: 480,
+    marginTop: IS_SMALL_SCREEN ? 8 : 20,
+    height: CAROUSEL_HEIGHT,
     justifyContent: 'center',
   },
   carouselContent: {
@@ -546,7 +559,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 12,
     marginHorizontal: CARD_SPACING / 2,
-    height: 420,
+    height: CARD_HEIGHT,
     overflow: 'hidden',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 10 },
@@ -558,7 +571,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: IS_SMALL_SCREEN ? 10 : 20,
     gap: 8,
   },
   paginationDot: {
@@ -567,21 +580,21 @@ const styles = StyleSheet.create({
   ctaSection: {
     marginTop: 'auto',
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: IS_SMALL_SCREEN ? 12 : 16,
     paddingHorizontal: 24,
-    marginBottom: 48,
+    marginBottom: IS_SMALL_SCREEN ? 20 : 36,
     marginHorizontal: 24,
     borderWidth: 1,
     borderRadius: 12,
   },
   ctaTitle: {
-    fontSize: 24,
+    fontSize: IS_SMALL_SCREEN ? 20 : 24,
     fontWeight: '700',
   },
   ctaSubtitle: {
-    fontSize: 14,
+    fontSize: IS_SMALL_SCREEN ? 12 : 14,
     color: 'rgba(255,255,255,0.6)',
-    marginTop: 6,
+    marginTop: 4,
     textAlign: 'center',
   },
 

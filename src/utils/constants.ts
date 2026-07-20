@@ -23,6 +23,8 @@ export const STORAGE_KEYS = {
   LAST_SYNC_AT: 'sync.lastAt',
   LAST_WORKOUT_DAY: 'workout.lastSelectedDay',
   LAST_WORKOUT_DATE: 'workout.lastSelectedDate',
+  LAST_UPDATE_CHECK: 'app.last_update_check',
+  DISMISSED_UPDATE_VERSION: 'app.dismissed_update_version',
 } as const;
 
 export const DAY_ORDER: DayOfWeek[] = [

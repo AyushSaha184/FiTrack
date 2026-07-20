@@ -7,7 +7,7 @@ export const weightService = {
     return withTokenRetry(async () => {
       let query = supabase
         .from('weight_entries')
-        .select('*')
+        .select('id, user_id, weight, date, notes, created_at, updated_at')
         .eq('user_id', userId)
         .order('date', { ascending: false });
 

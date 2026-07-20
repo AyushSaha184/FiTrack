@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ENV } from '../../config/env';
 import { storage } from '../../utils/storage';
 import { STORAGE_KEYS } from '../../utils/constants';
+import { logger } from '../../utils/logger';
 
 const supabaseUrl = ENV.SUPABASE_URL || '';
 export const supabaseAnonKey = ENV.SUPABASE_ANON_KEY || '';
@@ -94,6 +95,8 @@ export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> =
   }
 
   const { token } = await response.json();
-  console.log('[Supabase client] Exchanged token:', token);
+  if (__DEV__) {
+    logger.debug('[Supabase client] Token refreshed successfully');
+  }
   await setSupabaseToken(token);
 };

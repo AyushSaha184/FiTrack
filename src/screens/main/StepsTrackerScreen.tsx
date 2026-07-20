@@ -207,13 +207,38 @@ export const StepsTrackerScreen = observer(() => {
                 )}
               </View>
               <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
-                <View
-                  style={[
-                    styles.stepsIllustration,
-                    { backgroundColor: 'rgba(255,255,255,0.04)' },
-                  ]}
-                >
-                  <Text style={styles.stepsEmoji}>👣</Text>
+                <View style={styles.stepsIllustration}>
+                  <Svg width={90} height={90} viewBox="0 0 90 90">
+                    {/* Background Track Circle */}
+                    <Circle
+                      cx={45}
+                      cy={45}
+                      r={38}
+                      stroke="rgba(255,255,255,0.08)"
+                      strokeWidth={6}
+                      fill="transparent"
+                    />
+                    {/* Progress Arc */}
+                    <Circle
+                      cx={45}
+                      cy={45}
+                      r={38}
+                      stroke={colors.text}
+                      strokeWidth={6}
+                      fill="transparent"
+                      strokeDasharray={238.76}
+                      strokeDashoffset={238.76 * (1 - Math.min(1, Math.max(0, todaySteps / (goalSteps || 10000))))}
+                      strokeLinecap="round"
+                      transform="rotate(-90 45 45)"
+                    />
+                  </Svg>
+                  <View style={styles.stepsIconCenter}>
+                    <Svg width={30} height={30} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <Path d="M4 16v-2.38C4 11.5 5.5 10 7.5 10h.75c1.25 0 2.25-.8 2.6-2l.9-3.1C12.1 3.7 13.25 3 14.5 3h1.8c1.3 0 2.2 1.25 1.8 2.5l-1.5 4.5h2.9c1.6 0 2.8 1.5 2.4 3.1l-1.2 4.8C20.4 19.3 19 20.5 17.5 20.5H8.5C6 20.5 4 18.5 4 16z" />
+                      <Circle cx="8" cy="16" r="1.2" fill={colors.text} />
+                      <Circle cx="14" cy="16" r="1.2" fill={colors.text} />
+                    </Svg>
+                  </View>
                 </View>
               </View>
             </View>
@@ -502,14 +527,17 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   stepsIllustration: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
-  stepsEmoji: {
-    fontSize: 44,
+  stepsIconCenter: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   progressBarContainer: {
     flexDirection: 'row',

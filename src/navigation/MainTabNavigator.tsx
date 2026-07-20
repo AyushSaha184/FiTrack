@@ -1,14 +1,13 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useNavigation, useNavigationState } from '@react-navigation/native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
+  Easing,
   runOnJS,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,13 +20,11 @@ import { useColors } from '../hooks';
 import { spacing, radius } from '../theme';
 import type { MainTabParamList } from '../types/navigation';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TAB_ORDER: (keyof MainTabParamList)[] = ['WeightTab', 'HomeTab', 'StepsTab'];
 
-const Tab = createBottomTabNavigator<MainTabParamList>();
 const HomeStack = createNativeStackNavigator();
 
-// HomeTab with nested stack for Settings
 const HomeTabScreen = () => {
   const colors = useColors();
   return (
@@ -86,7 +83,7 @@ const TabItem = ({ focused, label, renderIcon }: TabItemProps) => {
   const scale = useSharedValue(focused ? 1 : 0.92);
   const pillWidth = useSharedValue(focused ? 1 : 0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     scale.value = withSpring(focused ? 1 : 0.92, {
       damping: 18,
       stiffness: 280,
@@ -144,32 +141,32 @@ const TabItem = ({ focused, label, renderIcon }: TabItemProps) => {
 export const MainTabNavigator = () => {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>();
-  const [activeTab, setActiveTab] = React.useState<keyof MainTabParamList>('HomeTab');
+  const [activeIndex, setActiveIndex] = useState<number>(1); // HomeTab default
+  const activeIndexRef = useRef<number>(1);
+  activeIndexRef.current = activeIndex;
 
-  const handleNextTab = () => {
-    const currentIdx = TAB_ORDER.indexOf(activeTab);
-    if (currentIdx >= 0 && currentIdx < TAB_ORDER.length - 1) {
-      navigation.navigate(TAB_ORDER[currentIdx + 1]);
-    }
-  };
-
-  const handlePrevTab = () => {
-    const currentIdx = TAB_ORDER.indexOf(activeTab);
-    if (currentIdx > 0) {
-      navigation.navigate(TAB_ORDER[currentIdx - 1]);
-    }
-  };
-
+  const translateX = useSharedValue(-SCREEN_WIDTH);
+  const startX = useSharedValue(-SCREEN_WIDTH);
   const touchAbsoluteY = useSharedValue(0);
 
+  const goToTab = (index: number) => {
+    const clampedIndex = Math.max(0, Math.min(TAB_ORDER.length - 1, index));
+    setActiveIndex(clampedIndex);
+    translateX.value = withTiming(-clampedIndex * SCREEN_WIDTH, {
+      duration: 250,
+      easing: Easing.out(Easing.cubic),
+    });
+  };
+
   const panGesture = Gesture.Pan()
-    .activeOffsetX([-20, 20])
+    .activeOffsetX([-15, 15])
+    .failOffsetY([-15, 15])
     .onStart((e) => {
       'worklet';
+      startX.value = translateX.value;
       touchAbsoluteY.value = e.absoluteY;
     })
-    .onEnd((e) => {
+    .onUpdate((e) => {
       'worklet';
       const topBoundary = insets.top + 55;
       const bottomBoundary = SCREEN_HEIGHT - (80 + insets.bottom);
@@ -178,99 +175,163 @@ export const MainTabNavigator = () => {
         return;
       }
 
-      if (e.translationX < -40 || e.velocityX < -400) {
-        runOnJS(handleNextTab)();
-      } else if (e.translationX > 40 || e.velocityX > 400) {
-        runOnJS(handlePrevTab)();
+      // 1:1 continuous finger movement across screens
+      const rawX = startX.value + e.translationX;
+      // Clamp edge bounds with slight resistance
+      const maxLeft = 0;
+      const maxRight = -(TAB_ORDER.length - 1) * SCREEN_WIDTH;
+
+      if (rawX > maxLeft) {
+        translateX.value = maxLeft + (rawX - maxLeft) * 0.2;
+      } else if (rawX < maxRight) {
+        translateX.value = maxRight + (rawX - maxRight) * 0.2;
+      } else {
+        translateX.value = rawX;
       }
+    })
+    .onEnd((e) => {
+      'worklet';
+      const topBoundary = insets.top + 55;
+      const bottomBoundary = SCREEN_HEIGHT - (80 + insets.bottom);
+
+      const currentIdx = Math.max(
+        0,
+        Math.min(TAB_ORDER.length - 1, Math.round(-startX.value / SCREEN_WIDTH))
+      );
+
+      if (touchAbsoluteY.value < topBoundary || touchAbsoluteY.value > bottomBoundary) {
+        translateX.value = withTiming(-currentIdx * SCREEN_WIDTH, {
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+        });
+        return;
+      }
+
+      const draggedDist = e.translationX;
+      const velocity = e.velocityX;
+
+      let newIndex = currentIdx;
+      if (draggedDist < -SCREEN_WIDTH * 0.15 || velocity < -300) {
+        newIndex = Math.min(TAB_ORDER.length - 1, currentIdx + 1);
+      } else if (draggedDist > SCREEN_WIDTH * 0.15 || velocity > 300) {
+        newIndex = Math.max(0, currentIdx - 1);
+      }
+
+      runOnJS(goToTab)(newIndex);
     });
 
+  const animatedPagerStyle = useAnimatedStyle(() => ({
+    width: SCREEN_WIDTH * TAB_ORDER.length,
+    flex: 1,
+    flexDirection: 'row',
+    transform: [{ translateX: translateX.value }],
+  }));
+
   return (
-    <GestureDetector gesture={panGesture}>
-      <View style={{ flex: 1 }}>
-        <Tab.Navigator
-          screenListeners={{
-            state: (e: any) => {
-              const state = e.data.state;
-              if (state && state.routes) {
-                const route = state.routes[state.index];
-                if (route?.name) {
-                  setActiveTab(route.name as keyof MainTabParamList);
-                }
-              }
-            },
-          }}
-          screenOptions={{
-            headerShown: false,
-            tabBarStyle: {
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              backgroundColor: '#0C0C0C',
-              borderTopWidth: 1.5,
-              borderLeftWidth: 1.5,
-              borderRightWidth: 1.5,
-              borderBottomWidth: 0,
-              borderColor: colors.cardBorder,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              overflow: 'hidden',
-              height: 80 + insets.bottom,
-              paddingBottom: insets.bottom,
-              paddingTop: spacing.sm,
-              ...Platform.select({
-                ios: {
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: -4 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 12,
-                },
-                android: {
-                  elevation: 12,
-                },
-              }),
-            },
-            tabBarShowLabel: false,
-            tabBarActiveTintColor: colors.text,
-            tabBarInactiveTintColor: colors.textMuted,
-          }}
-          initialRouteName="HomeTab"
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={animatedPagerStyle}>
+          <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+            <WeightTrackerScreen />
+          </View>
+          <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+            <HomeTabScreen />
+          </View>
+          <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+            <StepsTrackerScreen />
+          </View>
+        </Animated.View>
+      </GestureDetector>
+
+      {/* Custom Bottom Tab Bar */}
+      <View
+        style={[
+          styles.tabBar,
+          {
+            backgroundColor: '#0C0C0C',
+            borderColor: colors.cardBorder,
+            height: 80 + insets.bottom,
+            paddingBottom: insets.bottom,
+            paddingTop: spacing.sm,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.tabButton}
+          onPress={() => goToTab(0)}
+          activeOpacity={0.7}
         >
-          <Tab.Screen
-            name="WeightTab"
-            component={WeightTrackerScreen}
-            options={{
-              tabBarIcon: ({ focused }) => (
-                <TabItem focused={focused} label="Weight" renderIcon={(color) => <WeightIcon color={color} />} />
-              ),
-            }}
+          <TabItem
+            focused={activeIndex === 0}
+            label="Weight"
+            renderIcon={(color) => <WeightIcon color={color} />}
           />
-          <Tab.Screen
-            name="HomeTab"
-            component={HomeTabScreen}
-            options={{
-              tabBarIcon: ({ focused }) => (
-                <TabItem focused={focused} label="Home" renderIcon={(color) => <HomeIcon color={color} />} />
-              ),
-            }}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabButton}
+          onPress={() => goToTab(1)}
+          activeOpacity={0.7}
+        >
+          <TabItem
+            focused={activeIndex === 1}
+            label="Home"
+            renderIcon={(color) => <HomeIcon color={color} />}
           />
-          <Tab.Screen
-            name="StepsTab"
-            component={StepsTrackerScreen}
-            options={{
-              tabBarIcon: ({ focused }) => (
-                <TabItem focused={focused} label="Steps" renderIcon={(color) => <FootprintsIcon color={color} />} />
-              ),
-            }}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabButton}
+          onPress={() => goToTab(2)}
+          activeOpacity={0.7}
+        >
+          <TabItem
+            focused={activeIndex === 2}
+            label="Steps"
+            renderIcon={(color) => <FootprintsIcon color={color} />}
           />
-        </Tab.Navigator>
+        </TouchableOpacity>
       </View>
-    </GestureDetector>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  tabBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    borderTopWidth: 1.5,
+    borderLeftWidth: 1.5,
+    borderRightWidth: 1.5,
+    borderBottomWidth: 0,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tabItemContainer: {
     alignItems: 'center',
     justifyContent: 'center',

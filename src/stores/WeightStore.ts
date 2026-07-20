@@ -48,6 +48,22 @@ export class WeightStore {
     return Math.max(0, Math.min(100, progress));
   }
 
+  private recalculateStats() {
+    if (this.entries.length === 0) {
+      this.stats = { highest: null, lowest: null, average: null, change: null };
+      return;
+    }
+    const weights = this.entries.map((e) => e.weight);
+    const highest = this.entries.reduce((max, e) => (e.weight > max.weight ? e : max));
+    const lowest = this.entries.reduce((min, e) => (e.weight < min.weight ? e : min));
+    const average = weights.reduce((a, b) => a + b, 0) / weights.length;
+    const firstEntry = this.entries[this.entries.length - 1];
+    const lastEntry = this.entries[0];
+    const change = lastEntry && firstEntry ? lastEntry.weight - firstEntry.weight : 0;
+
+    this.stats = { highest, lowest, average, change };
+  }
+
   async loadEntries(userId: string, days = 365) {
     try {
       this.isLoading = true;
@@ -68,6 +84,7 @@ export class WeightStore {
         if (data.length > 0) {
           this.currentWeight = data[0].weight;
         }
+        this.recalculateStats();
       });
     } catch (error: any) {
       logger.error('[WeightStore] loadEntries error:', error);
@@ -81,18 +98,10 @@ export class WeightStore {
     }
   }
 
-  async loadStats(userId: string, days = 30) {
-    try {
-      const stats = await weightService.getStats(userId, days);
-      runInAction(() => {
-        this.stats = stats;
-      });
-    } catch (error: any) {
-      logger.error('[WeightStore] loadStats error:', error);
-      runInAction(() => {
-        this.error = error.message;
-      });
-    }
+  async loadStats(_userId: string, _days = 30) {
+    runInAction(() => {
+      this.recalculateStats();
+    });
   }
 
   async addEntry(userId: string, weight: number, date?: Date, notes?: string) {
@@ -123,6 +132,7 @@ export class WeightStore {
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
         this.currentWeight = newEntry.weight;
+        this.recalculateStats();
       });
       return entry;
     } catch (error: any) {
@@ -151,6 +161,7 @@ export class WeightStore {
             this.currentWeight = updated.weight;
           }
         }
+        this.recalculateStats();
       });
       return updated;
     } catch (error: any) {
@@ -171,6 +182,7 @@ export class WeightStore {
         } else {
           this.currentWeight = null;
         }
+        this.recalculateStats();
       });
     } catch (error: any) {
       runInAction(() => {

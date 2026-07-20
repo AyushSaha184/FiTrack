@@ -91,9 +91,9 @@ export class WorkoutStore {
     const workoutId = generateUUID();
 
     const savedTemplate = storage.get<any[]>(`workout.routine.${this.selectedDay}`);
+    const resolvedExercises: WorkoutExercise[] = [];
 
     if (savedTemplate && Array.isArray(savedTemplate)) {
-      const resolvedExercises: WorkoutExercise[] = [];
       for (const te of savedTemplate) {
         const realId = await this.resolveExerciseId(te.exerciseId);
         if (!realId) {
@@ -120,63 +120,71 @@ export class WorkoutStore {
         });
       }
       resolvedExercises.forEach((ex, idx) => { ex.orderIndex = idx; });
-      const workout: Workout = {
-        id: workoutId,
-        userId,
-        name: name || this.getWorkoutName(type),
-        type,
-        date: this.selectedDate,
-        exercises: resolvedExercises,
-        completed: false,
-        totalVolume: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        startTime: new Date(),
-      };
+    }
 
-      runInAction(() => {
-        this.isSyncing = true;
+    const workout: Workout = {
+      id: workoutId,
+      userId,
+      name: name || this.getWorkoutName(type),
+      type,
+      date: this.selectedDate,
+      exercises: resolvedExercises,
+      completed: false,
+      totalVolume: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      startTime: new Date(),
+    };
+
+    runInAction(() => {
+      this.isSyncing = true;
+    });
+
+    try {
+      await workoutsService.createWorkout({
+        id: workout.id,
+        userId: workout.userId,
+        name: workout.name,
+        type: workout.type,
+        date: workout.date,
+        startTime: workout.startTime,
+        completed: false,
       });
 
-      try {
-        await workoutsService.createWorkout({
-          id: workout.id,
-          userId: workout.userId,
-          name: workout.name,
-          type: workout.type,
-          date: workout.date,
-          startTime: workout.startTime,
-          completed: false,
-        });
+      if (resolvedExercises.length > 0) {
+        const exerciseItems = resolvedExercises.map((ex) => ({
+          id: ex.id,
+          workoutId: workout.id,
+          exerciseId: ex.exerciseId,
+          orderIndex: ex.orderIndex,
+        }));
+        await workoutsService.addExercisesBulk(exerciseItems);
 
-        await Promise.all(
-          resolvedExercises.map(async (ex) => {
-            const dbEx = await workoutsService.addExercise(workout.id, ex.exerciseId, ex.orderIndex);
-            runInAction(() => { ex.id = dbEx.id; });
-            await Promise.all(
-              ex.sets.map(async (s) => {
-                await workoutsService.addSet(dbEx.id, {
-                  id: s.id,
-                  orderIndex: s.orderIndex,
-                  weight: s.weight,
-                  reps: s.reps,
-                  completed: false,
-                }, workout.id);
-              }),
-            );
-          }),
+        const allSets = resolvedExercises.flatMap((ex) =>
+          ex.sets.map((s) => ({
+            id: s.id,
+            workoutExerciseId: ex.id,
+            workoutId: workout.id,
+            orderIndex: s.orderIndex,
+            weight: s.weight,
+            reps: s.reps,
+            completed: false,
+          }))
         );
-      } catch (e) {
-        logger.error('[WorkoutStore] startWorkout DB error:', e);
-      } finally {
-        runInAction(() => {
-          this.activeWorkout = workout;
-          this.isSyncing = false;
-          this.saveDraft();
-        });
+        if (allSets.length > 0) {
+          await workoutsService.addSetsBulk(allSets);
+        }
       }
-      return workout;
+    } catch (e) {
+      logger.error('[WorkoutStore] startWorkout DB error:', e);
+    } finally {
+      runInAction(() => {
+        this.activeWorkout = workout;
+        this.isSyncing = false;
+        this.saveDraft();
+      });
     }
+    return workout;
   }
 
   async restoreActiveWorkout() {
@@ -644,10 +652,25 @@ async removeExercise(workoutExerciseId: string) {
     storage.set(`workout.routine.${this.selectedDay}`, templateExercises);
   }
 
-  private saveDraft() {
-    if (this.activeWorkout) {
-      storage.set(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT, this.activeWorkout);
-      storage.set(this.getDayDraftKey(this.selectedDay), this.activeWorkout);
+  private saveDraftTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private saveDraft(immediate = false) {
+    if (!this.activeWorkout) return;
+    if (this.saveDraftTimer) {
+      clearTimeout(this.saveDraftTimer);
+      this.saveDraftTimer = null;
+    }
+    const performSave = () => {
+      if (this.activeWorkout) {
+        storage.set(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT, this.activeWorkout);
+        storage.set(this.getDayDraftKey(this.selectedDay), this.activeWorkout);
+      }
+    };
+
+    if (immediate) {
+      performSave();
+    } else {
+      this.saveDraftTimer = setTimeout(performSave, 300);
     }
   }
 

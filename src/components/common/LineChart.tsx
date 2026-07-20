@@ -22,6 +22,19 @@ interface LineChartProps {
   lineColor?: string;
 }
 
+const downsampleData = (pts: ChartDataPoint[], maxPoints = 30): ChartDataPoint[] => {
+  if (pts.length <= maxPoints) return pts;
+  const sampled: ChartDataPoint[] = [];
+  const step = (pts.length - 1) / (maxPoints - 1);
+  for (let i = 0; i < maxPoints; i++) {
+    const idx = Math.round(i * step);
+    if (pts[idx]) {
+      sampled.push(pts[idx]);
+    }
+  }
+  return sampled;
+};
+
 export const LineChart = memo<LineChartProps>(({
   data,
   width,
@@ -34,6 +47,8 @@ export const LineChart = memo<LineChartProps>(({
 }) => {
   const colors = useColors();
   const color = lineColor || colors.text;
+
+  const processedData = useMemo(() => downsampleData(data, 30), [data]);
 
   // Load Skia font for Victory Native canvas axis labels
   const font = useMemo(() => {
@@ -48,7 +63,7 @@ export const LineChart = memo<LineChartProps>(({
   const getY = (d: ChartDataPoint) => ((d as any).y !== undefined ? (d as any).y : d.value);
   const getLabel = (d: ChartDataPoint) => d.date || '';
 
-  const isEmpty = data.length === 0;
+  const isEmpty = processedData.length === 0;
   const activeData = isEmpty
     ? Array.from({ length: 7 }, (_, i) => {
         const d = new Date();
@@ -58,7 +73,7 @@ export const LineChart = memo<LineChartProps>(({
           value: 0,
         } as ChartDataPoint;
       })
-    : data;
+    : processedData;
 
   // If there's only 1 data point, duplicate it to show a flat line from a day ago
   const displayData = [...activeData];
@@ -110,7 +125,7 @@ export const LineChart = memo<LineChartProps>(({
         domain={{ y: [minVal, maxVal] }}
         axisOptions={{
           font,
-          tickCount: { x: Math.min(displayData.length, 6), y: 4 },
+          tickCount: { x: Math.max(1, Math.min(displayData.length, 6)), y: 4 },
           lineColor: 'rgba(255,255,255,0.08)',
           labelColor: 'rgba(255,255,255,0.5)',
           formatXLabel: (val: number) => {

@@ -27,6 +27,8 @@ import { spacing, typography, radius } from '../../theme';
 import { errorLogs } from '../../utils/logger';
 import { CONFIG } from '../../config/constants';
 import { crashReportsService } from '../../services/supabase/crashReports';
+import { updateService, type UpdateInfo } from '../../services/update/updateService';
+import { UpdateModal } from '../../components/common/UpdateModal';
 
 export const SettingsScreen = () => {
   const colors = useColors();
@@ -37,6 +39,9 @@ export const SettingsScreen = () => {
   const [showEditNameModal, setShowEditNameModal] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [isUpdatingName, setIsUpdatingName] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const handleLogout = () => {
     setShowLogoutAlert(true);
@@ -251,6 +256,58 @@ export const SettingsScreen = () => {
             ))}
           </AnimatedCard>
 
+          {/* App Updates Section */}
+          <AnimatedCard index={3} style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionIcon}>🔄</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+                APP UPDATES
+              </Text>
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingTextGroup}>
+                <Text style={[styles.settingTitle, { color: colors.text }]}>
+                  Current Version
+                </Text>
+                <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                  v{CONFIG.APP_VERSION}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.logoutPill,
+                  {
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
+                onPress={async () => {
+                  setIsCheckingUpdate(true);
+                  try {
+                    const info = await updateService.checkForUpdate(true);
+                    if (info) {
+                      setUpdateInfo(info);
+                      setShowUpdateModal(true);
+                    } else {
+                      Alert.alert('Up to Date', `FiTrack v${CONFIG.APP_VERSION} is currently the latest version.`);
+                    }
+                  } catch (err: any) {
+                    Alert.alert('Update Check Failed', err.message || 'Unable to connect to update server.');
+                  } finally {
+                    setIsCheckingUpdate(false);
+                  }
+                }}
+                disabled={isCheckingUpdate}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.logoutText, { color: colors.text }]}>
+                  {isCheckingUpdate ? 'Checking...' : 'Check for Updates'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </AnimatedCard>
+
           <View style={styles.footer}>
             <Text style={[styles.version, { color: colors.textMuted }]}>
               FiTrack v{CONFIG.APP_VERSION}
@@ -258,6 +315,12 @@ export const SettingsScreen = () => {
           </View>
         </ScrollView>
       </AnimatedScreen>
+
+      <UpdateModal
+        visible={showUpdateModal}
+        updateInfo={updateInfo}
+        onClose={() => setShowUpdateModal(false)}
+      />
 
       <CustomAlert
         visible={showLogoutAlert}

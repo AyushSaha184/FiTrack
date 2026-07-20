@@ -71,7 +71,7 @@ export class AuthStore {
       // Listen for auth state changes (token refresh, sign-out from another tab, etc.)
       this.authUnsubscribe = firebaseAuthService.onAuthStateChange(
         (event, newSession) => {
-          console.log('[AuthStore] onAuthStateChange event:', event);
+          if (__DEV__) logger.debug('[AuthStore] onAuthStateChange event:', event);
           if (event === 'SIGNED_OUT') {
             runInAction(() => {
               this.user = null;
@@ -97,14 +97,12 @@ export class AuthStore {
 
   async fetchUser(supabaseUser: any, isGoogleSignIn = false) {
     if (!supabaseUser) {
-      console.log('[AuthStore] fetchUser: no user');
       return;
     }
 
     const userId = supabaseUser.id;
     let fetchPromise = this.activeFetches.get(userId);
     if (fetchPromise) {
-      console.log('[AuthStore] fetchUser already in progress for user, awaiting existing promise');
       await fetchPromise;
       if (isGoogleSignIn) {
         runInAction(() => {
@@ -117,14 +115,8 @@ export class AuthStore {
     }
 
     fetchPromise = (async () => {
-      console.log('[AuthStore] fetchUser starting...');
       try {
         const user = supabaseUser;
-        console.log('[AuthStore] fetchUser got user:', user.email);
-
-        console.log('[AuthStore] Supabase REST headers before query:', JSON.stringify((supabase as any).rest.headers));
-        const sessionResult = await supabase.auth.getSession();
-        console.log('[AuthStore] Supabase auth session before query:', JSON.stringify(sessionResult));
 
         // Read profile from profiles table (handle_new_user trigger auto-creates it for Supabase auth, or manual insert for Firebase auth)
         let { data: profile, error: profileError } = await supabase
@@ -139,14 +131,13 @@ export class AuthStore {
 
         // If profile not found by id, check if a profile already exists for this email
         if (!profile && user.email) {
-          const { data: emailProfile, error: emailError } = await supabase
+          const { data: emailProfile } = await supabase
             .from('profiles')
             .select('*')
             .eq('email', user.email)
             .maybeSingle();
 
           if (emailProfile) {
-            console.log('[AuthStore] Profile found by email, updating profile id to match user.id...');
             const { data: updatedProfile } = await supabase
               .from('profiles')
               .update({ id: user.id })
@@ -160,7 +151,6 @@ export class AuthStore {
 
         // If profile still doesn't exist, create it
         if (!profile) {
-          console.log('[AuthStore] Profile not found, inserting...');
           const metadata = user.user_metadata || {};
           const { data: inserted, error: insertError } = await supabase
             .from('profiles')
@@ -175,7 +165,6 @@ export class AuthStore {
             .maybeSingle();
 
           if (insertError) {
-            console.log('[AuthStore] Profile insert error:', insertError);
             // Fetch fallback profile by id or email
             const { data: retryProfile } = await supabase
               .from('profiles')
@@ -217,7 +206,6 @@ export class AuthStore {
           this.isAuthenticated = true;
           this.isNameRequired = needsName;
         });
-        console.log('[AuthStore] fetchUser completed, isAuthenticated =', this.isAuthenticated, 'isNameRequired =', needsName);
       } catch (error) {
         logger.error('[AuthStore] fetchUser error:', error);
       }

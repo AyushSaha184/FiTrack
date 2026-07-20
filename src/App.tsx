@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar, LogBox, View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -168,7 +168,33 @@ const styles = StyleSheet.create({
   },
 });
 
+import { updateService, type UpdateInfo } from './services/update/updateService';
+import { UpdateModal } from './components/common/UpdateModal';
+
 const App = () => {
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  useEffect(() => {
+    const checkUpdates = async () => {
+      if (!updateService.shouldCheckForUpdateOnLaunch()) {
+        return;
+      }
+      try {
+        const info = await updateService.checkForUpdate();
+        if (info) {
+          setUpdateInfo(info);
+          setShowUpdateModal(true);
+        }
+      } catch (err) {
+        // Silently fail auto-check on startup
+      }
+    };
+    // Run update check shortly after launch
+    const timer = setTimeout(checkUpdates, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.dark.background }}>
@@ -177,6 +203,11 @@ const App = () => {
             <StoreContext.Provider value={rootStore}>
               <StatusBar barStyle="light-content" backgroundColor={colors.dark.background} />
               <AppNavigator />
+              <UpdateModal
+                visible={showUpdateModal}
+                updateInfo={updateInfo}
+                onClose={() => setShowUpdateModal(false)}
+              />
             </StoreContext.Provider>
           </QueryClientProvider>
         </SafeAreaProvider>

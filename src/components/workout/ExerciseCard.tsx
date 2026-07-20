@@ -1,5 +1,6 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import Svg, { Path, Polyline, Line } from 'react-native-svg';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
 import { Card } from '../common/Card';
@@ -53,6 +54,10 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
   isDragging = false,
 }) => {
   const colors = useColors();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const completedSetsCount = exercise.sets.filter((s) => s.completed).length;
+  const totalSetsCount = exercise.sets.length;
 
   return (
     <Card
@@ -66,55 +71,113 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
         },
       ]}
     >
-      <View style={styles.header}>
-        <View style={styles.exerciseInfo}>
-          <Text style={[styles.exerciseName, { color: colors.text }]}>
-            {exercise.exercise?.name || 'Exercise'}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={onRemoveExercise} style={styles.menuButton}>
-          <Text style={[styles.menuIcon, { color: colors.textMuted }]}>⋮</Text>
+      {/* Header — Tapping exercise name line expands/collapses card */}
+      <View style={[styles.header, isCollapsed && { marginBottom: 0 }]}>
+        <TouchableOpacity
+          style={styles.exerciseInfo}
+          onPress={() => setIsCollapsed(!isCollapsed)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.nameContainer}>
+            <View style={styles.titleRow}>
+              <Text style={[styles.exerciseName, { color: colors.text }]}>
+                {exercise.exercise?.name || 'Exercise'}
+              </Text>
+              <Svg
+                width={14}
+                height={14}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={colors.textMuted}
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  transform: [{ rotate: isCollapsed ? '180deg' : '0deg' }],
+                  marginLeft: spacing.xs,
+                }}
+              >
+                <Polyline points="18 15 12 9 6 15" />
+              </Svg>
+            </View>
+
+            {isCollapsed && (
+              <Text style={[styles.summaryText, { color: colors.textSecondary }]}>
+                {totalSetsCount} {totalSetsCount === 1 ? 'set' : 'sets'}
+                {completedSetsCount > 0 ? ` (${completedSetsCount} completed)` : ''}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {/* Delete Icon Button */}
+        <TouchableOpacity
+          onPress={onRemoveExercise}
+          style={styles.deleteButton}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Svg
+            width={18}
+            height={18}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={colors.error || '#FF453A'}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <Polyline points="3 6 5 6 21 6" />
+            <Path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <Line x1="10" y1="11" x2="10" y2="17" />
+            <Line x1="14" y1="11" x2="14" y2="17" />
+          </Svg>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.tableHeader}>
-        <View style={{ width: 24 + spacing.xs }} />
-        <Text style={[styles.headerText, styles.setCol, { color: colors.textMuted }]}>
-          SET
-        </Text>
-        <Text style={[styles.headerText, styles.weightCol, { color: colors.textMuted }]}>
-          WEIGHT ({weightUnit.toUpperCase()})
-        </Text>
-        <Text style={[styles.headerText, styles.repsCol, { color: colors.textMuted }]}>
-          REPS
-        </Text>
-        <Text style={[styles.headerText, styles.doneCol, { color: colors.textMuted }]}>
-          DONE
-        </Text>
-      </View>
+      {/* Table & Content (Hidden when collapsed) */}
+      {!isCollapsed && (
+        <>
+          <View style={styles.tableHeader}>
+            <View style={{ width: 24 + spacing.xs }} />
+            <Text style={[styles.headerText, styles.setCol, { color: colors.textMuted }]}>
+              SET
+            </Text>
+            <Text style={[styles.headerText, styles.weightCol, { color: colors.textMuted }]}>
+              WEIGHT ({weightUnit.toUpperCase()})
+            </Text>
+            <Text style={[styles.headerText, styles.repsCol, { color: colors.textMuted }]}>
+              REPS
+            </Text>
+            <Text style={[styles.headerText, styles.doneCol, { color: colors.textMuted }]}>
+              DONE
+            </Text>
+          </View>
 
-      {exercise.sets.map((set, index) => (
-        <SetRow
-          key={set.id}
-          set={set}
-          setNumber={index + 1}
-          weightUnit={weightUnit}
-          onWeightChange={(weight) => onUpdateSet(set.id, { weight })}
-          onRepsChange={(reps) => onUpdateSet(set.id, { reps })}
-          onToggleComplete={() => onToggleSetComplete(set.id)}
-          onDelete={() => onRemoveSet(set.id)}
-          onStartRest={onStartRest ? () => onStartRest(set.id) : undefined}
-        />
-      ))}
+          {exercise.sets.map((set, index) => (
+            <SetRow
+              key={set.id}
+              set={set}
+              setNumber={index + 1}
+              weightUnit={weightUnit}
+              onWeightChange={(weight) => onUpdateSet(set.id, { weight })}
+              onRepsChange={(reps) => onUpdateSet(set.id, { reps })}
+              onToggleComplete={() => onToggleSetComplete(set.id)}
+              onDelete={() => onRemoveSet(set.id)}
+              onStartRest={onStartRest ? () => onStartRest(set.id) : undefined}
+            />
+          ))}
 
-      <Button
-        title="Add Set"
-        onPress={onAddSet}
-        variant="ghost"
-        size="small"
-        icon={<Text style={{ color: colors.text }}>+</Text>}
-        style={styles.addSetButton}
-      />
+          <Button
+            title="Add Set"
+            onPress={onAddSet}
+            variant="ghost"
+            size="small"
+            icon={<Text style={{ color: colors.text }}>+</Text>}
+            style={styles.addSetButton}
+          />
+        </>
+      )}
     </Card>
   );
 });
@@ -158,14 +221,23 @@ const styles = StyleSheet.create({
     fontSize: typography.h5.fontSize,
     fontWeight: '700',
   },
-  menuButton: {
+  nameContainer: {
+    flex: 1,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  summaryText: {
+    fontSize: typography.caption.fontSize,
+    marginTop: 2,
+  },
+  deleteButton: {
     width: 32,
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  menuIcon: {
-    fontSize: 20,
+    marginLeft: spacing.sm,
   },
   tableHeader: {
     flexDirection: 'row',

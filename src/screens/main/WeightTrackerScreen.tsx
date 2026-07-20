@@ -46,7 +46,6 @@ export const WeightTrackerScreen = observer(() => {
     const loadWeightData = async () => {
       if (auth.user?.id) {
         await weightStore.loadEntries(auth.user.id);
-        await weightStore.loadStats(auth.user.id);
       }
     };
     loadWeightData();

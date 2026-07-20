@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -19,7 +19,9 @@ import { ExercisePicker } from '../../components/workout/ExercisePicker';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { Modal } from '../../components/common/Modal';
 import { Logo } from '../../components/common/Logo';
-import { useColors, useSettingsStore, useWorkoutStore, useAuthStore, useRestTimer, useStopwatch } from '../../hooks';
+import { StopwatchDisplay } from '../../components/workout/StopwatchDisplay';
+import { RestTimerBanner, type RestTimerBannerHandle } from '../../components/workout/RestTimerBanner';
+import { useColors, useSettingsStore, useWorkoutStore, useAuthStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { getWeekDates, getDayOfWeekKey, storage, dateKey } from '../../utils/helpers';
 import type { DayOfWeek, WorkoutType } from '../../models';
@@ -44,8 +46,7 @@ export const WorkoutScreen = observer(() => {
   const navigation = useNavigation<any>();
   const workoutStore = useWorkoutStore();
   const authStore = useAuthStore();
-  const restTimer = useRestTimer();
-  const stopwatch = useStopwatch();
+  const restTimerRef = useRef<RestTimerBannerHandle>(null);
   
   // Store references
   const activeWorkout = workoutStore.activeWorkout;
@@ -78,7 +79,6 @@ export const WorkoutScreen = observer(() => {
   const [showRemoveAlert, setShowRemoveAlert] = useState(false);
   const [showResetAlert, setShowResetAlert] = useState(false);
   const [showRoutineModal, setShowRoutineModal] = useState(false);
-  const [showStopwatchDialog, setShowStopwatchDialog] = useState(false);
 
   const fabScale = useSharedValue(1);
 
@@ -133,25 +133,6 @@ export const WorkoutScreen = observer(() => {
 
   const handleResetWeek = () => {
     setShowResetAlert(true);
-  };
-
-  // Stopwatch button handler - toggles start/stop and shows dialog when running
-  const handleStopwatchPress = () => {
-    if (stopwatch.isRunning) {
-      stopwatch.stop();
-      setShowStopwatchDialog(true);
-    } else {
-      stopwatch.start();
-    }
-  };
-
-  const handleStopwatchDialogClose = () => {
-    setShowStopwatchDialog(false);
-  };
-
-  const handleStopwatchReset = () => {
-    stopwatch.reset();
-    setShowStopwatchDialog(false);
   };
 
   const fabAnimatedStyle = useAnimatedStyle(() => ({
@@ -289,28 +270,7 @@ export const WorkoutScreen = observer(() => {
                 </TouchableOpacity>
               </View>
 
-              {/* Stopwatch Button */}
-              <TouchableOpacity
-                style={[
-                  styles.stopwatchButton,
-                  {
-                    backgroundColor: stopwatch.isRunning ? colors.primary : 'rgba(255,255,255,0.08)',
-                    borderColor: colors.cardBorder,
-                  },
-                ]}
-                onPress={handleStopwatchPress}
-                activeOpacity={0.7}
-              >
-                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.9 }}>
-                  <Circle cx="12" cy="13" r="8" />
-                  <Path d="M12 9v4l2 2" />
-                  <Path d="M12 2v3" />
-                  <Path d="M9 2h6" />
-                </Svg>
-                <Text style={[styles.stopwatchText, { color: colors.text }]}>
-                  {stopwatch.getFormattedTime()}
-                </Text>
-              </TouchableOpacity>
+              <StopwatchDisplay />
             </View>
           </AnimatedCard>
 
@@ -343,23 +303,7 @@ export const WorkoutScreen = observer(() => {
           ) : activeWorkout ? (
             /* Active Workout Exercise List */
             <View>
-              {/* Rest Timer Banner */}
-              {restTimer.isVisible && restTimer.isActive && (
-                <AnimatedCard index={1} style={[styles.restTimerCard, { backgroundColor: colors.warning + '20', borderColor: colors.warning }]}>
-                  <View style={styles.restTimerContent}>
-                    <Text style={[styles.restTimerLabel, { color: colors.warning }]}>REST</Text>
-                    <Text style={[styles.restTimerTime, { color: colors.text }]}>
-                      {Math.floor(restTimer.timeRemaining / 60)}:{(restTimer.timeRemaining % 60).toString().padStart(2, '0')}
-                    </Text>
-                    <TouchableOpacity
-                      style={[styles.restTimerDismiss, { borderColor: colors.warning }]}
-                      onPress={restTimer.dismissTimer}
-                    >
-                      <Text style={[styles.restTimerDismissText, { color: colors.warning }]}>Skip</Text>
-                    </TouchableOpacity>
-                  </View>
-                </AnimatedCard>
-              )}
+              <RestTimerBanner ref={restTimerRef} />
 
               <View style={styles.exercisesSection}>
                 <DraggableExerciseList
@@ -374,7 +318,7 @@ export const WorkoutScreen = observer(() => {
                   }
                   onRemoveSet={(exId, setId) => workoutStore.removeSet(exId, setId)}
                   onRemoveExercise={(exId, name) => handleConfirmRemoveExercise(exId, name)}
-                  onStartRest={() => restTimer.startTimer()}
+                  onStartRest={() => restTimerRef.current?.startTimer()}
                   onReorder={(fromIdx, toIdx) => workoutStore.reorderExercises(fromIdx, toIdx)}
                 />
               </View>
@@ -450,48 +394,6 @@ export const WorkoutScreen = observer(() => {
             ))}
           </View>
         </ScrollView>
-      </Modal>
-
-      {/* Stopwatch Dialog */}
-      <Modal
-        visible={showStopwatchDialog}
-        onClose={handleStopwatchDialogClose}
-        title="Workout Timer"
-        sheet
-      >
-        <View style={styles.stopwatchDialog}>
-          <Text style={[styles.stopwatchDialogTime, { color: colors.text }]}>
-            {stopwatch.getFormattedTime()}
-          </Text>
-          <View style={styles.stopwatchDialogStats}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Started</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>
-                {stopwatch.startTime ? new Date(stopwatch.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-              </Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Ended</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>
-                {stopwatch.endTime ? new Date(stopwatch.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Running'}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.stopwatchDialogActions}>
-            <TouchableOpacity
-              style={[styles.stopwatchDialogBtn, { backgroundColor: 'rgba(255,255,255,0.08)' }]}
-              onPress={handleStopwatchReset}
-            >
-              <Text style={[styles.stopwatchDialogBtnText, { color: colors.text }]}>Reset</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.stopwatchDialogBtn, { backgroundColor: colors.primary }]}
-              onPress={handleStopwatchDialogClose}
-            >
-              <Text style={[styles.stopwatchDialogBtnText, { color: colors.background }]}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
       </Modal>
 
       <CustomAlert

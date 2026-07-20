@@ -71,6 +71,26 @@ export const workoutsService = {
     if (error) throw error;
     return toCamelCaseKeys<any>(data);
   },
+  async addExercisesBulk(items: { id?: string; workoutId: string; exerciseId: string; orderIndex: number }[]) {
+    if (items.length === 0) return [];
+    const payload = items.map((item) => toSnakeCaseKeys(item));
+    const { data, error } = await supabase
+      .from('workout_exercises')
+      .insert(payload)
+      .select();
+    if (error) throw error;
+    return toCamelCaseKeys<any[]>(data || []);
+  },
+  async addSetsBulk(sets: (Partial<Set> & { workoutExerciseId: string; workoutId?: string })[]) {
+    if (sets.length === 0) return [];
+    const payload = sets.map((s) => toSnakeCaseKeys(s));
+    const { data, error } = await supabase
+      .from('sets')
+      .insert(payload)
+      .select();
+    if (error) throw error;
+    return toCamelCaseKeys<Set[]>(data || []);
+  },
   async removeExercise(workoutExerciseId: string) {
     const { error } = await supabase
       .from('workout_exercises')

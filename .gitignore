@@ -42,6 +42,10 @@ android/.kotlin/
 android/build/
 android/app/build/
 android/app/.cxx/
+android/app/release/
+android/app/debug/
+release/
+debug/
 android/app/src/main/assets/index.android.bundle
 android/captures/
 android/local.properties

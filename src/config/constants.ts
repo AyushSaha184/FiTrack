@@ -1,6 +1,9 @@
 export const CONFIG = {
   APP_NAME: 'FiTrack',
   APP_VERSION: '1.0.0',
+  GITHUB_OWNER: 'AyushSaha184',
+  GITHUB_REPO: 'FiTrack',
+  UPDATE_CHECK_INTERVAL_MS: 24 * 60 * 60 * 1000, // 24 hours
   DEFAULT_STEP_GOAL: 10_000,
   MIN_STEP_GOAL: 1_000,
   MAX_STEP_GOAL: 100_000,

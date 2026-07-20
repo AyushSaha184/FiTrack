@@ -1,68 +1,78 @@
-import { supabase } from './client';
+import { supabase, withTokenRetry } from './client';
 import type { WeightEntry } from '../../models';
 import { toCamelCaseKeys, toSnakeCaseKeys } from '../../utils/mapping';
 
 export const weightService = {
   async getEntries(userId: string, startDate?: string, endDate?: string, limit = 100) {
-    let query = supabase
-      .from('weight_entries')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
+    return withTokenRetry(async () => {
+      let query = supabase
+        .from('weight_entries')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false });
 
-    if (startDate && endDate) {
-      query = query.gte('date', startDate).lte('date', endDate);
-    }
+      if (startDate && endDate) {
+        query = query.gte('date', startDate).lte('date', endDate);
+      }
 
-    query = query.limit(limit);
+      query = query.limit(limit);
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return toCamelCaseKeys<WeightEntry[]>(data);
+      const { data, error } = await query;
+      if (error) throw error;
+      return toCamelCaseKeys<WeightEntry[]>(data);
+    });
   },
 
   async getLatestEntry(userId: string) {
-    const { data, error } = await supabase
-      .from('weight_entries')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(1)
-      .single();
-    if (error && error.code !== 'PGRST116') throw error;
-    return data ? toCamelCaseKeys<WeightEntry>(data) : null;
+    return withTokenRetry(async () => {
+      const { data, error } = await supabase
+        .from('weight_entries')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .limit(1)
+        .single();
+      if (error && error.code !== 'PGRST116') throw error;
+      return data ? toCamelCaseKeys<WeightEntry>(data) : null;
+    });
   },
 
   async addEntry(entry: Partial<WeightEntry>) {
-    const { userId, ...rest } = entry;
-    const dbEntry = toSnakeCaseKeys(rest);
-    const { data, error } = await supabase
-      .from('weight_entries')
-      .upsert({ ...dbEntry, user_id: userId }, { onConflict: 'user_id,date' })
-      .select()
-      .single();
-    if (error) throw error;
-    return toCamelCaseKeys<WeightEntry>(data);
+    return withTokenRetry(async () => {
+      const { userId, ...rest } = entry;
+      const dbEntry = toSnakeCaseKeys(rest);
+      const { data, error } = await supabase
+        .from('weight_entries')
+        .upsert({ ...dbEntry, user_id: userId }, { onConflict: 'user_id,date' })
+        .select()
+        .single();
+      if (error) throw error;
+      return toCamelCaseKeys<WeightEntry>(data);
+    });
   },
 
   async updateEntry(entryId: string, updates: Partial<WeightEntry>) {
-    const dbUpdates = toSnakeCaseKeys(updates);
-    const { data, error } = await supabase
-      .from('weight_entries')
-      .update({ ...dbUpdates, updated_at: new Date().toISOString() })
-      .eq('id', entryId)
-      .select()
-      .single();
-    if (error) throw error;
-    return toCamelCaseKeys<WeightEntry>(data);
+    return withTokenRetry(async () => {
+      const dbUpdates = toSnakeCaseKeys(updates);
+      const { data, error } = await supabase
+        .from('weight_entries')
+        .update({ ...dbUpdates, updated_at: new Date().toISOString() })
+        .eq('id', entryId)
+        .select()
+        .single();
+      if (error) throw error;
+      return toCamelCaseKeys<WeightEntry>(data);
+    });
   },
 
   async deleteEntry(entryId: string) {
-    const { error } = await supabase
-      .from('weight_entries')
-      .delete()
-      .eq('id', entryId);
-    if (error) throw error;
+    return withTokenRetry(async () => {
+      const { error } = await supabase
+        .from('weight_entries')
+        .delete()
+        .eq('id', entryId);
+      if (error) throw error;
+    });
   },
 
   async getStats(userId: string, days = 30) {

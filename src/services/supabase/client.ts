@@ -37,6 +37,42 @@ export const setSupabaseToken = async (token: string | null): Promise<void> => {
  * `firebase-token-exchange` Edge Function, then set it as the active
  * Authorization header for all subsequent Supabase REST calls.
  */
+import auth from '@react-native-firebase/auth';
+
+export const refreshSupabaseToken = async (): Promise<boolean> => {
+  try {
+    const user = auth().currentUser;
+    if (user) {
+      const idToken = await user.getIdToken(true);
+      await syncSupabaseAuth(idToken);
+      return true;
+    }
+  } catch (err) {
+    console.warn('[Supabase client] Failed to refresh token:', err);
+  }
+  return false;
+};
+
+export const withTokenRetry = async <T>(operation: () => Promise<T>): Promise<T> => {
+  try {
+    return await operation();
+  } catch (error: any) {
+    const isJwtExpired =
+      error?.code === 'PGRST303' ||
+      error?.message?.toLowerCase().includes('jwt expired') ||
+      error?.message?.toLowerCase().includes('token expired');
+
+    if (isJwtExpired) {
+      console.log('[Supabase client] JWT expired, auto-refreshing token and retrying...');
+      const refreshed = await refreshSupabaseToken();
+      if (refreshed) {
+        return await operation();
+      }
+    }
+    throw error;
+  }
+};
+
 export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> => {
   const response = await fetch(
     `${supabaseUrl}/functions/v1/firebase-token-exchange`,

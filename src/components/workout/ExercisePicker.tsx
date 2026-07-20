@@ -7,6 +7,7 @@ import {
   ScrollView,
   TextInput,
 } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '../../hooks';
@@ -50,42 +51,45 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
     onClose();
   };
 
-  const renderExerciseItem = (exercise: ExerciseItem, index: number) => (
-    <TouchableOpacity
-      key={exercise.id}
-      style={[
-        styles.exerciseItem,
-        { borderBottomColor: colors.cardBorder },
-      ]}
-      onPress={() => handleSelect(exercise)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.exerciseIcon, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
-        <Text style={styles.exerciseIconText}>{exercise.icon}</Text>
-      </View>
-      <View style={styles.exerciseInfo}>
-        <Text style={[styles.exerciseName, { color: colors.text }]}>
-          {exercise.name}
-        </Text>
-        <Text style={[styles.exerciseMeta, { color: colors.textMuted }]}>
-          {exercise.equipment.charAt(0).toUpperCase() + exercise.equipment.slice(1).replace('_', ' ')}
-        </Text>
-      </View>
-      <Text style={[styles.addIcon, { color: colors.textMuted }]}>+</Text>
-    </TouchableOpacity>
-  );
+  const renderExerciseItem = (
+    exercise: ExerciseItem,
+    index: number,
+    isLastInBox = false,
+  ) => {
+    return (
+      <TouchableOpacity
+        key={exercise.id}
+        style={[
+          styles.exerciseItem,
+          !isLastInBox && {
+            borderBottomWidth: 1,
+            borderBottomColor: 'rgba(255, 255, 255, 0.07)',
+          },
+        ]}
+        onPress={() => handleSelect(exercise)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.exerciseInfo}>
+          <Text style={[styles.exerciseName, { color: colors.text }]}>
+            {exercise.name}
+          </Text>
+          <Text style={[styles.exerciseMeta, { color: colors.textMuted }]}>
+            {exercise.equipment.charAt(0).toUpperCase() + exercise.equipment.slice(1).replace('_', ' ')}
+          </Text>
+        </View>
+        <Text style={[styles.addIcon, { color: colors.textMuted }]}>+</Text>
+      </TouchableOpacity>
+    );
+  };
 
   const renderCategory = (category: ExerciseCategory) => {
     const isExpanded = selectedCategory === category.id;
     return (
-      <View key={category.id}>
+      <View key={category.id} style={styles.categoryContainer}>
         <TouchableOpacity
           style={[
             styles.categoryHeader,
             {
-              backgroundColor: isExpanded
-                ? 'rgba(255,255,255,0.05)'
-                : 'transparent',
               borderBottomColor: colors.cardBorder,
             },
           ]}
@@ -95,7 +99,6 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
           activeOpacity={0.7}
         >
           <View style={styles.categoryLeft}>
-            <Text style={styles.categoryIcon}>{category.icon}</Text>
             <Text style={[styles.categoryName, { color: colors.text }]}>
               {category.name}
             </Text>
@@ -109,10 +112,17 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
             </Text>
           </View>
         </TouchableOpacity>
-        {isExpanded &&
-          category.exercises.map((exercise, index) =>
-            renderExerciseItem(exercise, index),
-          )}
+        {isExpanded && (
+          <View style={styles.expandedCategoryBox}>
+            {category.exercises.map((exercise, index) =>
+              renderExerciseItem(
+                exercise,
+                index,
+                index === category.exercises.length - 1,
+              ),
+            )}
+          </View>
+        )}
       </View>
     );
   };
@@ -124,20 +134,34 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
       title="Add Exercise"
       sheet
       noPadding
+      bodyStyle={{ backgroundColor: '#09090B' }}
     >
-      <View style={{ height: 550, paddingBottom: insets.bottom }}>
+      <View style={{ height: 550, paddingBottom: insets.bottom, backgroundColor: '#09090B' }}>
         {/* Search */}
         <View
           style={[
             styles.searchContainer,
             {
-              backgroundColor: colors.cardSurface,
-              borderColor: colors.cardBorder,
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
               marginTop: spacing.base,
             },
           ]}
         >
-          <Text style={[styles.searchIcon, { color: colors.textMuted }]}>🔍</Text>
+          <Svg
+            width={18}
+            height={18}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={colors.textMuted}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={styles.searchSvg}
+          >
+            <Circle cx="11" cy="11" r="8" />
+            <Path d="m21 21-4.3-4.3" />
+          </Svg>
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
             placeholder="Search exercises..."
@@ -206,6 +230,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginRight: spacing.sm,
   },
+  searchSvg: {
+    marginRight: spacing.sm,
+  },
   searchInput: {
     flex: 1,
     fontSize: typography.body.fontSize,
@@ -263,12 +290,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  categoryContainer: {
+    marginBottom: spacing.xs,
+  },
+  expandedCategoryBox: {
+    backgroundColor: 'rgba(255, 255, 255, 0.035)',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    marginLeft: spacing.base,
+    paddingHorizontal: spacing.base,
+    overflow: 'hidden',
+  },
   exerciseItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderBottomWidth: 1,
+    paddingHorizontal: spacing.xs,
   },
   exerciseIcon: {
     width: 40,
@@ -280,6 +320,10 @@ const styles = StyleSheet.create({
   },
   exerciseIconText: {
     fontSize: 18,
+  },
+  exerciseImage: {
+    width: 26,
+    height: 26,
   },
   exerciseInfo: {
     flex: 1,

@@ -53,7 +53,6 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
   isDragging = false,
 }) => {
   const colors = useColors();
-  const icon = getEquipmentIcon(exercise.exercise?.equipment);
 
   return (
     <Card
@@ -69,16 +68,9 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
     >
       <View style={styles.header}>
         <View style={styles.exerciseInfo}>
-          <View
-            style={[styles.iconContainer, { backgroundColor: colors.surface }]}
-          >
-            <Text style={styles.iconText}>{icon}</Text>
-          </View>
-          <View style={styles.textInfo}>
-            <Text style={[styles.exerciseName, { color: colors.text }]}>
-              {exercise.exercise?.name || 'Exercise'}
-            </Text>
-          </View>
+          <Text style={[styles.exerciseName, { color: colors.text }]}>
+            {exercise.exercise?.name || 'Exercise'}
+          </Text>
         </View>
         <TouchableOpacity onPress={onRemoveExercise} style={styles.menuButton}>
           <Text style={[styles.menuIcon, { color: colors.textMuted }]}>⋮</Text>
@@ -154,6 +146,10 @@ const styles = StyleSheet.create({
   },
   iconText: {
     fontSize: 22,
+  },
+  exerciseImage: {
+    width: 28,
+    height: 28,
   },
   textInfo: {
     flex: 1,

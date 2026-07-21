@@ -1,5 +1,5 @@
 import React, { memo, ReactNode, useEffect } from 'react';
-import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+import { ViewStyle, StyleProp } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -45,7 +45,7 @@ export const AnimatedCard = memo<AnimatedCardProps>(({
         withTiming(0, { duration: durations.slower, easing: Easing.out(Easing.cubic) }),
       );
     }
-  }, []);
+  }, [animated, index, opacity, translateY]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,

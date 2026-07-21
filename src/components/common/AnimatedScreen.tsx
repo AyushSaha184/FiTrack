@@ -32,7 +32,7 @@ export const AnimatedScreen = memo<AnimatedScreenProps>(({
       delay,
       withTiming(0, { duration: durations.pageEntrance, easing: Easing.out(Easing.cubic) }),
     );
-  }, []);
+  }, [delay, opacity, translateY]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,

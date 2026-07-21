@@ -5,7 +5,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { logger, errorLogs } from './utils/logger';
 import { crashReportsService } from './services/supabase/crashReports';
-import { CONFIG } from './config/constants';
 import { AppNavigator } from './navigation/AppNavigator';
 import { StoreContext, rootStore } from './stores';
 import { colors } from './theme';
@@ -73,7 +72,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, Error
 
   handleRetry = () => {
     this.setState({ error: null, reportSent: false, isSendingReport: false });
-  }
+  };
 
   handleSendReport = async () => {
     this.setState({ isSendingReport: true });
@@ -81,7 +80,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, Error
       await this.sendCrashReport(this.state.error);
     }
     this.setState({ isSendingReport: false });
-  }
+  };
 
   render() {
     if (this.state.error) {
@@ -166,6 +165,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  gestureRoot: {
+    flex: 1,
+    backgroundColor: colors.dark.background,
+  },
 });
 
 import { updateService, type UpdateInfo } from './services/update/updateService';
@@ -197,7 +200,7 @@ const App = () => {
 
   return (
     <ErrorBoundary>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.dark.background }}>
+      <GestureHandlerRootView style={styles.gestureRoot}>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
             <StoreContext.Provider value={rootStore}>

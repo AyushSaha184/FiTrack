@@ -52,7 +52,11 @@ export const StepsTrackerScreen = observer(() => {
     if (user?.id) {
       stepsStore.loadTodaySteps(user.id);
       stepsStore.loadWeeklySteps(user.id);
+      stepsStore.startLiveStepTracking(user.id);
     }
+    return () => {
+      stepsStore.stopLiveStepTracking();
+    };
   }, [user?.id, stepsStore]);
 
   const currentWeight = weightStore.currentWeight;
@@ -157,7 +161,7 @@ export const StepsTrackerScreen = observer(() => {
           <View style={styles.header}>
             <Logo size="medium" />
             <TouchableOpacity
-              onPress={() => navigation.navigate('HomeTab', { screen: 'Settings' })}
+              onPress={() => navigation.navigate('Settings')}
               style={[styles.settingsButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">

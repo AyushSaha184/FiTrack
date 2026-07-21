@@ -106,3 +106,37 @@ export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> =
   }
   await setSupabaseToken(token);
 };
+
+export const ensureProfileExists = async (
+  userId: string,
+  email?: string,
+  name?: string,
+  avatarUrl?: string,
+): Promise<void> => {
+  if (!userId) return;
+  try {
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!existing) {
+      const { error } = await supabase.from('profiles').upsert(
+        {
+          id: userId,
+          email: email || '',
+          name: name || 'Athlete',
+          avatar_url: avatarUrl || null,
+          onboarding_completed: false,
+        },
+        { onConflict: 'id' },
+      );
+      if (error) {
+        logger.error('[ensureProfileExists] Error upserting profile:', error);
+      }
+    }
+  } catch (err) {
+    logger.error('[ensureProfileExists] Exception:', err);
+  }
+};

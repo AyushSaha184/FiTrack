@@ -157,7 +157,7 @@ export const WorkoutScreen = observer(() => {
               )}
             </View>
             <TouchableOpacity
-              onPress={() => navigation.navigate('HomeTab', { screen: 'Settings' })}
+              onPress={() => navigation.navigate('Settings')}
               style={[styles.settingsButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">

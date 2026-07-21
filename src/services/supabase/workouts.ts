@@ -1,4 +1,4 @@
-import { supabase } from './client';
+import { supabase, ensureProfileExists } from './client';
 import type { Workout, WorkoutExercise, Set } from '../../models';
 import { toCamelCaseKeys, toSnakeCaseKeys } from '../../utils/mapping';
 
@@ -38,6 +38,9 @@ export const workoutsService = {
     return toCamelCaseKeys<Workout>(data);
   },
   async createWorkout(workout: Partial<Workout>) {
+    if (workout.userId) {
+      await ensureProfileExists(workout.userId);
+    }
     const dbWorkout = toSnakeCaseKeys(workout);
     const { data, error } = await supabase
       .from('workouts')

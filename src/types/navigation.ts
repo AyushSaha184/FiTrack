@@ -2,8 +2,10 @@ import type { DayOfWeek, WorkoutType } from '../models';
 
 export type RootStackParamList = {
   Auth: undefined;
+  NameInput: undefined;
   MetricSelection: undefined;
   App: undefined;
+  Settings: undefined;
 };
 
 export type AuthStackParamList = {

@@ -1,6 +1,7 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { StepEntry, StepSource } from '../models';
 import { stepsService } from '../services/supabase/steps';
+import { stepCounterService } from '../services/stepCounterService';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS, DEFAULT_STEP_GOAL, getLast7Days, dateKey, isValidUUID } from '../utils/helpers';
 import { generateId } from '../utils/helpers';
@@ -13,8 +14,12 @@ export class StepsStore {
   weeklyEntries: StepEntry[] = [];
   todayEntry: StepEntry | null = null;
   isLoading = false;
+  isLiveTracking = false;
   error: string | null = null;
   source: StepSource = 'manual';
+
+  private unsubscribeStepCounter: (() => void) | null = null;
+  private syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     makeAutoObservable(this);
@@ -203,6 +208,51 @@ export class StepsStore {
         (e) => dateKey(new Date(e.date)) === dateStr,
       );
       return { date, steps: entry?.steps ?? 0 };
+    });
+  }
+
+  async startLiveStepTracking(userId: string) {
+    if (this.isLiveTracking || !userId) return;
+
+    this.unsubscribeStepCounter = await stepCounterService.startTracking((delta) => {
+      this.onHardwareStepDetected(userId, delta);
+    });
+
+    runInAction(() => {
+      this.isLiveTracking = true;
+    });
+  }
+
+  private onHardwareStepDetected(userId: string, delta: number) {
+    runInAction(() => {
+      this.todaySteps += delta;
+    });
+
+    if (this.syncDebounceTimer) {
+      clearTimeout(this.syncDebounceTimer);
+    }
+
+    this.syncDebounceTimer = setTimeout(async () => {
+      try {
+        const todayStr = dateKey(new Date());
+        await stepsService.upsertEntry(userId, todayStr, this.todaySteps, 'manual');
+      } catch (err) {
+        logger.error('[StepsStore] Live step auto-sync failed:', err);
+      }
+    }, 3000);
+  }
+
+  stopLiveStepTracking() {
+    if (this.unsubscribeStepCounter) {
+      this.unsubscribeStepCounter();
+      this.unsubscribeStepCounter = null;
+    }
+    if (this.syncDebounceTimer) {
+      clearTimeout(this.syncDebounceTimer);
+      this.syncDebounceTimer = null;
+    }
+    runInAction(() => {
+      this.isLiveTracking = false;
     });
   }
 

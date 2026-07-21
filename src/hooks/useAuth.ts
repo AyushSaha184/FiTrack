@@ -18,6 +18,9 @@ export const useAuth = () => {
     const disposer = reaction(
       () => ({
         user: store.user,
+        userId: store.user?.id,
+        userOnboarding: store.user?.onboardingCompleted,
+        userName: store.user?.name,
         isLoading: store.isLoading,
         isInitialized: store.isInitialized,
         isAuthenticated: store.isAuthenticated,

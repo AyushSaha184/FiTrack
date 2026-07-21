@@ -5,13 +5,15 @@ import { AuthNavigator } from './AuthNavigator';
 import { MainTabNavigator } from './MainTabNavigator';
 import { MetricSelectionScreen } from '../screens/onboarding/MetricSelectionScreen';
 import { NameInputScreen } from '../screens/auth/NameInputScreen';
+import { SettingsScreen } from '../screens/settings/SettingsScreen';
+import { observer } from 'mobx-react-lite';
 import { useAuth } from '../hooks';
 import { Loading } from '../components/common/Loading';
 import { useColors } from '../hooks';
 
 const Stack = createNativeStackNavigator();
 
-export const AppNavigator = () => {
+export const AppNavigator = observer(() => {
   const { isInitialized, isAuthenticated, isOnboarded, isNameRequired } = useAuth();
   const colors = useColors();
 
@@ -41,9 +43,16 @@ export const AppNavigator = () => {
         ) : !isOnboarded ? (
           <Stack.Screen name="MetricSelection" component={MetricSelectionScreen} />
         ) : (
-          <Stack.Screen name="App" component={MainTabNavigator} />
+          <>
+            <Stack.Screen name="App" component={MainTabNavigator} />
+            <Stack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>
   );
-};
+});

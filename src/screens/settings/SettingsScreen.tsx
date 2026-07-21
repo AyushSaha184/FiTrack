@@ -22,6 +22,7 @@ import { Input } from '../../components/common/Input';
 import { Modal } from '../../components/common/Modal';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { Logo } from '../../components/common/Logo';
+import { observer } from 'mobx-react-lite';
 import { useAuth, useColors, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { errorLogs } from '../../utils/logger';
@@ -30,7 +31,7 @@ import { crashReportsService } from '../../services/supabase/crashReports';
 import { updateService, type UpdateInfo } from '../../services/update/updateService';
 import { UpdateModal } from '../../components/common/UpdateModal';
 
-export const SettingsScreen = () => {
+export const SettingsScreen = observer(() => {
   const colors = useColors();
   const navigation = useNavigation();
   const { user, logout, updateProfile } = useAuth();
@@ -383,7 +384,7 @@ export const SettingsScreen = () => {
       </Modal>
     </SafeAreaView>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

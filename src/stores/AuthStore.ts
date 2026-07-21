@@ -1,7 +1,7 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { createContext, useContext } from 'react';
 import { firebaseAuthService } from '../services/firebase/auth';
-import { supabase } from '../services/supabase/client';
+import { supabase, ensureProfileExists } from '../services/supabase/client';
 import type { User, UserPreferences, Units } from '../models';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS } from '../utils/constants';
@@ -149,33 +149,20 @@ export class AuthStore {
           }
         }
 
-        // If profile still doesn't exist, create it
+        // If profile still doesn't exist, create/upsert it guaranteed
         if (!profile) {
           const metadata = user.user_metadata || {};
-          const { data: inserted, error: insertError } = await supabase
+          const nameToSet = metadata.name || metadata.full_name || 'Athlete';
+          const avatarToSet = metadata.avatar_url || metadata.picture || null;
+          await ensureProfileExists(user.id, user.email, nameToSet, avatarToSet);
+
+          const { data: createdProfile } = await supabase
             .from('profiles')
-            .insert({
-              id: user.id,
-              email: user.email,
-              name: metadata.name || metadata.full_name || 'Athlete',
-              avatar_url: metadata.avatar_url || metadata.picture || null,
-              onboarding_completed: false,
-            })
-            .select()
+            .select('*')
+            .eq('id', user.id)
             .maybeSingle();
 
-          if (insertError) {
-            // Fetch fallback profile by id or email
-            const { data: retryProfile } = await supabase
-              .from('profiles')
-              .select('*')
-              .or(`id.eq.${user.id}${user.email ? `,email.eq.${user.email}` : ''}`)
-              .maybeSingle();
-
-            profile = retryProfile;
-          } else {
-            profile = inserted;
-          }
+          profile = createdProfile;
         }
 
         const displayName = profile?.name || user.user_metadata?.name || 'Athlete';

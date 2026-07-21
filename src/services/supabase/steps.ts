@@ -1,4 +1,4 @@
-import { supabase } from './client';
+import { supabase, ensureProfileExists } from './client';
 import type { StepEntry, StepSource } from '../../models';
 import { toCamelCaseKeys, toSnakeCaseKeys } from '../../utils/mapping';
 
@@ -33,7 +33,10 @@ export const stepsService = {
     return data ? toCamelCaseKeys<StepEntry>(data) : null;
   },
 
-async upsertEntry(userId: string, date: string, steps: number, source: StepSource = 'manual') {
+  async upsertEntry(userId: string, date: string, steps: number, source: StepSource = 'manual') {
+    if (userId) {
+      await ensureProfileExists(userId);
+    }
     const { data, error } = await supabase
       .from('steps')
       .upsert(

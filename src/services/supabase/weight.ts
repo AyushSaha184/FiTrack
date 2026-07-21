@@ -1,4 +1,4 @@
-import { supabase, withTokenRetry } from './client';
+import { supabase, withTokenRetry, ensureProfileExists } from './client';
 import type { WeightEntry } from '../../models';
 import { toCamelCaseKeys, toSnakeCaseKeys } from '../../utils/mapping';
 
@@ -40,6 +40,9 @@ export const weightService = {
   async addEntry(entry: Partial<WeightEntry>) {
     return withTokenRetry(async () => {
       const { userId, ...rest } = entry;
+      if (userId) {
+        await ensureProfileExists(userId);
+      }
       const dbEntry = toSnakeCaseKeys(rest);
       const { data, error } = await supabase
         .from('weight_entries')

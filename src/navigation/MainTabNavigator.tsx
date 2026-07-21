@@ -15,34 +15,12 @@ import Svg, { Path, Circle, Polyline } from 'react-native-svg';
 import { WeightTrackerScreen } from '../screens/main/WeightTrackerScreen';
 import { WorkoutScreen } from '../screens/main/WorkoutScreen';
 import { StepsTrackerScreen } from '../screens/main/StepsTrackerScreen';
-import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { useColors } from '../hooks';
 import { spacing, radius } from '../theme';
 import type { MainTabParamList } from '../types/navigation';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TAB_ORDER: (keyof MainTabParamList)[] = ['WeightTab', 'HomeTab', 'StepsTab'];
-
-const HomeStack = createNativeStackNavigator();
-
-const HomeTabScreen = () => {
-  const colors = useColors();
-  return (
-    <HomeStack.Navigator
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: colors.background },
-      }}
-    >
-      <HomeStack.Screen name="Workout" component={WorkoutScreen} />
-      <HomeStack.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-    </HomeStack.Navigator>
-  );
-};
 
 // SVG Icons
 const WeightIcon = ({ color }: { color: string }) => (
@@ -235,7 +213,7 @@ export const MainTabNavigator = () => {
             <WeightTrackerScreen />
           </View>
           <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-            <HomeTabScreen />
+            <WorkoutScreen />
           </View>
           <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
             <StepsTrackerScreen />

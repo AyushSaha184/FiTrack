@@ -71,11 +71,8 @@ export const useRestTimer = () => {
   }, [settingsStore.notifications]);
 
   const requestNotificationPermission = async (): Promise<boolean> => {
-    if (Platform.OS === 'ios') {
-      const settings = await notifee.requestPermission();
-      return settings.authorizationStatus >= AuthorizationStatus.AUTHORIZED;
-    }
-    return true;
+    const settings = await notifee.requestPermission();
+    return settings.authorizationStatus >= AuthorizationStatus.AUTHORIZED;
   };
 
   const startTimer = useCallback(async (duration?: number) => {

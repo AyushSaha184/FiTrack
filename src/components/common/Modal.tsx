@@ -64,6 +64,8 @@ export const Modal = memo<ModalProps>(({
   }, [visible]);
 
   const panGesture = Gesture.Pan()
+    .activeOffsetY([5, 1000])
+    .failOffsetY([-5, 0])
     .onUpdate((event) => {
       if (event.translationY > 0) {
         dragY.value = event.translationY;
@@ -91,6 +93,44 @@ export const Modal = memo<ModalProps>(({
     ],
   }));
 
+  const animatedContent = (
+    <Animated.View
+      style={[
+        styles.content,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.cardBorder,
+        },
+        fullScreen && styles.fullScreen,
+        sheet && styles.sheet,
+        contentStyle,
+      ]}
+    >
+      {sheet && (
+        <View style={styles.handleContainer}>
+          <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
+        </View>
+      )}
+      {(title || showCloseButton) && (
+        <View style={styles.header}>
+          {title && (
+            <Text style={[styles.title, { color: colors.text }]}>
+              {title}
+            </Text>
+          )}
+          {showCloseButton && (
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Text style={[styles.closeText, { color: colors.textSecondary }]}>
+                ✕
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+      <View style={[styles.body, noPadding && { padding: 0 }, bodyStyle]}>{children}</View>
+    </Animated.View>
+  );
+
   return (
     <RNModal
       visible={visible}
@@ -107,43 +147,13 @@ export const Modal = memo<ModalProps>(({
           <Pressable style={styles.backdropPress} onPress={onClose} />
         </Animated.View>
 
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.cardBorder,
-            },
-            fullScreen && styles.fullScreen,
-            sheet && styles.sheet,
-            contentStyle,
-          ]}
-        >
-          {sheet && (
-            <GestureDetector gesture={panGesture}>
-              <View style={styles.handleContainer}>
-                <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
-              </View>
-            </GestureDetector>
-          )}
-          {(title || showCloseButton) && (
-            <View style={styles.header}>
-              {title && (
-                <Text style={[styles.title, { color: colors.text }]}>
-                  {title}
-                </Text>
-              )}
-              {showCloseButton && (
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <Text style={[styles.closeText, { color: colors.textSecondary }]}>
-                    ✕
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-          <View style={[styles.body, noPadding && { padding: 0 }, bodyStyle]}>{children}</View>
-        </Animated.View>
+        {sheet ? (
+          <GestureDetector gesture={panGesture}>
+            {animatedContent}
+          </GestureDetector>
+        ) : (
+          animatedContent
+        )}
       </KeyboardAvoidingView>
     </RNModal>
   );

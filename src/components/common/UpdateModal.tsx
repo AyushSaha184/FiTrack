@@ -107,7 +107,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
         {/* Header Info */}
         <View style={styles.headerInfo}>
           <View style={styles.titleBadgeRow}>
-            <View style={[styles.badge, { backgroundColor: 'rgba(255, 255, 255, 0.08)', borderColor: colors.cardBorder }]}>
+            <View style={[styles.badge, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
               <Text style={[styles.badgeText, { color: colors.text }]}>
                 v{updateInfo.version}
               </Text>
@@ -129,7 +129,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
         </View>
 
         {/* Release Notes */}
-        <View style={[styles.notesContainer, { backgroundColor: 'rgba(255, 255, 255, 0.03)', borderColor: colors.cardBorder }]}>
+        <View style={[styles.notesContainer, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
           <Text style={[styles.notesHeader, { color: colors.textMuted }]}>WHAT'S NEW</Text>
           <ScrollView style={styles.notesScroll} showsVerticalScrollIndicator={false}>
             <Text style={[styles.notesBody, { color: colors.textSecondary }]}>
@@ -154,7 +154,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
         )}
 
         {state === 'ready' && (
-          <View style={[styles.statusBox, { backgroundColor: 'rgba(48, 209, 88, 0.1)', borderColor: colors.success }]}>
+          <View style={[styles.statusBox, { backgroundColor: colors.text === '#FFFFFF' ? 'rgba(48, 209, 88, 0.1)' : 'rgba(52, 199, 89, 0.1)', borderColor: colors.success }]}>
             <Text style={[styles.statusBoxText, { color: colors.success }]}>
               ✓ APK downloaded and ready to install!
             </Text>
@@ -162,7 +162,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
         )}
 
         {state === 'error' && (
-          <View style={[styles.statusBox, { backgroundColor: 'rgba(255, 69, 58, 0.1)', borderColor: colors.error }]}>
+          <View style={[styles.statusBox, { backgroundColor: colors.text === '#FFFFFF' ? 'rgba(255, 69, 58, 0.1)' : 'rgba(255, 59, 48, 0.1)', borderColor: colors.error }]}>
             <Text style={[styles.statusBoxText, { color: colors.error }]}>
               {errorMessage || 'Download failed. Please check internet connection.'}
             </Text>
@@ -179,13 +179,12 @@ export const UpdateModal = memo<UpdateModalProps>(({
                 fullWidth
                 style={styles.primaryBtn}
               />
-              <TouchableOpacity
-                style={[styles.secondaryBtn, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}
+              <Button
+                title="Later"
                 onPress={handleDismiss}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.secondaryBtnText, { color: colors.text }]}>Later</Text>
-              </TouchableOpacity>
+                variant="secondary"
+                fullWidth
+              />
             </>
           )}
 
@@ -212,13 +211,12 @@ export const UpdateModal = memo<UpdateModalProps>(({
                 fullWidth
                 style={styles.primaryBtn}
               />
-              <TouchableOpacity
-                style={[styles.secondaryBtn, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}
+              <Button
+                title="Close"
                 onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.secondaryBtnText, { color: colors.text }]}>Close</Text>
-              </TouchableOpacity>
+                variant="secondary"
+                fullWidth
+              />
             </>
           )}
         </View>
@@ -313,17 +311,6 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     borderRadius: radius.md,
-  },
-  secondaryBtn: {
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
   downloadingNote: {
     textAlign: 'center',

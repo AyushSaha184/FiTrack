@@ -36,7 +36,11 @@ const timeRangeOptions = [
   { value: 'all', label: 'All Time' },
 ];
 
-export const StepsTrackerScreen = observer(() => {
+interface StepsTrackerScreenProps {
+  isActive?: boolean;
+}
+
+export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScreenProps) => {
   const colors = useColors();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -52,12 +56,17 @@ export const StepsTrackerScreen = observer(() => {
     if (user?.id) {
       stepsStore.loadTodaySteps(user.id);
       stepsStore.loadWeeklySteps(user.id);
-      stepsStore.startLiveStepTracking(user.id);
     }
-    return () => {
-      stepsStore.stopLiveStepTracking();
-    };
   }, [user?.id, stepsStore]);
+
+  useEffect(() => {
+    if (user?.id && isActive) {
+      stepsStore.startLiveStepTracking(user.id);
+      return () => {
+        stepsStore.stopLiveStepTracking();
+      };
+    }
+  }, [user?.id, isActive, stepsStore]);
 
   const currentWeight = weightStore.currentWeight;
 

@@ -269,10 +269,10 @@ export const SettingsScreen = observer(() => {
             <View style={styles.settingRow}>
               <View style={styles.settingTextGroup}>
                 <Text style={[styles.settingTitle, { color: colors.text }]}>
-                  Current Version
+                  Check for Updates
                 </Text>
                 <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
-                  v{CONFIG.APP_VERSION}
+                  Check for new releases and improvements
                 </Text>
               </View>
               <TouchableOpacity

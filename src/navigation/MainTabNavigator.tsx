@@ -216,7 +216,7 @@ export const MainTabNavigator = () => {
             <WorkoutScreen />
           </View>
           <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
-            <StepsTrackerScreen />
+            <StepsTrackerScreen isActive={activeIndex === 2} />
           </View>
         </Animated.View>
       </GestureDetector>

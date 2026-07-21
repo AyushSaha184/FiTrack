@@ -166,7 +166,8 @@ export class AuthStore {
         }
 
         const displayName = profile?.name || user.user_metadata?.name || 'Athlete';
-        const onboardingCompleted = profile?.onboarding_completed ?? false;
+        const localOnboarded = storage.get<boolean>(`onboarding_completed_${user.id}`);
+        const onboardingCompleted = (profile?.onboarding_completed ?? false) || localOnboarded === true;
 
         // For Google sign-in: if no name is set, require name input
         const needsName = isGoogleSignIn && (!displayName || displayName === 'Athlete');
@@ -345,6 +346,7 @@ export class AuthStore {
   async completeOnboarding() {
     if (!this.user) return;
     const userId = this.user.id;
+    storage.set(`onboarding_completed_${userId}`, true);
     runInAction(() => {
       this.user = { ...this.user!, onboardingCompleted: true };
     });

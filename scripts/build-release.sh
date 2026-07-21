@@ -19,12 +19,12 @@ cd "$PROJECT_ROOT/android"
 echo "[build-release] Running: ./gradlew assembleRelease"
 ./gradlew assembleRelease "$@"
 
-APK="$PROJECT_ROOT/android/app/build/outputs/apk/release/app-release.apk"
-if [ -f "$APK" ]; then
+APK="$(ls "$PROJECT_ROOT/android/app/build/outputs/apk/release/"*.apk 2>/dev/null | head -n 1 || true)"
+if [ -n "$APK" ] && [ -f "$APK" ]; then
   echo ""
   echo "[build-release] DONE: $APK"
   ls -lh "$APK"
 else
-  echo "[build-release] BUILD FAILED"
+  echo "[build-release] BUILD FAILED: No APK found in $PROJECT_ROOT/android/app/build/outputs/apk/release/"
   exit 1
 fi

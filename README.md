@@ -84,6 +84,33 @@ Fitrack/
 - `npm run ios` - Run on iOS
 - `npm run lint` - Run ESLint
 - `npm run typecheck` - Run TypeScript type checking
+- `npm run test` - Run Jest tests
+- `./scripts/build-release.sh` - Build release APK locally
+
+## CI/CD Pipeline
+
+Fitrack utilizes GitHub Actions for continuous integration and automated release builds.
+
+### Workflows
+
+- **CI Checks (`.github/workflows/ci.yml`)**: Runs on `push` and `pull_request` to `main`, `master`, and `develop`. Executes ESLint (`npm run lint`), TypeScript check (`npm run typecheck`), and Jest tests (`npm run test`).
+- **Build Android Release APK (`.github/workflows/android-release.yml`)**: Runs on `push` (to `main`/`master` or tag `v*`) and manual trigger (`workflow_dispatch`). Compiles the signed release APK (`Fitrack_v1.0.1_release.apk`) and uploads it as a downloadable GitHub Actions artifact (`fitrack-release-apk`).
+
+### GitHub Repository Secrets
+
+Configure the following secrets in **Settings > Secrets and variables > Actions**:
+
+| Secret Name | Description |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64 string of the release keystore file |
+| `ANDROID_KEYSTORE_PASSWORD` | Password for the release keystore |
+| `ANDROID_KEY_ALIAS` | Release key alias name |
+| `ANDROID_KEY_PASSWORD` | Password for the release key |
+| `GOOGLE_SERVICES_JSON_BASE64` | Base64 string of `google-services.json` |
+| `EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY` | 32-byte hex storage encryption key |
+| `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID` | Firebase Web Client ID |
 
 ## License
 

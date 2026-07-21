@@ -6,7 +6,7 @@ export const ENV = {
   SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
   ENABLE_ANALYTICS: process.env.EXPO_PUBLIC_ENABLE_ANALYTICS === 'true',
   REST_TIMER_DEFAULT: 90,
-  STORAGE_ENCRYPTION_KEY: process.env.EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY || 'fitrack_prod_storage_secret_key_32bytes',
+  STORAGE_ENCRYPTION_KEY: process.env.EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY || '',
 } as const;
 
 export const isProduction = ENV.APP_ENV === 'production';
@@ -14,9 +14,9 @@ export const isDevelopment = ENV.APP_ENV === 'development';
 
 const STORAGE_ENCRYPTION_KEY = ENV.STORAGE_ENCRYPTION_KEY;
 
-if (isProduction && !STORAGE_ENCRYPTION_KEY) {
+if (!STORAGE_ENCRYPTION_KEY) {
   throw new Error(
-    'STORAGE_ENCRYPTION_KEY environment variable is required in production. ' +
+    'STORAGE_ENCRYPTION_KEY environment variable is required. ' +
     'Set EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY in your environment.'
   );
 }

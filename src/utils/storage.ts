@@ -6,7 +6,7 @@ let storageInstance: MMKV | null = null;
 const getStorage = (): MMKV => {
   if (!storageInstance) {
     storageInstance = new MMKV({
-      id: 'fitrack-storage',
+      id: 'fitrack-storage-v2',
       encryptionKey: ENV.STORAGE_ENCRYPTION_KEY || undefined,
     });
   }

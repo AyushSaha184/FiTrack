@@ -1,4 +1,4 @@
-import auth from '@react-native-firebase/auth';
+import auth, { GoogleAuthProvider } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { setSupabaseToken, syncSupabaseAuth } from '../supabase/client';
 import { ENV } from '../../config/env';
@@ -98,7 +98,7 @@ export const firebaseAuthService = {
         throw new Error('Google Sign-In failed: No ID Token returned');
       }
 
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken, accessToken);
+      const googleCredential = GoogleAuthProvider.credential(idToken, accessToken);
       const userCredential = await auth().signInWithCredential(googleCredential);
       const fbIdToken = await userCredential.user.getIdToken(true);
       await syncSupabaseAuth(fbIdToken);

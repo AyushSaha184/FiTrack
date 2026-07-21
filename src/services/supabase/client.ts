@@ -75,6 +75,11 @@ export const withTokenRetry = async <T>(operation: () => Promise<T>): Promise<T>
 };
 
 export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> => {
+  if (!supabaseUrl) {
+    logger.error('[Supabase client] syncSupabaseAuth failed: SUPABASE_URL is undefined or empty');
+    throw new Error('Supabase URL is not configured. Please check your environment settings.');
+  }
+
   const response = await fetch(
     `${supabaseUrl}/functions/v1/firebase-token-exchange`,
     {
@@ -89,6 +94,7 @@ export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> =
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    logger.error('[Supabase client] syncSupabaseAuth HTTP error:', response.status, errorData);
     throw new Error(
       (errorData as any).error || `Token exchange failed (${response.status})`,
     );

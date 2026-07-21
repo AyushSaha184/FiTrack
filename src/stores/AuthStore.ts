@@ -149,20 +149,19 @@ export class AuthStore {
           }
         }
 
-        // If profile still doesn't exist, create/upsert it guaranteed
+        // If profile still doesn't exist, create/upsert it in background and use user_metadata immediately
         if (!profile) {
           const metadata = user.user_metadata || {};
           const nameToSet = metadata.name || metadata.full_name || 'Athlete';
           const avatarToSet = metadata.avatar_url || metadata.picture || null;
-          await ensureProfileExists(user.id, user.email, nameToSet, avatarToSet);
-
-          const { data: createdProfile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .maybeSingle();
-
-          profile = createdProfile;
+          ensureProfileExists(user.id, user.email, nameToSet, avatarToSet).catch(() => {});
+          profile = {
+            id: user.id,
+            email: user.email,
+            name: nameToSet,
+            avatar_url: avatarToSet,
+            onboarding_completed: false,
+          };
         }
 
         const displayName = profile?.name || user.user_metadata?.name || 'Athlete';

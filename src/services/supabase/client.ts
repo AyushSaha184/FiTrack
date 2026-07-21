@@ -44,7 +44,7 @@ export const refreshSupabaseToken = async (): Promise<boolean> => {
   try {
     const user = auth().currentUser;
     if (user) {
-      const idToken = await user.getIdToken(true);
+      const idToken = await user.getIdToken(false);
       await syncSupabaseAuth(idToken);
       return true;
     }
@@ -80,31 +80,46 @@ export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> =
     throw new Error('Supabase URL is not configured. Please check your environment settings.');
   }
 
-  const response = await fetch(
-    `${supabaseUrl}/functions/v1/firebase-token-exchange`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${supabaseAnonKey}`,
+  console.log('[syncSupabaseAuth] Exchanging token with Edge Function at:', `${supabaseUrl}/functions/v1/firebase-token-exchange`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(
+      `${supabaseUrl}/functions/v1/firebase-token-exchange`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ firebase_token: firebaseIdToken }),
+        signal: controller.signal,
       },
-      body: JSON.stringify({ firebase_token: firebaseIdToken }),
-    },
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    logger.error('[Supabase client] syncSupabaseAuth HTTP error:', response.status, errorData);
-    throw new Error(
-      (errorData as any).error || `Token exchange failed (${response.status})`,
     );
-  }
+    clearTimeout(timeoutId);
+    console.log('[syncSupabaseAuth] Edge function response status:', response.status);
 
-  const { token } = await response.json();
-  if (__DEV__) {
-    logger.debug('[Supabase client] Token refreshed successfully');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      logger.error('[Supabase client] syncSupabaseAuth HTTP error:', response.status, errorData);
+      throw new Error(
+        (errorData as any).error || `Token exchange failed (${response.status})`,
+      );
+    }
+
+    const { token } = await response.json();
+    console.log('[syncSupabaseAuth] Token exchange succeeded');
+    await setSupabaseToken(token);
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      console.error('[syncSupabaseAuth] Token exchange timed out after 12s');
+      throw new Error('Server response timed out. Please check your internet connection.');
+    }
+    console.error('[syncSupabaseAuth] Error during token exchange:', err);
+    throw err;
   }
-  await setSupabaseToken(token);
 };
 
 export const ensureProfileExists = async (
@@ -115,26 +130,18 @@ export const ensureProfileExists = async (
 ): Promise<void> => {
   if (!userId) return;
   try {
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (!existing) {
-      const { error } = await supabase.from('profiles').upsert(
-        {
-          id: userId,
-          email: email || '',
-          name: name || 'Athlete',
-          avatar_url: avatarUrl || null,
-          onboarding_completed: false,
-        },
-        { onConflict: 'id' },
-      );
-      if (error) {
-        logger.error('[ensureProfileExists] Error upserting profile:', error);
-      }
+    const { error } = await supabase.from('profiles').upsert(
+      {
+        id: userId,
+        email: email || '',
+        name: name || 'Athlete',
+        avatar_url: avatarUrl || null,
+        onboarding_completed: false,
+      },
+      { onConflict: 'id', ignoreDuplicates: true },
+    );
+    if (error) {
+      logger.error('[ensureProfileExists] Error upserting profile:', error);
     }
   } catch (err) {
     logger.error('[ensureProfileExists] Exception:', err);

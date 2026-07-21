@@ -134,6 +134,7 @@ const styles = StyleSheet.create({
   },
   iconLeft: {
     paddingLeft: spacing.base,
+    paddingRight: spacing.sm,
   },
   iconRight: {
     paddingRight: spacing.base,

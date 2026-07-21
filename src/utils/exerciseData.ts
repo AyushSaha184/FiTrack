@@ -161,13 +161,108 @@ export const getAllExercises = (): ExerciseItem[] => {
   return exerciseCategories.flatMap((cat) => cat.exercises);
 };
 
+// Helper function to calculate Levenshtein Distance for fuzzy matching
+const levenshteinDistance = (a: string, b: string): number => {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1,     // deletion
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+};
+
+const normalizeText = (text: string): string => {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\b(dumble|dumbel|dumbell|dumbl)\b/g, 'dumbbell')
+    .replace(/\b(barbel|barble)\b/g, 'barbell')
+    .replace(/\b(bicep)\b/g, 'biceps')
+    .replace(/\b(tricep)\b/g, 'triceps')
+    .replace(/\b(sqat|sqats)\b/g, 'squat')
+    .replace(/\b(pulup|pullup)\b/g, 'pull up')
+    .replace(/\b(chinup)\b/g, 'chin up')
+    .replace(/\b(benchpres)\b/g, 'bench press')
+    .replace(/\b(quad|quads)\b/g, 'quads')
+    .replace(/\b(hams|hamstring)\b/g, 'hamstrings')
+    .trim();
+};
+
 export const searchExercises = (query: string): ExerciseItem[] => {
-  const q = query.toLowerCase().trim();
-  if (!q) return [];
-  return getAllExercises().filter(
-    (e) =>
-      e.name.toLowerCase().includes(q) ||
-      e.muscleGroup.toLowerCase().includes(q) ||
-      e.equipment.toLowerCase().includes(q),
-  );
+  const rawQuery = query.trim().toLowerCase();
+  if (!rawQuery) return [];
+
+  const normalizedQuery = normalizeText(rawQuery);
+  const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+
+  const scoredExercises = getAllExercises().map((exercise) => {
+    const rawName = exercise.name.toLowerCase();
+    const normalizedName = normalizeText(exercise.name);
+    const normalizedMuscle = normalizeText(exercise.muscleGroup);
+    const normalizedEquipment = normalizeText(exercise.equipment);
+    const nameTokens = normalizedName.split(/\s+/);
+
+    let score = 0;
+
+    // 1. Direct raw substring match
+    if (rawName.includes(rawQuery)) score += 100;
+    if (normalizedName.includes(normalizedQuery)) score += 80;
+    if (normalizedMuscle.includes(normalizedQuery)) score += 50;
+    if (normalizedEquipment.includes(normalizedQuery)) score += 40;
+
+    // 2. Token level matching (exact, prefix, and fuzzy)
+    for (const qToken of queryTokens) {
+      let tokenMatched = false;
+      for (const nToken of nameTokens) {
+        if (nToken === qToken) {
+          score += 30;
+          tokenMatched = true;
+          break;
+        }
+        if (nToken.startsWith(qToken)) {
+          score += 20;
+          tokenMatched = true;
+          break;
+        }
+        // Fuzzy Levenshtein check for typos (for words longer than 3 characters)
+        if (qToken.length >= 3 && nToken.length >= 3) {
+          const dist = levenshteinDistance(qToken, nToken);
+          const maxAllowedDist = qToken.length > 5 ? 2 : 1;
+          if (dist <= maxAllowedDist) {
+            score += 15 - dist * 3;
+            tokenMatched = true;
+            break;
+          }
+        }
+      }
+
+      if (!tokenMatched) {
+        // Also check against muscle group and equipment
+        if (normalizedMuscle.includes(qToken)) score += 10;
+        if (normalizedEquipment.includes(qToken)) score += 10;
+      }
+    }
+
+    return { exercise, score };
+  });
+
+  return scoredExercises
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.exercise);
 };

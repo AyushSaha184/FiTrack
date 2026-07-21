@@ -16,7 +16,9 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  runOnJS,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
 
@@ -47,9 +49,11 @@ export const Modal = memo<ModalProps>(({
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);
   const translateY = useSharedValue(20);
+  const dragY = useSharedValue(0);
 
   useEffect(() => {
     if (visible) {
+      dragY.value = 0;
       opacity.value = withTiming(1, { duration: 200 });
       scale.value = withSpring(1, { damping: 20, stiffness: 300 });
       translateY.value = withSpring(0, { damping: 20, stiffness: 300 });
@@ -59,6 +63,22 @@ export const Modal = memo<ModalProps>(({
     }
   }, [visible]);
 
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      if (event.translationY > 0) {
+        dragY.value = event.translationY;
+      }
+    })
+    .onEnd((event) => {
+      if (event.translationY > 100 || event.velocityY > 500) {
+        dragY.value = withTiming(400, { duration: 200 }, () => {
+          runOnJS(onClose)();
+        });
+      } else {
+        dragY.value = withSpring(0, { damping: 20, stiffness: 300 });
+      }
+    });
+
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
   }));
@@ -67,7 +87,7 @@ export const Modal = memo<ModalProps>(({
     opacity: opacity.value,
     transform: [
       { scale: scale.value },
-      { translateY: translateY.value },
+      { translateY: translateY.value + dragY.value },
     ],
   }));
 
@@ -100,9 +120,11 @@ export const Modal = memo<ModalProps>(({
           ]}
         >
           {sheet && (
-            <View style={styles.handleContainer}>
-              <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
-            </View>
+            <GestureDetector gesture={panGesture}>
+              <View style={styles.handleContainer}>
+                <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
+              </View>
+            </GestureDetector>
           )}
           {(title || showCloseButton) && (
             <View style={styles.header}>

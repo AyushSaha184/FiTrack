@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 24,
     alignItems: 'center',
-    marginRight: 4,
+    marginRight: 12,
   },
   textInput: {
     flex: 1,

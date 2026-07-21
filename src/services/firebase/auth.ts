@@ -29,7 +29,7 @@ export const firebaseAuthService = {
     const firebaseUser = auth().currentUser;
     if (firebaseUser) {
       try {
-        const idToken = await firebaseUser.getIdToken(true);
+        const idToken = await firebaseUser.getIdToken(false);
         await syncSupabaseAuth(idToken);
       } catch (err) {
         logger.error('[firebaseAuthService] getSession failed to sync Supabase:', err);
@@ -47,9 +47,17 @@ export const firebaseAuthService = {
   async login({ email, password }: LoginInput) {
     console.log('[firebaseAuthService] login beginning with email:', email);
     try {
+      console.log('[firebaseAuthService] calling signInWithEmailAndPassword...');
       const userCredential = await auth().signInWithEmailAndPassword(email, password);
-      const idToken = await userCredential.user.getIdToken(true);
+      console.log('[firebaseAuthService] signInWithEmailAndPassword succeeded for uid:', userCredential.user?.uid);
+      
+      console.log('[firebaseAuthService] getting ID token...');
+      const idToken = await userCredential.user.getIdToken(false);
+      
+      console.log('[firebaseAuthService] calling syncSupabaseAuth...');
       await syncSupabaseAuth(idToken);
+      console.log('[firebaseAuthService] syncSupabaseAuth complete!');
+      
       const user = mapFirebaseUser(userCredential.user);
       return { user, session: user ? { user } : null };
     } catch (error: any) {
@@ -70,7 +78,7 @@ export const firebaseAuthService = {
       }
       const updatedUser = auth().currentUser;
       if (updatedUser) {
-        const idToken = await updatedUser.getIdToken(true);
+        const idToken = await updatedUser.getIdToken(false);
         await syncSupabaseAuth(idToken);
       }
       const user = mapFirebaseUser(updatedUser);
@@ -84,10 +92,14 @@ export const firebaseAuthService = {
   async signInWithGoogle() {
     console.log('[firebaseAuthService] signInWithGoogle beginning');
     try {
+      console.log('[firebaseAuthService] Checking Google Play Services...');
       await GoogleSignin.hasPlayServices();
+      console.log('[firebaseAuthService] Triggering GoogleSignin.signIn prompt...');
       const userInfo = await GoogleSignin.signIn();
-      console.log('[firebaseAuthService] GoogleSignin.signIn returned user info');
+      const googleUser = userInfo.data?.user || (userInfo as any).user;
+      console.log('[firebaseAuthService] GoogleSignin.signIn returned user info for:', googleUser?.email || googleUser?.name);
       
+      console.log('[firebaseAuthService] Fetching Google OAuth tokens...');
       const { idToken, accessToken } = await GoogleSignin.getTokens();
       console.log('[firebaseAuthService] Retrieved tokens from Google SDK:', {
         hasIdToken: !!idToken,
@@ -98,10 +110,18 @@ export const firebaseAuthService = {
         throw new Error('Google Sign-In failed: No ID Token returned');
       }
 
+      console.log('[firebaseAuthService] Signing in to Firebase with Google credential...');
       const googleCredential = GoogleAuthProvider.credential(idToken, accessToken);
       const userCredential = await auth().signInWithCredential(googleCredential);
-      const fbIdToken = await userCredential.user.getIdToken(true);
+      console.log('[firebaseAuthService] Firebase signInWithCredential succeeded for uid:', userCredential.user?.uid);
+
+      console.log('[firebaseAuthService] Getting Firebase ID token...');
+      const fbIdToken = await userCredential.user.getIdToken(false);
+
+      console.log('[firebaseAuthService] Calling syncSupabaseAuth for Google user...');
       await syncSupabaseAuth(fbIdToken);
+      console.log('[firebaseAuthService] syncSupabaseAuth complete for Google user!');
+
       const user = mapFirebaseUser(userCredential.user);
       return { user, session: user ? { user } : null };
     } catch (err: any) {
@@ -152,7 +172,7 @@ export const firebaseAuthService = {
         await user.updateEmail(updates.email);
       }
       await user.reload();
-      const idToken = await user.getIdToken(true);
+      const idToken = await user.getIdToken(false);
       await syncSupabaseAuth(idToken);
     } catch (error: any) {
       logger.error('[firebaseAuthService] updateProfile error:', error);
@@ -164,7 +184,7 @@ export const firebaseAuthService = {
     const unsubscribe = auth().onIdTokenChanged(async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const idToken = await firebaseUser.getIdToken(true);
+          const idToken = await firebaseUser.getIdToken(false);
           await syncSupabaseAuth(idToken);
         } catch (err) {
           logger.error('[firebaseAuthService] onIdTokenChanged failed to sync Supabase:', err);

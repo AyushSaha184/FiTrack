@@ -43,6 +43,9 @@ export const SettingsScreen = observer(() => {
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showUpToDateAlert, setShowUpToDateAlert] = useState(false);
+  const [updateErrorMessage, setUpdateErrorMessage] = useState('');
+  const [showUpdateErrorAlert, setShowUpdateErrorAlert] = useState(false);
 
   const handleLogout = () => {
     setShowLogoutAlert(true);
@@ -271,9 +274,6 @@ export const SettingsScreen = observer(() => {
                 <Text style={[styles.settingTitle, { color: colors.text }]}>
                   Check for Updates
                 </Text>
-                <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
-                  Check for new releases and improvements
-                </Text>
               </View>
               <TouchableOpacity
                 style={[
@@ -291,10 +291,11 @@ export const SettingsScreen = observer(() => {
                       setUpdateInfo(info);
                       setShowUpdateModal(true);
                     } else {
-                      Alert.alert('Up to Date', `FiTrack v${CONFIG.APP_VERSION} is currently the latest version.`);
+                      setShowUpToDateAlert(true);
                     }
                   } catch (err: any) {
-                    Alert.alert('Update Check Failed', err.message || 'Unable to connect to update server.');
+                    setUpdateErrorMessage(err.message || 'Unable to connect to update server.');
+                    setShowUpdateErrorAlert(true);
                   } finally {
                     setIsCheckingUpdate(false);
                   }
@@ -321,6 +322,26 @@ export const SettingsScreen = observer(() => {
         visible={showUpdateModal}
         updateInfo={updateInfo}
         onClose={() => setShowUpdateModal(false)}
+      />
+
+      <CustomAlert
+        visible={showUpToDateAlert}
+        onClose={() => setShowUpToDateAlert(false)}
+        title="Up to Date"
+        message={`FiTrack v${CONFIG.APP_VERSION} is currently the latest version.`}
+        actions={[
+          { text: 'OK', onPress: () => setShowUpToDateAlert(false) },
+        ]}
+      />
+
+      <CustomAlert
+        visible={showUpdateErrorAlert}
+        onClose={() => setShowUpdateErrorAlert(false)}
+        title="Update Check Failed"
+        message={updateErrorMessage || 'Unable to connect to update server.'}
+        actions={[
+          { text: 'OK', onPress: () => setShowUpdateErrorAlert(false) },
+        ]}
       />
 
       <CustomAlert

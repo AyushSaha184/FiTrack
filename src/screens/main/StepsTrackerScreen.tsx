@@ -61,8 +61,12 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
 
   useEffect(() => {
     if (user?.id && isActive) {
-      stepsStore.startLiveStepTracking(user.id);
+      const timer = setTimeout(() => {
+        stepsStore.startLiveStepTracking(user.id);
+      }, 600);
+
       return () => {
+        clearTimeout(timer);
         stepsStore.stopLiveStepTracking();
       };
     }

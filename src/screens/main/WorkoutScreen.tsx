@@ -212,7 +212,11 @@ export const WorkoutScreen = observer(() => {
           {/* Workout Type Pills with Stopwatch Button */}
           <AnimatedCard index={1} padding="none" style={styles.typePillsCard}>
             <View style={styles.typePillsWithTimer}>
-              <View style={styles.typePills}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.typePillsScrollContent}
+              >
                 <TouchableOpacity
                   style={[
                     styles.pill,
@@ -256,7 +260,6 @@ export const WorkoutScreen = observer(() => {
                   onPress={handleRestDay}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.pillIcon}>☕</Text>
                   <Text
                     style={[
                       styles.pillText,
@@ -268,7 +271,7 @@ export const WorkoutScreen = observer(() => {
                     Rest Day
                   </Text>
                 </TouchableOpacity>
-              </View>
+              </ScrollView>
 
               <StopwatchDisplay />
             </View>
@@ -498,7 +501,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: '700',
-    marginBottom: spacing.lg,
   },
   calendarCard: {
     marginBottom: spacing.base,
@@ -532,17 +534,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
-  typePills: {
+  typePillsScrollContent: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingRight: spacing.xs,
   },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
     borderWidth: 1.5,
     gap: spacing.xs,

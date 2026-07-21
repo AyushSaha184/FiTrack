@@ -214,7 +214,7 @@ export class StepsStore {
   async startLiveStepTracking(userId: string) {
     if (this.isLiveTracking || !userId) return;
 
-    this.unsubscribeStepCounter = await stepCounterService.startTracking((delta) => {
+    this.unsubscribeStepCounter = await stepCounterService.startTracking(userId, (delta) => {
       this.onHardwareStepDetected(userId, delta);
     });
 

@@ -62,29 +62,22 @@ export class AuthStore {
     try {
       this.isLoading = true;
 
-      // Check for existing session
-      const { session } = await firebaseAuthService.getSession();
-      if (session?.user) {
-        await this.fetchUser(session.user);
-      }
-
-      // Listen for auth state changes (token refresh, sign-out from another tab, etc.)
-      this.authUnsubscribe = firebaseAuthService.onAuthStateChange(
-        (event, newSession) => {
-          if (__DEV__) logger.debug('[AuthStore] onAuthStateChange event:', event);
-          if (event === 'SIGNED_OUT') {
-            runInAction(() => {
-              this.user = null;
-              this.isAuthenticated = false;
-              this.isNameRequired = false;
-            });
-          } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
-            runInAction(() => {
-              this.fetchUser(newSession.user);
-            });
+      // Hard timeout: if init takes >15s (cold Edge Function, degraded network),
+      // release the loading screen and let the auth listener retry in background
+      let timeoutId: any;
+      const initPromise = (async () => {
+        try {
+          await this.performInitialize();
+        } finally {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
           }
-        },
-      );
+        }
+      })();
+      const timeoutPromise = new Promise<void>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Initialization timed out after 15s')), 15000);
+      });
+      await Promise.race([initPromise, timeoutPromise]);
     } catch (error) {
       logger.error('[AuthStore] initialize error:', error);
     } finally {
@@ -93,6 +86,32 @@ export class AuthStore {
         this.isInitialized = true;
       });
     }
+  }
+
+  private async performInitialize() {
+    // Check for existing session
+    const { session } = await firebaseAuthService.getSession();
+    if (session?.user) {
+      await this.fetchUser(session.user);
+    }
+
+    // Listen for auth state changes (token refresh, sign-out from another tab, etc.)
+    this.authUnsubscribe = firebaseAuthService.onAuthStateChange(
+      (event, newSession) => {
+        if (__DEV__) logger.debug('[AuthStore] onAuthStateChange event:', event);
+        if (event === 'SIGNED_OUT') {
+          runInAction(() => {
+            this.user = null;
+            this.isAuthenticated = false;
+            this.isNameRequired = false;
+          });
+        } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
+          runInAction(() => {
+            this.fetchUser(newSession.user);
+          });
+        }
+      },
+    );
   }
 
   async fetchUser(supabaseUser: any, isGoogleSignIn = false) {

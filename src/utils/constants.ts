@@ -25,6 +25,8 @@ export const STORAGE_KEYS = {
   LAST_WORKOUT_DATE: 'workout.lastSelectedDate',
   LAST_UPDATE_CHECK: 'app.last_update_check',
   DISMISSED_UPDATE_VERSION: 'app.dismissed_update_version',
+  PENDING_UPDATE_PATH: 'app.pending_update_path',
+  PENDING_UPDATE_VERSION: 'app.pending_update_version',
 } as const;
 
 export const DAY_ORDER: DayOfWeek[] = [

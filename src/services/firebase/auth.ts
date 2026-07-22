@@ -29,8 +29,23 @@ export const firebaseAuthService = {
     const firebaseUser = auth().currentUser;
     if (firebaseUser) {
       try {
-        const idToken = await firebaseUser.getIdToken(false);
-        await syncSupabaseAuth(idToken);
+        // Timeout the entire token sync to prevent hanging on cold starts
+        // (Edge Function cold start + stale token refresh can take 60-120s)
+        let timeoutId: any;
+        const syncPromise = (async () => {
+          try {
+            const idToken = await firebaseUser.getIdToken(false);
+            await syncSupabaseAuth(idToken);
+          } finally {
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
+          }
+        })();
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Session sync timed out')), 10000);
+        });
+        await Promise.race([syncPromise, timeoutPromise]);
       } catch (err) {
         logger.error('[firebaseAuthService] getSession failed to sync Supabase:', err);
       }

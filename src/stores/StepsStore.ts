@@ -24,6 +24,25 @@ export class StepsStore {
   constructor() {
     makeAutoObservable(this);
     this.dailyGoal = storage.get<number>(STORAGE_KEYS.STEP_DAILY_GOAL) || DEFAULT_STEP_GOAL;
+    this.restoreCachedSteps();
+  }
+
+  private restoreCachedSteps() {
+    try {
+      const cachedToday = storage.get<number>('steps_today_cache');
+      if (typeof cachedToday === 'number') {
+        this.todaySteps = cachedToday;
+      }
+      const cachedWeekly = storage.get<any[]>('steps_weekly_cache');
+      if (cachedWeekly && Array.isArray(cachedWeekly) && cachedWeekly.length > 0) {
+        this.weeklyEntries = cachedWeekly.map((e: any) => ({
+          ...e,
+          date: new Date(e.date),
+        }));
+      }
+    } catch (e) {
+      logger.error('[StepsStore] restoreCachedSteps error:', e);
+    }
   }
 
   get todayProgress(): number {
@@ -70,6 +89,7 @@ export class StepsStore {
       runInAction(() => {
         this.todayEntry = entry;
         this.todaySteps = entry?.steps ?? 0;
+        storage.set('steps_today_cache', this.todaySteps);
       });
     } catch (error: any) {
       logger.error('[StepsStore] loadTodaySteps error:', error);
@@ -100,6 +120,7 @@ export class StepsStore {
           ...e,
           date: new Date(e.date),
         }));
+        storage.set('steps_weekly_cache', this.weeklyEntries);
       });
     } catch (error: any) {
       logger.error('[StepsStore] loadWeeklySteps error:', error);

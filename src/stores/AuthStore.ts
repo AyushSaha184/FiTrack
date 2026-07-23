@@ -1,7 +1,8 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { createContext, useContext } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { firebaseAuthService } from '../services/firebase/auth';
-import { supabase, ensureProfileExists } from '../services/supabase/client';
+import { supabase, ensureProfileExists, withTokenRetry } from '../services/supabase/client';
 import type { User, UserPreferences, Units } from '../models';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS } from '../utils/constants';
@@ -39,10 +40,30 @@ export class AuthStore {
   isNameRequired = false;
 
   private authUnsubscribe: (() => void) | null = null;
+  private appStateSubscription: any = null;
   private activeFetches = new Map<string, Promise<void>>();
 
   constructor() {
     makeAutoObservable(this);
+    this.restoreCachedUser();
+  }
+
+  private restoreCachedUser() {
+    try {
+      const cached = storage.get<User>('user_cached_profile');
+      if (cached && cached.id) {
+        this.user = {
+          ...cached,
+          createdAt: new Date(cached.createdAt),
+          updatedAt: new Date(cached.updatedAt),
+        };
+        this.isAuthenticated = true;
+        this.isInitialized = true;
+        this.isLoading = false;
+      }
+    } catch (e) {
+      logger.error('[AuthStore] restoreCachedUser error:', e);
+    }
   }
 
   get isOnboarded() {
@@ -58,26 +79,48 @@ export class AuthStore {
   }
 
   async initialize() {
-    if (this.isInitialized) return;
+    if (this.authUnsubscribe) return;
     try {
-      this.isLoading = true;
+      if (!this.user) {
+        this.isLoading = true;
+      }
 
-      // Hard timeout: if init takes >15s (cold Edge Function, degraded network),
-      // release the loading screen and let the auth listener retry in background
-      let timeoutId: any;
-      const initPromise = (async () => {
-        try {
-          await this.performInitialize();
-        } finally {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
+      // Check for existing session and silently update in background
+      const { session } = await firebaseAuthService.getSession();
+      if (session?.user) {
+        await this.fetchUser(session.user);
+      }
+
+      // Listen for auth state changes (token refresh, sign-out from another tab, etc.)
+      this.authUnsubscribe = firebaseAuthService.onAuthStateChange(
+        (event, newSession) => {
+          if (__DEV__) logger.debug('[AuthStore] onAuthStateChange event:', event);
+          if (event === 'SIGNED_OUT') {
+            runInAction(() => {
+              this.user = null;
+              this.isAuthenticated = false;
+              this.isNameRequired = false;
+              storage.delete('user_cached_profile');
+            });
+          } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
+            runInAction(() => {
+              this.fetchUser(newSession.user);
+            });
+          }
+        },
+      );
+
+      // Listen for app foregrounding to refresh token proactively
+      this.appStateSubscription = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
+        if (nextState === 'active' && this.user) {
+          logger.debug('[AuthStore] App became active, refreshing token sync...');
+          try {
+            await firebaseAuthService.getSession();
+          } catch (e) {
+            logger.error('[AuthStore] AppState refresh error:', e);
           }
         }
-      })();
-      const timeoutPromise = new Promise<void>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('Initialization timed out after 15s')), 15000);
       });
-      await Promise.race([initPromise, timeoutPromise]);
     } catch (error) {
       logger.error('[AuthStore] initialize error:', error);
     } finally {
@@ -86,32 +129,6 @@ export class AuthStore {
         this.isInitialized = true;
       });
     }
-  }
-
-  private async performInitialize() {
-    // Check for existing session
-    const { session } = await firebaseAuthService.getSession();
-    if (session?.user) {
-      await this.fetchUser(session.user);
-    }
-
-    // Listen for auth state changes (token refresh, sign-out from another tab, etc.)
-    this.authUnsubscribe = firebaseAuthService.onAuthStateChange(
-      (event, newSession) => {
-        if (__DEV__) logger.debug('[AuthStore] onAuthStateChange event:', event);
-        if (event === 'SIGNED_OUT') {
-          runInAction(() => {
-            this.user = null;
-            this.isAuthenticated = false;
-            this.isNameRequired = false;
-          });
-        } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
-          runInAction(() => {
-            this.fetchUser(newSession.user);
-          });
-        }
-      },
-    );
   }
 
   async fetchUser(supabaseUser: any, isGoogleSignIn = false) {
@@ -136,35 +153,55 @@ export class AuthStore {
     fetchPromise = (async () => {
       try {
         const user = supabaseUser;
+        const localOnboarded = storage.get<boolean>(`onboarding_completed_${user.id}`);
 
-        // Read profile from profiles table (handle_new_user trigger auto-creates it for Supabase auth, or manual insert for Firebase auth)
-        let { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .maybeSingle();
+        let profile: any = null;
+        let profileError: any = null;
 
-        if (profileError) {
-          logger.error('[AuthStore] Error reading profile by id:', profileError);
+        // Read profile with token retry logic
+        try {
+          profile = await withTokenRetry(async () => {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+            if (error) throw error;
+            return data;
+          });
+        } catch (err: any) {
+          profileError = err;
+          logger.error('[AuthStore] Error reading profile by id:', err);
         }
 
         // If profile not found by id, check if a profile already exists for this email
-        if (!profile && user.email) {
-          const { data: emailProfile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('email', user.email)
-            .maybeSingle();
+        if (!profile && !profileError && user.email) {
+          try {
+            const emailProfile = await withTokenRetry(async () => {
+              const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('email', user.email)
+                .maybeSingle();
+              if (error) throw error;
+              return data;
+            });
 
-          if (emailProfile) {
-            const { data: updatedProfile } = await supabase
-              .from('profiles')
-              .update({ id: user.id })
-              .eq('email', user.email)
-              .select()
-              .maybeSingle();
-
-            profile = updatedProfile || emailProfile;
+            if (emailProfile) {
+              const updatedProfile = await withTokenRetry(async () => {
+                const { data, error } = await supabase
+                  .from('profiles')
+                  .update({ id: user.id })
+                  .eq('email', user.email)
+                  .select()
+                  .maybeSingle();
+                if (error) throw error;
+                return data;
+              });
+              profile = updatedProfile || emailProfile;
+            }
+          } catch (err: any) {
+            logger.error('[AuthStore] Error matching profile by email:', err);
           }
         }
 
@@ -179,12 +216,11 @@ export class AuthStore {
             email: user.email,
             name: nameToSet,
             avatar_url: avatarToSet,
-            onboarding_completed: false,
+            onboarding_completed: localOnboarded === true,
           };
         }
 
         const displayName = profile?.name || user.user_metadata?.name || 'Athlete';
-        const localOnboarded = storage.get<boolean>(`onboarding_completed_${user.id}`);
         const onboardingCompleted = (profile?.onboarding_completed ?? false) || localOnboarded === true;
 
         // For Google sign-in: if no name is set, require name input
@@ -211,6 +247,7 @@ export class AuthStore {
           };
           this.isAuthenticated = true;
           this.isNameRequired = needsName;
+          storage.set('user_cached_profile', this.user);
         });
       } catch (error) {
         logger.error('[AuthStore] fetchUser error:', error);
@@ -345,6 +382,7 @@ export class AuthStore {
         this.isAuthenticated = false;
         this.isNameRequired = false;
         this.isLoading = false;
+        storage.delete('user_cached_profile');
       });
     }
   }
@@ -408,6 +446,12 @@ export class AuthStore {
     if (this.authUnsubscribe) {
       this.authUnsubscribe();
       this.authUnsubscribe = null;
+    }
+    if (this.appStateSubscription) {
+      if (typeof this.appStateSubscription.remove === 'function') {
+        this.appStateSubscription.remove();
+      }
+      this.appStateSubscription = null;
     }
   }
 }

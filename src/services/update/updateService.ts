@@ -209,40 +209,4 @@ export const updateService = {
       );
     }
   },
-
-  async getPendingDownload(version: string): Promise<string | null> {
-    const savedVersion = storage.get<string>(STORAGE_KEYS.PENDING_UPDATE_VERSION);
-    const savedPath = storage.get<string>(STORAGE_KEYS.PENDING_UPDATE_PATH);
-    if (!savedVersion || !savedPath || savedVersion !== version) return null;
-
-    const BlobUtil = getBlobUtil();
-    if (!BlobUtil) return null;
-
-    try {
-      const exists = await BlobUtil.fs.exists(savedPath);
-      if (!exists) {
-        this.clearPendingDownload();
-        return null;
-      }
-      const stat = await BlobUtil.fs.stat(savedPath);
-      if (stat.size <= 0) {
-        this.clearPendingDownload();
-        return null;
-      }
-      return savedPath;
-    } catch {
-      this.clearPendingDownload();
-      return null;
-    }
-  },
-
-  savePendingDownload(version: string, path: string): void {
-    storage.set(STORAGE_KEYS.PENDING_UPDATE_VERSION, version);
-    storage.set(STORAGE_KEYS.PENDING_UPDATE_PATH, path);
-  },
-
-  clearPendingDownload(): void {
-    storage.delete(STORAGE_KEYS.PENDING_UPDATE_VERSION);
-    storage.delete(STORAGE_KEYS.PENDING_UPDATE_PATH);
-  },
 };

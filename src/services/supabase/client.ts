@@ -44,7 +44,7 @@ export const refreshSupabaseToken = async (): Promise<boolean> => {
   try {
     const user = auth().currentUser;
     if (user) {
-      const idToken = await user.getIdToken(false);
+      const idToken = await user.getIdToken(true);
       await syncSupabaseAuth(idToken);
       return true;
     }
@@ -82,58 +82,39 @@ export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> =
 
   console.log('[syncSupabaseAuth] Exchanging token with Edge Function at:', `${supabaseUrl}/functions/v1/firebase-token-exchange`);
 
-  const controller = new AbortController();
-  let timeoutId: any;
-
-  const doFetch = async (): Promise<void> => {
-    try {
-      const response = await fetch(
-        `${supabaseUrl}/functions/v1/firebase-token-exchange`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${supabaseAnonKey}`,
-          },
-          body: JSON.stringify({ firebase_token: firebaseIdToken }),
-          signal: controller.signal,
-        },
-      );
-      console.log('[syncSupabaseAuth] Edge function response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        logger.error('[Supabase client] syncSupabaseAuth HTTP error:', response.status, errorData);
-        throw new Error(
-          (errorData as any).error || `Token exchange failed (${response.status})`,
-        );
-      }
-
-      const { token } = await response.json();
-      console.log('[syncSupabaseAuth] Token exchange succeeded');
-      await setSupabaseToken(token);
-    } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    }
-  };
-
-  // Promise.race guarantees we unblock after 12s even if AbortController
-  // fails to cancel the fetch on RN Android (OkHttp ignores abort in some cases)
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      controller.abort();
-      reject(new Error('Token exchange timed out after 12s'));
-    }, 12000);
-  });
-
   try {
-    await Promise.race([doFetch(), timeout]);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+    const response = await fetch(
+      `${supabaseUrl}/functions/v1/firebase-token-exchange`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ firebase_token: firebaseIdToken }),
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timeoutId);
+    console.log('[syncSupabaseAuth] Edge function response status:', response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      logger.error('[Supabase client] syncSupabaseAuth HTTP error:', response.status, errorData);
+      throw new Error(
+        (errorData as any).error || `Token exchange failed (${response.status})`,
+      );
+    }
+
+    const { token } = await response.json();
+    console.log('[syncSupabaseAuth] Token exchange succeeded');
+    await setSupabaseToken(token);
   } catch (err: any) {
-    const msg = err?.message || '';
-    if (msg.includes('timed out') || err.name === 'AbortError') {
-      console.error('[syncSupabaseAuth] Token exchange timed out after 12s');
+    if (err.name === 'AbortError') {
+      console.error('[syncSupabaseAuth] Token exchange timed out after 7s');
       throw new Error('Server response timed out. Please check your internet connection.');
     }
     console.error('[syncSupabaseAuth] Error during token exchange:', err);
@@ -149,19 +130,30 @@ export const ensureProfileExists = async (
 ): Promise<void> => {
   if (!userId) return;
   try {
-    const { error } = await supabase.from('profiles').upsert(
-      {
-        id: userId,
-        email: email || '',
-        name: name || 'Athlete',
-        avatar_url: avatarUrl || null,
-        onboarding_completed: false,
-      },
-      { onConflict: 'id', ignoreDuplicates: true },
-    );
-    if (error) {
-      logger.error('[ensureProfileExists] Error upserting profile:', error);
+    const currentUser = auth().currentUser;
+    const resolvedEmail = email || currentUser?.email || undefined;
+    const resolvedName = name || currentUser?.displayName || 'Athlete';
+    const resolvedAvatar = avatarUrl || currentUser?.photoURL || null;
+
+    const payload: Record<string, any> = {
+      id: userId,
+      name: resolvedName,
+      avatar_url: resolvedAvatar,
+      onboarding_completed: false,
+    };
+    if (resolvedEmail) {
+      payload.email = resolvedEmail;
     }
+
+    await withTokenRetry(async () => {
+      const { error } = await supabase.from('profiles').upsert(
+        payload,
+        { onConflict: 'id', ignoreDuplicates: true },
+      );
+      if (error) {
+        logger.error('[ensureProfileExists] Error upserting profile:', error);
+      }
+    });
   } catch (err) {
     logger.error('[ensureProfileExists] Exception:', err);
   }

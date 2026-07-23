@@ -29,25 +29,16 @@ export const firebaseAuthService = {
     const firebaseUser = auth().currentUser;
     if (firebaseUser) {
       try {
-        // Timeout the entire token sync to prevent hanging on cold starts
-        // (Edge Function cold start + stale token refresh can take 60-120s)
-        let timeoutId: any;
-        const syncPromise = (async () => {
-          try {
-            const idToken = await firebaseUser.getIdToken(false);
-            await syncSupabaseAuth(idToken);
-          } finally {
-            if (timeoutId) {
-              clearTimeout(timeoutId);
-            }
-          }
-        })();
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Session sync timed out')), 10000);
-        });
-        await Promise.race([syncPromise, timeoutPromise]);
+        const idToken = await firebaseUser.getIdToken(true);
+        await syncSupabaseAuth(idToken);
       } catch (err) {
-        logger.error('[firebaseAuthService] getSession failed to sync Supabase:', err);
+        logger.error('[firebaseAuthService] getSession failed to sync Supabase on first try, retrying:', err);
+        try {
+          const idToken = await firebaseUser.getIdToken(true);
+          await syncSupabaseAuth(idToken);
+        } catch (retryErr) {
+          logger.error('[firebaseAuthService] getSession retry failed to sync Supabase:', retryErr);
+        }
       }
     }
     const user = mapFirebaseUser(firebaseUser);
@@ -93,7 +84,7 @@ export const firebaseAuthService = {
       }
       const updatedUser = auth().currentUser;
       if (updatedUser) {
-        const idToken = await updatedUser.getIdToken(false);
+        const idToken = await updatedUser.getIdToken(true);
         await syncSupabaseAuth(idToken);
       }
       const user = mapFirebaseUser(updatedUser);
@@ -131,7 +122,7 @@ export const firebaseAuthService = {
       console.log('[firebaseAuthService] Firebase signInWithCredential succeeded for uid:', userCredential.user?.uid);
 
       console.log('[firebaseAuthService] Getting Firebase ID token...');
-      const fbIdToken = await userCredential.user.getIdToken(false);
+      const fbIdToken = await userCredential.user.getIdToken(true);
 
       console.log('[firebaseAuthService] Calling syncSupabaseAuth for Google user...');
       await syncSupabaseAuth(fbIdToken);
@@ -187,7 +178,7 @@ export const firebaseAuthService = {
         await user.updateEmail(updates.email);
       }
       await user.reload();
-      const idToken = await user.getIdToken(false);
+      const idToken = await user.getIdToken(true);
       await syncSupabaseAuth(idToken);
     } catch (error: any) {
       logger.error('[firebaseAuthService] updateProfile error:', error);
@@ -199,7 +190,7 @@ export const firebaseAuthService = {
     const unsubscribe = auth().onIdTokenChanged(async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const idToken = await firebaseUser.getIdToken(false);
+          const idToken = await firebaseUser.getIdToken(true);
           await syncSupabaseAuth(idToken);
         } catch (err) {
           logger.error('[firebaseAuthService] onIdTokenChanged failed to sync Supabase:', err);

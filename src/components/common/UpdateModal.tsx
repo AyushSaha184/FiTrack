@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useState } from 'react';
 import {
   View,
   Text,
@@ -36,32 +36,6 @@ export const UpdateModal = memo<UpdateModalProps>(({
   const [totalSizeStr, setTotalSizeStr] = useState('');
   const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [checkingPending, setCheckingPending] = useState(false);
-
-  // Check for a previously downloaded APK when modal opens
-  useEffect(() => {
-    if (!visible || !updateInfo) return;
-    let cancelled = false;
-    setCheckingPending(true);
-    updateService.getPendingDownload(updateInfo.version).then(async (existingPath) => {
-      if (cancelled || !existingPath) {
-        setCheckingPending(false);
-        return;
-      }
-      setDownloadedFilePath(existingPath);
-      setState('ready');
-      setCheckingPending(false);
-      // Auto-trigger install prompt
-      try {
-        await updateService.installUpdate(existingPath);
-      } catch {
-        // User may have cancelled the install prompt, that's fine
-      }
-    }).catch(() => {
-      if (!cancelled) setCheckingPending(false);
-    });
-    return () => { cancelled = true; };
-  }, [visible, updateInfo]);
 
   if (!updateInfo) return null;
 
@@ -93,11 +67,9 @@ export const UpdateModal = memo<UpdateModalProps>(({
       );
 
       setDownloadedFilePath(path);
-      updateService.savePendingDownload(updateInfo.version, path);
       setState('ready');
       // Automatically prompt to install once download finishes
       await updateService.installUpdate(path);
-      updateService.clearPendingDownload();
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to download update.');
       setState('error');
@@ -108,7 +80,6 @@ export const UpdateModal = memo<UpdateModalProps>(({
     if (!downloadedFilePath) return;
     try {
       await updateService.installUpdate(downloadedFilePath);
-      updateService.clearPendingDownload();
     } catch (err: any) {
       Alert.alert('Installation Error', err.message);
     }

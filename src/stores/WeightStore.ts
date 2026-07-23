@@ -2,6 +2,7 @@ import { makeAutoObservable, runInAction } from 'mobx';
 import type { WeightEntry } from '../models';
 import { weightService } from '../services/supabase/weight';
 import { generateUUID, dateKey } from '../utils/helpers';
+import { storage } from '../utils/storage';
 import { logger } from '../utils/logger';
 
 export class WeightStore {
@@ -19,6 +20,25 @@ export class WeightStore {
 
   constructor() {
     makeAutoObservable(this);
+    this.restoreCachedEntries();
+  }
+
+  private restoreCachedEntries() {
+    try {
+      const cached = storage.get<any[]>('weight_entries_cache');
+      if (cached && Array.isArray(cached) && cached.length > 0) {
+        this.entries = cached.map((e: any) => ({
+          ...e,
+          date: new Date(e.date),
+          createdAt: e.createdAt ? new Date(e.createdAt) : new Date(e.date),
+          updatedAt: e.updatedAt ? new Date(e.updatedAt) : new Date(e.date),
+        }));
+        this.currentWeight = this.entries[0].weight;
+        this.recalculateStats();
+      }
+    } catch (e) {
+      logger.error('[WeightStore] restoreCachedEntries error:', e);
+    }
   }
 
   get trend(): 'up' | 'down' | 'stable' {
@@ -85,6 +105,7 @@ export class WeightStore {
           this.currentWeight = data[0].weight;
         }
         this.recalculateStats();
+        storage.set('weight_entries_cache', this.entries);
       });
     } catch (error: any) {
       logger.error('[WeightStore] loadEntries error:', error);

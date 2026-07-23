@@ -20,6 +20,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+export let isSupabaseTokenSynced = false;
+
 export const setSupabaseToken = async (token: string | null): Promise<void> => {
   const authHeader = token ? `Bearer ${token}` : `Bearer ${supabaseAnonKey}`;
   const headers = (supabase as any).rest?.headers;
@@ -31,6 +33,7 @@ export const setSupabaseToken = async (token: string | null): Promise<void> => {
       headers['Authorization'] = authHeader;
     }
   }
+  isSupabaseTokenSynced = !!token;
 };
 
 /**
@@ -74,51 +77,81 @@ export const withTokenRetry = async <T>(operation: () => Promise<T>): Promise<T>
   }
 };
 
+let activeTokenExchangePromise: Promise<void> | null = null;
+let lastSyncedToken: string | null = null;
+
 export const syncSupabaseAuth = async (firebaseIdToken: string): Promise<void> => {
   if (!supabaseUrl) {
     logger.error('[Supabase client] syncSupabaseAuth failed: SUPABASE_URL is undefined or empty');
     throw new Error('Supabase URL is not configured. Please check your environment settings.');
   }
 
-  console.log('[syncSupabaseAuth] Exchanging token with Edge Function at:', `${supabaseUrl}/functions/v1/firebase-token-exchange`);
+  if (lastSyncedToken === firebaseIdToken && isSupabaseTokenSynced) {
+    return;
+  }
+
+  if (activeTokenExchangePromise) {
+    return activeTokenExchangePromise;
+  }
+
+  activeTokenExchangePromise = (async () => {
+    const performExchange = async (attempt: number): Promise<void> => {
+      console.log(`[syncSupabaseAuth] Exchanging token with Edge Function (attempt ${attempt}):`, `${supabaseUrl}/functions/v1/firebase-token-exchange`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      try {
+        const response = await fetch(
+          `${supabaseUrl}/functions/v1/firebase-token-exchange`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${supabaseAnonKey}`,
+            },
+            body: JSON.stringify({ firebase_token: firebaseIdToken }),
+            signal: controller.signal,
+          },
+        );
+
+        console.log('[syncSupabaseAuth] Edge function response status:', response.status);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          logger.error('[Supabase client] syncSupabaseAuth HTTP error:', response.status, errorData);
+          throw new Error(
+            (errorData as any).error || `Token exchange failed (${response.status})`,
+          );
+        }
+
+        const { token } = await response.json();
+        console.log('[syncSupabaseAuth] Token exchange succeeded');
+        await setSupabaseToken(token);
+        lastSyncedToken = firebaseIdToken;
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.error('[syncSupabaseAuth] Token exchange timed out after 15s');
+          throw new Error('Server response timed out. Please check your internet connection.');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    try {
+      await performExchange(1);
+    } catch (firstError: any) {
+      console.warn('[syncSupabaseAuth] First attempt failed, retrying once:', firstError?.message || firstError);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await performExchange(2);
+    }
+  })();
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 7000);
-
-    const response = await fetch(
-      `${supabaseUrl}/functions/v1/firebase-token-exchange`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${supabaseAnonKey}`,
-        },
-        body: JSON.stringify({ firebase_token: firebaseIdToken }),
-        signal: controller.signal,
-      },
-    );
-    clearTimeout(timeoutId);
-    console.log('[syncSupabaseAuth] Edge function response status:', response.status);
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      logger.error('[Supabase client] syncSupabaseAuth HTTP error:', response.status, errorData);
-      throw new Error(
-        (errorData as any).error || `Token exchange failed (${response.status})`,
-      );
-    }
-
-    const { token } = await response.json();
-    console.log('[syncSupabaseAuth] Token exchange succeeded');
-    await setSupabaseToken(token);
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      console.error('[syncSupabaseAuth] Token exchange timed out after 7s');
-      throw new Error('Server response timed out. Please check your internet connection.');
-    }
-    console.error('[syncSupabaseAuth] Error during token exchange:', err);
-    throw err;
+    await activeTokenExchangePromise;
+  } finally {
+    activeTokenExchangePromise = null;
   }
 };
 

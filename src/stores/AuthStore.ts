@@ -2,7 +2,8 @@ import { makeAutoObservable, runInAction } from 'mobx';
 import { createContext, useContext } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { firebaseAuthService } from '../services/firebase/auth';
-import { supabase, ensureProfileExists, withTokenRetry } from '../services/supabase/client';
+import { supabase, ensureProfileExists, withTokenRetry, isSupabaseTokenSynced, refreshSupabaseToken } from '../services/supabase/client';
+import auth from '@react-native-firebase/auth';
 import type { User, UserPreferences, Units } from '../models';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS } from '../utils/constants';
@@ -52,14 +53,14 @@ export class AuthStore {
     try {
       const cached = storage.get<User>('user_cached_profile');
       if (cached && cached.id) {
+        const createdAt = cached.createdAt ? new Date(cached.createdAt) : new Date();
+        const updatedAt = cached.updatedAt ? new Date(cached.updatedAt) : new Date();
         this.user = {
           ...cached,
-          createdAt: new Date(cached.createdAt),
-          updatedAt: new Date(cached.updatedAt),
+          createdAt: isNaN(createdAt.getTime()) ? new Date() : createdAt,
+          updatedAt: isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
         };
         this.isAuthenticated = true;
-        this.isInitialized = true;
-        this.isLoading = false;
       }
     } catch (e) {
       logger.error('[AuthStore] restoreCachedUser error:', e);
@@ -96,12 +97,14 @@ export class AuthStore {
         (event, newSession) => {
           if (__DEV__) logger.debug('[AuthStore] onAuthStateChange event:', event);
           if (event === 'SIGNED_OUT') {
-            runInAction(() => {
-              this.user = null;
-              this.isAuthenticated = false;
-              this.isNameRequired = false;
-              storage.delete('user_cached_profile');
-            });
+            if (!auth().currentUser) {
+              runInAction(() => {
+                this.user = null;
+                this.isAuthenticated = false;
+                this.isNameRequired = false;
+                storage.delete('user_cached_profile');
+              });
+            }
           } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
             runInAction(() => {
               this.fetchUser(newSession.user);
@@ -154,6 +157,12 @@ export class AuthStore {
       try {
         const user = supabaseUser;
         const localOnboarded = storage.get<boolean>(`onboarding_completed_${user.id}`);
+
+        if (!isSupabaseTokenSynced) {
+          await refreshSupabaseToken().catch((e) => {
+            logger.warn('[AuthStore] Pre-fetch token refresh attempt warning:', e);
+          });
+        }
 
         let profile: any = null;
         let profileError: any = null;
@@ -226,13 +235,16 @@ export class AuthStore {
         // For Google sign-in: if no name is set, require name input
         const needsName = isGoogleSignIn && (!displayName || displayName === 'Athlete');
 
+        const parsedCreatedAt = user.created_at ? new Date(user.created_at) : new Date();
+        const validCreatedAt = isNaN(parsedCreatedAt.getTime()) ? new Date() : parsedCreatedAt;
+
         runInAction(() => {
           this.user = {
             id: user.id,
             email: user.email || '',
             name: displayName,
             avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url,
-            createdAt: new Date(user.created_at),
+            createdAt: validCreatedAt,
             updatedAt: new Date(),
             preferences: defaultPreferences,
             profile: {

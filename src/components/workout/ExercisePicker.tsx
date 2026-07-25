@@ -8,14 +8,14 @@ import {
   TextInput,
 } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
 import { Modal } from '../common/Modal';
 import {
-  exerciseCategories,
+  getExerciseCategories,
   searchExercises,
+  saveCustomExercise,
   type ExerciseItem,
   type ExerciseCategory,
 } from '../../utils/exerciseData';
@@ -35,20 +35,38 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [inlineCustomName, setInlineCustomName] = useState('');
 
+  const categories = getExerciseCategories();
   const searchResults = searchQuery.length > 0 ? searchExercises(searchQuery) : [];
 
   const handleSelect = (exercise: ExerciseItem) => {
     onSelectExercise(exercise);
-    setSearchQuery('');
-    setSelectedCategory(null);
+    resetForm();
     onClose();
   };
 
-  const handleClose = () => {
+  const resetForm = () => {
     setSearchQuery('');
     setSelectedCategory(null);
+    setInlineCustomName('');
+  };
+
+  const handleClose = () => {
+    resetForm();
     onClose();
+  };
+
+  const handleAddInlineCustom = () => {
+    const trimmed = inlineCustomName.trim();
+    if (!trimmed) return;
+    const created = saveCustomExercise({
+      name: trimmed,
+      muscleGroup: 'chest',
+      equipment: 'other',
+    });
+    setInlineCustomName('');
+    handleSelect(created);
   };
 
   const renderExerciseItem = (
@@ -70,9 +88,16 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
         activeOpacity={0.7}
       >
         <View style={styles.exerciseInfo}>
-          <Text style={[styles.exerciseName, { color: colors.text }]}>
-            {exercise.name}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={[styles.exerciseName, { color: colors.text }]}>
+              {exercise.name}
+            </Text>
+            {exercise.isCustom && (
+              <View style={styles.customBadge}>
+                <Text style={styles.customBadgeText}>CUSTOM</Text>
+              </View>
+            )}
+          </View>
           <Text style={[styles.exerciseMeta, { color: colors.textMuted }]}>
             {exercise.equipment.charAt(0).toUpperCase() + exercise.equipment.slice(1).replace('_', ' ')}
           </Text>
@@ -112,8 +137,47 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
             </Text>
           </View>
         </TouchableOpacity>
+
         {isExpanded && (
           <View style={styles.expandedCategoryBox}>
+            {category.id === 'custom' && (
+              <View
+                style={[
+                  styles.exerciseItem,
+                  {
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255, 255, 255, 0.07)',
+                  },
+                ]}
+              >
+                <View style={styles.exerciseInfo}>
+                  <TextInput
+                    style={[
+                      styles.exerciseName,
+                      {
+                        color: colors.text,
+                        padding: 0,
+                        margin: 0,
+                      },
+                    ]}
+                    placeholder="Type exercise name..."
+                    placeholderTextColor={colors.textMuted}
+                    value={inlineCustomName}
+                    onChangeText={setInlineCustomName}
+                    onSubmitEditing={handleAddInlineCustom}
+                    returnKeyType="done"
+                  />
+                </View>
+                <TouchableOpacity
+                  onPress={handleAddInlineCustom}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={[styles.addIcon, { color: colors.textMuted }]}>+</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {category.exercises.map((exercise, index) =>
               renderExerciseItem(
                 exercise,
@@ -137,7 +201,7 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
       bodyStyle={{ backgroundColor: '#09090B' }}
     >
       <View style={{ height: 550, paddingBottom: insets.bottom, backgroundColor: '#09090B' }}>
-        {/* Search */}
+        {/* Search Bar */}
         <View
           style={[
             styles.searchContainer,
@@ -180,7 +244,7 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
           )}
         </View>
 
-        {/* Content */}
+        {/* Categories / Search Results Content */}
         <ScrollView
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
@@ -205,7 +269,7 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
               <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>
                 CATEGORIES
               </Text>
-              {exerciseCategories.map(renderCategory)}
+              {categories.map(renderCategory)}
             </>
           )}
         </ScrollView>
@@ -225,10 +289,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: spacing.base,
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: spacing.sm,
   },
   searchSvg: {
     marginRight: spacing.sm,
@@ -271,9 +331,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
-  categoryIcon: {
-    fontSize: 22,
-  },
   categoryName: {
     fontSize: typography.body.fontSize,
     fontWeight: '600',
@@ -310,21 +367,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xs,
   },
-  exerciseIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  exerciseIconText: {
-    fontSize: 18,
-  },
-  exerciseImage: {
-    width: 26,
-    height: 26,
-  },
   exerciseInfo: {
     flex: 1,
   },
@@ -335,6 +377,20 @@ const styles = StyleSheet.create({
   exerciseMeta: {
     fontSize: typography.small.fontSize,
     marginTop: 2,
+  },
+  customBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  customBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   addIcon: {
     fontSize: 22,

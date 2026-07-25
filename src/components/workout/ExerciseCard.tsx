@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Svg, { Path, Polyline, Line } from 'react-native-svg';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
+import { storage } from '../../utils/storage';
 import { Card } from '../common/Card';
 import { SetRow } from './SetRow';
 import { Button } from '../common/Button';
@@ -54,7 +55,19 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
   isDragging = false,
 }) => {
   const colors = useColors();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const collapsedKey = exercise.exerciseId || exercise.id;
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    const map = storage.get<Record<string, boolean>>('workout.collapsed_exercises') || {};
+    return !!map[collapsedKey];
+  });
+
+  const toggleCollapse = () => {
+    const nextState = !isCollapsed;
+    setIsCollapsed(nextState);
+    const map = storage.get<Record<string, boolean>>('workout.collapsed_exercises') || {};
+    map[collapsedKey] = nextState;
+    storage.set('workout.collapsed_exercises', map);
+  };
 
   const completedSetsCount = exercise.sets.filter((s) => s.completed).length;
   const totalSetsCount = exercise.sets.length;
@@ -75,7 +88,7 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
       <View style={[styles.header, isCollapsed && { marginBottom: 0 }]}>
         <TouchableOpacity
           style={styles.exerciseInfo}
-          onPress={() => setIsCollapsed(!isCollapsed)}
+          onPress={toggleCollapse}
           activeOpacity={0.7}
         >
           <View style={styles.nameContainer}>

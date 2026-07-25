@@ -1,6 +1,5 @@
 import auth, { GoogleAuthProvider } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { setSupabaseToken, syncSupabaseAuth } from '../supabase/client';
 import { ENV } from '../../config/env';
 import type { LoginInput, SignupInput } from '../../utils/validators';
 import { logger } from '../../utils/logger';
@@ -27,20 +26,6 @@ const mapFirebaseUser = (firebaseUser: any) => {
 export const firebaseAuthService = {
   async getSession() {
     const firebaseUser = auth().currentUser;
-    if (firebaseUser) {
-      try {
-        const idToken = await firebaseUser.getIdToken(true);
-        await syncSupabaseAuth(idToken);
-      } catch (err) {
-        logger.error('[firebaseAuthService] getSession failed to sync Supabase on first try, retrying:', err);
-        try {
-          const idToken = await firebaseUser.getIdToken(true);
-          await syncSupabaseAuth(idToken);
-        } catch (retryErr) {
-          logger.error('[firebaseAuthService] getSession retry failed to sync Supabase:', retryErr);
-        }
-      }
-    }
     const user = mapFirebaseUser(firebaseUser);
     return { session: user ? { user } : null };
   },
@@ -51,19 +36,8 @@ export const firebaseAuthService = {
   },
 
   async login({ email, password }: LoginInput) {
-    console.log('[firebaseAuthService] login beginning with email:', email);
     try {
-      console.log('[firebaseAuthService] calling signInWithEmailAndPassword...');
       const userCredential = await auth().signInWithEmailAndPassword(email, password);
-      console.log('[firebaseAuthService] signInWithEmailAndPassword succeeded for uid:', userCredential.user?.uid);
-      
-      console.log('[firebaseAuthService] getting ID token...');
-      const idToken = await userCredential.user.getIdToken(false);
-      
-      console.log('[firebaseAuthService] calling syncSupabaseAuth...');
-      await syncSupabaseAuth(idToken);
-      console.log('[firebaseAuthService] syncSupabaseAuth complete!');
-      
       const user = mapFirebaseUser(userCredential.user);
       return { user, session: user ? { user } : null };
     } catch (error: any) {
@@ -73,7 +47,6 @@ export const firebaseAuthService = {
   },
 
   async signup({ email, password, name }: SignupInput) {
-    console.log('[firebaseAuthService] signup beginning with email:', email);
     try {
       const userCredential = await auth().createUserWithEmailAndPassword(email, password);
       if (userCredential.user) {
@@ -83,10 +56,6 @@ export const firebaseAuthService = {
         await userCredential.user.reload();
       }
       const updatedUser = auth().currentUser;
-      if (updatedUser) {
-        const idToken = await updatedUser.getIdToken(true);
-        await syncSupabaseAuth(idToken);
-      }
       const user = mapFirebaseUser(updatedUser);
       return { user, session: user ? { user } : null };
     } catch (error: any) {
@@ -96,38 +65,17 @@ export const firebaseAuthService = {
   },
 
   async signInWithGoogle() {
-    console.log('[firebaseAuthService] signInWithGoogle beginning');
     try {
-      console.log('[firebaseAuthService] Checking Google Play Services...');
       await GoogleSignin.hasPlayServices();
-      console.log('[firebaseAuthService] Triggering GoogleSignin.signIn prompt...');
       const userInfo = await GoogleSignin.signIn();
-      const googleUser = userInfo.data?.user || (userInfo as any).user;
-      console.log('[firebaseAuthService] GoogleSignin.signIn returned user info for:', googleUser?.email || googleUser?.name);
-      
-      console.log('[firebaseAuthService] Fetching Google OAuth tokens...');
       const { idToken, accessToken } = await GoogleSignin.getTokens();
-      console.log('[firebaseAuthService] Retrieved tokens from Google SDK:', {
-        hasIdToken: !!idToken,
-        hasAccessToken: !!accessToken,
-      });
 
       if (!idToken) {
         throw new Error('Google Sign-In failed: No ID Token returned');
       }
 
-      console.log('[firebaseAuthService] Signing in to Firebase with Google credential...');
       const googleCredential = GoogleAuthProvider.credential(idToken, accessToken);
       const userCredential = await auth().signInWithCredential(googleCredential);
-      console.log('[firebaseAuthService] Firebase signInWithCredential succeeded for uid:', userCredential.user?.uid);
-
-      console.log('[firebaseAuthService] Getting Firebase ID token...');
-      const fbIdToken = await userCredential.user.getIdToken(true);
-
-      console.log('[firebaseAuthService] Calling syncSupabaseAuth for Google user...');
-      await syncSupabaseAuth(fbIdToken);
-      console.log('[firebaseAuthService] syncSupabaseAuth complete for Google user!');
-
       const user = mapFirebaseUser(userCredential.user);
       return { user, session: user ? { user } : null };
     } catch (err: any) {
@@ -150,8 +98,6 @@ export const firebaseAuthService = {
       if (error?.code !== 'auth/no-current-user' && !error?.message?.includes('no-current-user')) {
         logger.error('[firebaseAuthService] signOut error:', error);
       }
-    } finally {
-      await setSupabaseToken(null);
     }
   },
 
@@ -178,8 +124,6 @@ export const firebaseAuthService = {
         await user.updateEmail(updates.email);
       }
       await user.reload();
-      const idToken = await user.getIdToken(true);
-      await syncSupabaseAuth(idToken);
     } catch (error: any) {
       logger.error('[firebaseAuthService] updateProfile error:', error);
       throw this.mapAuthError(error);
@@ -189,16 +133,9 @@ export const firebaseAuthService = {
   onAuthStateChange(callback: (event: string, session: any) => void) {
     const unsubscribe = auth().onIdTokenChanged(async (firebaseUser) => {
       if (firebaseUser) {
-        try {
-          const idToken = await firebaseUser.getIdToken(true);
-          await syncSupabaseAuth(idToken);
-        } catch (err) {
-          logger.error('[firebaseAuthService] onIdTokenChanged failed to sync Supabase:', err);
-        }
         const user = mapFirebaseUser(firebaseUser);
         callback('SIGNED_IN', { user });
       } else {
-        await setSupabaseToken(null);
         callback('SIGNED_OUT', null);
       }
     });

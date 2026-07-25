@@ -1,10 +1,9 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { StepEntry, StepSource } from '../models';
-import { stepsService } from '../services/supabase/steps';
+import { stepsService } from '../services/firebase/stepsService';
 import { stepCounterService } from '../services/stepCounterService';
 import { storage } from '../utils/storage';
-import { STORAGE_KEYS, DEFAULT_STEP_GOAL, getLast7Days, dateKey, isValidUUID } from '../utils/helpers';
-import { generateId } from '../utils/helpers';
+import { STORAGE_KEYS, DEFAULT_STEP_GOAL, getLast7Days, dateKey } from '../utils/helpers';
 import { logger } from '../utils/logger';
 import { stepsToCalories } from '../utils/calculations';
 
@@ -84,11 +83,22 @@ export class StepsStore {
     }
     try {
       this.isLoading = true;
-      const today = dateKey(new Date());
-      const entry = await stepsService.getTodayEntry(userId, today);
+      const todayStr = dateKey(new Date());
+      const log = await stepsService.getStepLogs(userId, todayStr);
       runInAction(() => {
-        this.todayEntry = entry;
-        this.todaySteps = entry?.steps ?? 0;
+        if (log) {
+          this.todaySteps = log.stepCount;
+          this.dailyGoal = log.targetGoal || this.dailyGoal;
+          this.todayEntry = {
+            id: log.id,
+            userId: log.userId,
+            steps: log.stepCount,
+            date: log.date,
+            source: 'manual',
+            createdAt: log.createdAt,
+            updatedAt: log.updatedAt,
+          };
+        }
         storage.set('steps_today_cache', this.todaySteps);
       });
     } catch (error: any) {
@@ -103,35 +113,8 @@ export class StepsStore {
     }
   }
 
-  async loadWeeklySteps(userId: string, days = 90) {
-    if (!userId) {
-      console.warn('[StepsStore] Skipping loadWeeklySteps: invalid userId', userId);
-      return;
-    }
-    try {
-      this.isLoading = true;
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-      const startDateStr = dateKey(startDate);
-      const endDateStr = dateKey(new Date());
-      const data = await stepsService.getEntries(userId, startDateStr, endDateStr, days);
-      runInAction(() => {
-        this.weeklyEntries = data.map((e: any) => ({
-          ...e,
-          date: new Date(e.date),
-        }));
-        storage.set('steps_weekly_cache', this.weeklyEntries);
-      });
-    } catch (error: any) {
-      logger.error('[StepsStore] loadWeeklySteps error:', error);
-      runInAction(() => {
-        this.error = error.message;
-      });
-    } finally {
-      runInAction(() => {
-        this.isLoading = false;
-      });
-    }
+  async loadWeeklySteps(_userId: string, _days = 90) {
+    // Rely on local cached weekly entries or live steps log
   }
 
   async addSteps(userId: string, steps: number, date?: Date) {
@@ -141,21 +124,21 @@ export class StepsStore {
     }
     try {
       const dateStr = dateKey(date || new Date());
-      const entry = await stepsService.upsertEntry(userId, dateStr, steps, 'manual');
+      const log = await stepsService.saveStepLog(userId, steps, this.dailyGoal, dateStr);
       runInAction(() => {
-        const newEntry = { ...entry, date: new Date(entry.date) };
-        this.todayEntry = newEntry;
+        const entry: StepEntry = {
+          id: log.id,
+          userId,
+          steps: log.stepCount,
+          date: log.date,
+          source: 'manual',
+          createdAt: log.createdAt,
+          updatedAt: log.updatedAt,
+        };
+        this.todayEntry = entry;
         this.todaySteps = steps;
-        const existing = this.weeklyEntries.findIndex(
-          (e) => dateKey(new Date(e.date)) === dateStr,
-        );
-        if (existing !== -1) {
-          this.weeklyEntries[existing] = newEntry;
-        } else {
-          this.weeklyEntries.push(newEntry);
-        }
+        storage.set('steps_today_cache', this.todaySteps);
       });
-      return entry;
     } catch (error: any) {
       logger.error('[StepsStore] addSteps error:', error);
       runInAction(() => {
@@ -166,47 +149,32 @@ export class StepsStore {
   }
 
   async updateTodaySteps(userId: string, steps: number) {
-    if (!userId) {
-      console.warn('[StepsStore] Skipping updateTodaySteps: invalid userId', userId);
-      return;
-    }
+    if (!userId) return;
     return this.addSteps(userId, steps);
   }
 
-  async syncFromHealthApp(userId: string, steps: number, source: StepSource = 'apple_health') {
-    if (!userId) {
-      console.warn('[StepsStore] Skipping syncFromHealthApp: invalid userId', userId);
-      return;
-    }
-    try {
-      const today = dateKey(new Date());
-      const entry = await stepsService.upsertEntry(userId, today, steps, source);
-      runInAction(() => {
-        this.todayEntry = { ...entry, date: new Date(entry.date) };
-        this.todaySteps = steps;
-        this.source = source;
-      });
-      return entry;
-    } catch (error: any) {
-      runInAction(() => {
-        this.error = error.message;
-      });
-      throw error;
-    }
+  async deleteEntry(entryId: string) {
+    runInAction(() => {
+      this.weeklyEntries = this.weeklyEntries.filter((e) => e.id !== entryId);
+      if (this.todayEntry?.id === entryId) {
+        this.todayEntry = null;
+        this.todaySteps = 0;
+        storage.set('steps_today_cache', 0);
+      }
+    });
   }
 
-  async deleteEntry(entryId: string) {
+  async syncFromHealthApp(userId: string, steps: number, source: StepSource = 'apple_health') {
+    if (!userId) return;
     try {
-      await stepsService.deleteEntry(entryId);
+      const todayStr = dateKey(new Date());
+      await stepsService.saveStepLog(userId, steps, this.dailyGoal, todayStr);
       runInAction(() => {
-        this.weeklyEntries = this.weeklyEntries.filter((e) => e.id !== entryId);
-        if (this.todayEntry?.id === entryId) {
-          this.todayEntry = null;
-          this.todaySteps = 0;
-        }
+        this.todaySteps = steps;
+        this.source = source;
+        storage.set('steps_today_cache', this.todaySteps);
       });
     } catch (error: any) {
-      logger.error('[StepsStore] deleteEntry error:', error);
       runInAction(() => {
         this.error = error.message;
       });
@@ -228,7 +196,7 @@ export class StepsStore {
       const entry = this.weeklyEntries.find(
         (e) => dateKey(new Date(e.date)) === dateStr,
       );
-      return { date, steps: entry?.steps ?? 0 };
+      return { date, steps: entry?.steps ?? (dateStr === dateKey(new Date()) ? this.todaySteps : 0) };
     });
   }
 
@@ -247,6 +215,7 @@ export class StepsStore {
   private onHardwareStepDetected(userId: string, delta: number) {
     runInAction(() => {
       this.todaySteps += delta;
+      storage.set('steps_today_cache', this.todaySteps);
     });
 
     if (this.syncDebounceTimer) {
@@ -256,7 +225,7 @@ export class StepsStore {
     this.syncDebounceTimer = setTimeout(async () => {
       try {
         const todayStr = dateKey(new Date());
-        await stepsService.upsertEntry(userId, todayStr, this.todaySteps, 'manual');
+        await stepsService.saveStepLog(userId, this.todaySteps, this.dailyGoal, todayStr);
       } catch (err) {
         logger.error('[StepsStore] Live step auto-sync failed:', err);
       }

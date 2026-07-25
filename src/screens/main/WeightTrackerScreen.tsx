@@ -441,7 +441,9 @@ export const WeightTrackerScreen = observer(() => {
             onPress: async () => {
               if (deleteTarget) {
                 try {
-                  await weightStore.deleteEntry(deleteTarget.id);
+                  if (auth.user?.id) {
+                    await weightStore.deleteEntry(auth.user.id, deleteTarget.id);
+                  }
                 } catch (e: any) {
                   Alert.alert('Error', e.message || 'Failed to delete entry');
                 } finally {

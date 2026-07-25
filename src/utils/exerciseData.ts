@@ -1,4 +1,5 @@
 import type { MuscleGroup, Equipment } from '../models';
+import { storage } from './storage';
 
 export interface ExerciseItem {
   id: string;
@@ -6,6 +7,7 @@ export interface ExerciseItem {
   muscleGroup: MuscleGroup;
   equipment: Equipment;
   icon: string;
+  isCustom?: boolean;
 }
 
 export interface ExerciseCategory {
@@ -14,6 +16,45 @@ export interface ExerciseCategory {
   icon: string;
   exercises: ExerciseItem[];
 }
+
+export const getCustomExercises = (): ExerciseItem[] => {
+  return storage.get<ExerciseItem[]>('workout.custom_exercises') || [];
+};
+
+export const saveCustomExercise = (item: {
+  name: string;
+  muscleGroup: MuscleGroup;
+  equipment: Equipment;
+}): ExerciseItem => {
+  const current = getCustomExercises();
+  const newItem: ExerciseItem = {
+    id: `custom-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    name: item.name,
+    muscleGroup: item.muscleGroup,
+    equipment: item.equipment,
+    icon: '✨',
+    isCustom: true,
+  };
+  const updated = [newItem, ...current];
+  storage.set('workout.custom_exercises', updated);
+  return newItem;
+};
+
+export const getExerciseCategories = (): ExerciseCategory[] => {
+  const custom = getCustomExercises();
+  const customCategory: ExerciseCategory = {
+    id: 'custom',
+    name: 'Custom',
+    icon: '✨',
+    exercises: custom,
+  };
+  return [...exerciseCategories, customCategory];
+};
+
+export const getAllExercises = (): ExerciseItem[] => {
+  const custom = getCustomExercises();
+  return [...custom, ...exerciseCategories.flatMap((cat) => cat.exercises)];
+};
 
 export const exerciseCategories: ExerciseCategory[] = [
   {
@@ -156,10 +197,6 @@ export const exerciseCategories: ExerciseCategory[] = [
     ],
   },
 ];
-
-export const getAllExercises = (): ExerciseItem[] => {
-  return exerciseCategories.flatMap((cat) => cat.exercises);
-};
 
 // Helper function to calculate Levenshtein Distance for fuzzy matching
 const levenshteinDistance = (a: string, b: string): number => {

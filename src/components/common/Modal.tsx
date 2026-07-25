@@ -55,29 +55,45 @@ export const Modal = memo<ModalProps>(({
     if (visible) {
       dragY.value = 0;
       opacity.value = withTiming(1, { duration: 200 });
-      scale.value = withSpring(1, { damping: 20, stiffness: 300 });
-      translateY.value = withSpring(0, { damping: 20, stiffness: 300 });
+      if (sheet) {
+        scale.value = 1;
+        translateY.value = 400;
+        translateY.value = withSpring(0, { damping: 25, stiffness: 280 });
+      } else {
+        scale.value = withSpring(1, { damping: 20, stiffness: 300 });
+        translateY.value = withSpring(0, { damping: 20, stiffness: 300 });
+      }
     } else {
       opacity.value = withTiming(0, { duration: 150 });
-      scale.value = withTiming(0.95, { duration: 150 });
+      if (!sheet) {
+        scale.value = withTiming(0.95, { duration: 150 });
+      }
     }
-  }, [visible]);
+  }, [visible, sheet]);
 
   const panGesture = Gesture.Pan()
-    .activeOffsetY([5, 1000])
-    .failOffsetY([-5, 0])
+    .activeOffsetY([-10, 10])
     .onUpdate((event) => {
-      if (event.translationY > 0) {
+      'worklet';
+      if (event.translationY < 0) {
+        // Subtle rubber-band effect when dragging up
+        dragY.value = event.translationY * 0.25;
+      } else {
         dragY.value = event.translationY;
       }
     })
     .onEnd((event) => {
-      if (event.translationY > 100 || event.velocityY > 500) {
-        dragY.value = withTiming(400, { duration: 200 }, () => {
-          runOnJS(onClose)();
+      'worklet';
+      const shouldClose = event.translationY > 100 || event.velocityY > 400;
+      if (shouldClose) {
+        opacity.value = withTiming(0, { duration: 180 });
+        dragY.value = withTiming(500, { duration: 200 }, (finished) => {
+          if (finished) {
+            runOnJS(onClose)();
+          }
         });
       } else {
-        dragY.value = withSpring(0, { damping: 20, stiffness: 300 });
+        dragY.value = withSpring(0, { damping: 24, stiffness: 300 });
       }
     });
 

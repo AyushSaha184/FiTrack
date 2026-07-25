@@ -1,6 +1,7 @@
-import { supabase } from './client';
+import firestore from '@react-native-firebase/firestore';
 import { Platform } from 'react-native';
 import { CONFIG } from '../../config/constants';
+import { logger } from '../../utils/logger';
 
 export interface CrashReportPayload {
   reportType: string;
@@ -14,35 +15,22 @@ export interface CrashReportPayload {
 
 export const crashReportsService = {
   async submit(payload: CrashReportPayload) {
-    const { data, error } = await supabase.from('crash_reports').insert({
-      user_id: payload.user.id !== 'unknown' && payload.user.id !== 'unauthenticated'
-        ? payload.user.id
-        : null,
-      report_data: payload,
-      app_version: payload.app.version,
-      os: payload.device.os,
-      os_version: String(payload.device.osVersion),
-    }).select().single();
-
-    if (error) {
-      console.warn('[crashReportsService] Failed to submit crash report:', error.message);
-      return null;
-    }
-
-    this.notifyEmail(data);
-    return data;
-  },
-
-  async notifyEmail(record: unknown) {
     try {
-      const { error: fnError } = await supabase.functions.invoke('send-crash-report-email', {
-        body: { record },
+      const docRef = firestore().collection('crashReports').doc();
+      await docRef.set({
+        id: docRef.id,
+        userId: payload.user.id !== 'unknown' ? payload.user.id : null,
+        reportData: payload,
+        appVersion: payload.app.version,
+        os: payload.device.os,
+        osVersion: String(payload.device.osVersion),
+        createdAt: firestore.FieldValue.serverTimestamp(),
       });
-      if (fnError) {
-        console.warn('[crashReportsService] Failed to notify email function:', fnError.message);
-      }
-    } catch {
-      // Fire-and-forget; email notification is best-effort
+
+      return { id: docRef.id };
+    } catch (err) {
+      logger.error('[crashReportsService] Failed to submit crash report:', err);
+      return null;
     }
   },
 

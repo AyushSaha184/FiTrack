@@ -27,7 +27,7 @@ import { useAuth, useColors, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
 import { errorLogs } from '../../utils/logger';
 import { CONFIG } from '../../config/constants';
-import { crashReportsService } from '../../services/supabase/crashReports';
+import { crashReportsService } from '../../services/firebase/crashReports';
 import { updateService, type UpdateInfo } from '../../services/update/updateService';
 import { UpdateModal } from '../../components/common/UpdateModal';
 

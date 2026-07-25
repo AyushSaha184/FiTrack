@@ -1,12 +1,13 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { createContext, useContext } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
 import { firebaseAuthService } from '../services/firebase/auth';
-import { supabase, ensureProfileExists, withTokenRetry, isSupabaseTokenSynced, refreshSupabaseToken } from '../services/supabase/client';
+import { collections } from '../services/firebase/firestore';
+import { workoutStore } from './WorkoutStore';
+import { weightStore } from './WeightStore';
+import { stepsStore } from './StepsStore';
 import auth from '@react-native-firebase/auth';
 import type { User, UserPreferences, Units } from '../models';
 import { storage } from '../utils/storage';
-import { STORAGE_KEYS } from '../utils/constants';
 import type { LoginInput, SignupInput } from '../utils/validators';
 import { logger } from '../utils/logger';
 
@@ -37,11 +38,9 @@ export class AuthStore {
   isInitialized = false;
   error: string | null = null;
   isAuthenticated = false;
-  // Track if user needs to set their name (for Google sign-in)
   isNameRequired = false;
 
   private authUnsubscribe: (() => void) | null = null;
-  private appStateSubscription: any = null;
   private activeFetches = new Map<string, Promise<void>>();
 
   constructor() {
@@ -86,13 +85,11 @@ export class AuthStore {
         this.isLoading = true;
       }
 
-      // Check for existing session and silently update in background
       const { session } = await firebaseAuthService.getSession();
       if (session?.user) {
         await this.fetchUser(session.user);
       }
 
-      // Listen for auth state changes (token refresh, sign-out from another tab, etc.)
       this.authUnsubscribe = firebaseAuthService.onAuthStateChange(
         (event, newSession) => {
           if (__DEV__) logger.debug('[AuthStore] onAuthStateChange event:', event);
@@ -112,18 +109,6 @@ export class AuthStore {
           }
         },
       );
-
-      // Listen for app foregrounding to refresh token proactively
-      this.appStateSubscription = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
-        if (nextState === 'active' && this.user) {
-          logger.debug('[AuthStore] App became active, refreshing token sync...');
-          try {
-            await firebaseAuthService.getSession();
-          } catch (e) {
-            logger.error('[AuthStore] AppState refresh error:', e);
-          }
-        }
-      });
     } catch (error) {
       logger.error('[AuthStore] initialize error:', error);
     } finally {
@@ -134,12 +119,10 @@ export class AuthStore {
     }
   }
 
-  async fetchUser(supabaseUser: any, isGoogleSignIn = false) {
-    if (!supabaseUser) {
-      return;
-    }
+  async fetchUser(fbUser: any, isGoogleSignIn = false) {
+    if (!fbUser) return;
 
-    const userId = supabaseUser.id;
+    const userId = fbUser.id;
     let fetchPromise = this.activeFetches.get(userId);
     if (fetchPromise) {
       await fetchPromise;
@@ -155,111 +138,54 @@ export class AuthStore {
 
     fetchPromise = (async () => {
       try {
-        const user = supabaseUser;
-        const localOnboarded = storage.get<boolean>(`onboarding_completed_${user.id}`);
+        const userDocRef = collections.userDoc(userId);
+        const doc = await userDocRef.get();
+        let profileData = doc.exists() ? doc.data() : null;
 
-        if (!isSupabaseTokenSynced) {
-          await refreshSupabaseToken().catch((e) => {
-            logger.warn('[AuthStore] Pre-fetch token refresh attempt warning:', e);
-          });
-        }
+        const metadata = fbUser.user_metadata || {};
+        const displayName = profileData?.name || profileData?.displayName || metadata.name || metadata.full_name || 'Athlete';
+        const avatarUrl = profileData?.avatarUrl || profileData?.photoURL || metadata.avatar_url || metadata.picture || null;
+        const localOnboarded = storage.get<boolean>(`onboarding_completed_${userId}`);
+        const onboardingCompleted = (profileData?.onboardingCompleted ?? false) || localOnboarded === true;
 
-        let profile: any = null;
-        let profileError: any = null;
-
-        // Read profile with token retry logic
-        try {
-          profile = await withTokenRetry(async () => {
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', user.id)
-              .maybeSingle();
-            if (error) throw error;
-            return data;
-          });
-        } catch (err: any) {
-          profileError = err;
-          logger.error('[AuthStore] Error reading profile by id:', err);
-        }
-
-        // If profile not found by id, check if a profile already exists for this email
-        if (!profile && !profileError && user.email) {
-          try {
-            const emailProfile = await withTokenRetry(async () => {
-              const { data, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('email', user.email)
-                .maybeSingle();
-              if (error) throw error;
-              return data;
-            });
-
-            if (emailProfile) {
-              const updatedProfile = await withTokenRetry(async () => {
-                const { data, error } = await supabase
-                  .from('profiles')
-                  .update({ id: user.id })
-                  .eq('email', user.email)
-                  .select()
-                  .maybeSingle();
-                if (error) throw error;
-                return data;
-              });
-              profile = updatedProfile || emailProfile;
-            }
-          } catch (err: any) {
-            logger.error('[AuthStore] Error matching profile by email:', err);
-          }
-        }
-
-        // If profile still doesn't exist, create/upsert it in background and use user_metadata immediately
-        if (!profile) {
-          const metadata = user.user_metadata || {};
-          const nameToSet = metadata.name || metadata.full_name || 'Athlete';
-          const avatarToSet = metadata.avatar_url || metadata.picture || null;
-          ensureProfileExists(user.id, user.email, nameToSet, avatarToSet).catch(() => {});
-          profile = {
-            id: user.id,
-            email: user.email,
-            name: nameToSet,
-            avatar_url: avatarToSet,
-            onboarding_completed: localOnboarded === true,
+        if (!profileData) {
+          profileData = {
+            id: userId,
+            email: fbUser.email || '',
+            name: displayName,
+            avatarUrl,
+            onboardingCompleted,
           };
+          await userDocRef.set(profileData, { merge: true });
         }
 
-        const displayName = profile?.name || user.user_metadata?.name || 'Athlete';
-        const onboardingCompleted = (profile?.onboarding_completed ?? false) || localOnboarded === true;
-
-        // For Google sign-in: if no name is set, require name input
         const needsName = isGoogleSignIn && (!displayName || displayName === 'Athlete');
-
-        const parsedCreatedAt = user.created_at ? new Date(user.created_at) : new Date();
-        const validCreatedAt = isNaN(parsedCreatedAt.getTime()) ? new Date() : parsedCreatedAt;
 
         runInAction(() => {
           this.user = {
-            id: user.id,
-            email: user.email || '',
+            id: userId,
+            email: fbUser.email || '',
             name: displayName,
-            avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url,
-            createdAt: validCreatedAt,
+            avatarUrl,
+            createdAt: fbUser.created_at ? new Date(fbUser.created_at) : new Date(),
             updatedAt: new Date(),
             preferences: defaultPreferences,
             profile: {
-              fitnessLevel: profile?.fitness_level || 'beginner',
-              age: profile?.age,
-              gender: profile?.gender,
-              height: profile?.height ? Number(profile.height) : undefined,
-              goalWeight: profile?.goal_weight ? Number(profile.goal_weight) : undefined,
-              weeklyGoal: profile?.weekly_goal,
+              fitnessLevel: profileData?.fitnessLevel || 'beginner',
+              age: profileData?.age,
+              gender: profileData?.gender,
+              height: profileData?.height ? Number(profileData.height) : undefined,
+              goalWeight: profileData?.goalWeight ? Number(profileData.goalWeight) : undefined,
+              weeklyGoal: profileData?.weeklyGoal,
             },
             onboardingCompleted,
           };
           this.isAuthenticated = true;
           this.isNameRequired = needsName;
           storage.set('user_cached_profile', this.user);
+          workoutStore.loadWorkouts(userId).catch(() => {});
+          weightStore.loadEntries(userId).catch(() => {});
+          stepsStore.loadTodaySteps(userId).catch(() => {});
         });
       } catch (error) {
         logger.error('[AuthStore] fetchUser error:', error);
@@ -274,22 +200,18 @@ export class AuthStore {
     }
   }
 
-  // Set user's name after Google sign-in
   async setUserName(name: string) {
     if (!this.user) return;
     try {
       this.isLoading = true;
-      await supabase
-        .from('profiles')
-        .update({ name })
-        .eq('id', this.user.id);
-
-      // Also update auth metadata
-      await supabase.auth.updateUser({ data: { name, full_name: name } });
+      await collections.userDoc(this.user.id).set({ name }, { merge: true });
+      await firebaseAuthService.updateProfile({ name });
 
       runInAction(() => {
-        this.user!.name = name;
-        this.isNameRequired = false;
+        if (this.user) {
+          this.user.name = name;
+          this.isNameRequired = false;
+        }
       });
     } catch (error: any) {
       logger.error('[AuthStore] setUserName error:', error);
@@ -302,26 +224,21 @@ export class AuthStore {
   }
 
   async login(input: LoginInput) {
-    console.log('[AuthStore] login started with email:', input.email);
     try {
       this.error = null;
       this.isLoading = true;
-      console.log('[AuthStore] calling firebaseAuthService.login...');
       const response = await firebaseAuthService.login(input);
-      console.log('[AuthStore] firebaseAuthService.login succeeded');
-      console.log('[AuthStore] calling fetchUser...');
       await this.fetchUser(response.user, false);
       if (!this.isAuthenticated) {
         throw new Error('Failed to load user profile. Please try logging in again.');
       }
     } catch (error: any) {
-      logger.error('[AuthStore] login encountered error:', error);
+      logger.error('[AuthStore] login error:', error);
       runInAction(() => {
         this.error = error.message || 'Login failed';
       });
       throw error;
     } finally {
-      console.log('[AuthStore] login finally block, setting isLoading = false');
       runInAction(() => {
         this.isLoading = false;
       });
@@ -329,26 +246,20 @@ export class AuthStore {
   }
 
   async signup(input: SignupInput) {
-    console.log('[AuthStore] signup called with email:', input.email);
     try {
       this.error = null;
       this.isLoading = true;
-      console.log('[AuthStore] calling firebaseAuthService.signup...');
       const response = await firebaseAuthService.signup(input);
-      console.log('[AuthStore] firebaseAuthService.signup succeeded');
-      // If auto-confirm is enabled (dev mode), session is returned immediately
       if (response.session && response.user) {
-        console.log('[AuthStore] signup received session (auto-confirm), fetching user...');
         await this.fetchUser(response.user, false);
       }
     } catch (error: any) {
-      logger.error('[AuthStore] signup encountered error:', error);
+      logger.error('[AuthStore] signup error:', error);
       runInAction(() => {
         this.error = error.message || 'Signup failed';
       });
       throw error;
     } finally {
-      console.log('[AuthStore] signup finally block, setting isLoading = false');
       runInAction(() => {
         this.isLoading = false;
       });
@@ -356,26 +267,23 @@ export class AuthStore {
   }
 
   async socialLogin(provider: 'google') {
-    console.log('[AuthStore] socialLogin started with provider:', provider);
     try {
       this.error = null;
       this.isLoading = true;
       if (provider === 'google') {
         const response = await firebaseAuthService.signInWithGoogle();
-        console.log('[AuthStore] socialLogin signInWithGoogle succeeded, fetching user...');
         await this.fetchUser(response.user, true);
         if (!this.isAuthenticated) {
           throw new Error('Failed to load user profile. Please try signing in again.');
         }
       }
     } catch (error: any) {
-      logger.error('[AuthStore] socialLogin encountered error:', error);
+      logger.error('[AuthStore] socialLogin error:', error);
       runInAction(() => {
         this.error = error.message || 'Social login failed';
       });
       throw error;
     } finally {
-      console.log('[AuthStore] socialLogin finally block, setting isLoading = false');
       runInAction(() => {
         this.isLoading = false;
       });
@@ -419,18 +327,9 @@ export class AuthStore {
       this.user = { ...this.user!, onboardingCompleted: true };
     });
 
-    // Update profiles table
-    const { error } = await supabase
-      .from('profiles')
-      .update({ onboarding_completed: true })
-      .eq('id', userId);
-    if (error) {
-      logger.error('[AuthStore] Failed to update onboarding_completed in profiles:', error);
-    }
-
-    // Also update auth metadata
+    await collections.userDoc(userId).set({ onboardingCompleted: true }, { merge: true });
     await firebaseAuthService.updateProfile({
-      name: this.user!.name,
+      name: this.user.name,
       onboardingCompleted: true,
     });
   }
@@ -439,8 +338,9 @@ export class AuthStore {
     if (!this.user) return;
     try {
       await firebaseAuthService.updateProfile(updates);
+      await collections.userDoc(this.user.id).set(updates, { merge: true });
       runInAction(() => {
-        if (updates.name) this.user!.name = updates.name;
+        if (updates.name && this.user) this.user.name = updates.name;
       });
     } catch (error: any) {
       runInAction(() => {
@@ -458,12 +358,6 @@ export class AuthStore {
     if (this.authUnsubscribe) {
       this.authUnsubscribe();
       this.authUnsubscribe = null;
-    }
-    if (this.appStateSubscription) {
-      if (typeof this.appStateSubscription.remove === 'function') {
-        this.appStateSubscription.remove();
-      }
-      this.appStateSubscription = null;
     }
   }
 }

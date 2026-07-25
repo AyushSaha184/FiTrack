@@ -135,6 +135,9 @@ export const WorkoutScreen = observer(() => {
     setShowResetAlert(true);
   };
 
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollYRef = useRef<number>(0);
+
   const fabAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: fabScale.value }],
   }));
@@ -143,6 +146,11 @@ export const WorkoutScreen = observer(() => {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <AnimatedScreen>
         <ScrollView
+          ref={scrollViewRef}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
@@ -312,6 +320,8 @@ export const WorkoutScreen = observer(() => {
                 <DraggableExerciseList
                   exercises={activeWorkoutExercises}
                   weightUnit={weightUnit}
+                  scrollViewRef={scrollViewRef}
+                  scrollYRef={scrollYRef}
                   onAddSet={(exId) => workoutStore.addSet(exId)}
                   onUpdateSet={(exId, setId, updates) =>
                     workoutStore.updateSet(exId, setId, updates)

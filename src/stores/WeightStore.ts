@@ -1,7 +1,7 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { WeightEntry } from '../models';
-import { weightService } from '../services/supabase/weight';
-import { generateUUID, dateKey } from '../utils/helpers';
+import { weightService } from '../services/firebase/weightService';
+import { generateUUID } from '../utils/helpers';
 import { storage } from '../utils/storage';
 import { logger } from '../utils/logger';
 
@@ -84,23 +84,13 @@ export class WeightStore {
     this.stats = { highest, lowest, average, change };
   }
 
-  async loadEntries(userId: string, days = 365) {
+  async loadEntries(userId: string, _days = 365) {
+    if (!userId) return;
     try {
       this.isLoading = true;
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-      const data = await weightService.getEntries(
-        userId,
-        dateKey(startDate),
-        dateKey(new Date()),
-      );
+      const data = await weightService.getWeightEntries(userId);
       runInAction(() => {
-        this.entries = data.map((e: any) => ({
-          ...e,
-          date: new Date(e.date),
-          createdAt: e.createdAt ? new Date(e.createdAt) : new Date(e.date),
-          updatedAt: e.updatedAt ? new Date(e.updatedAt) : new Date(e.date),
-        }));
+        this.entries = data;
         if (data.length > 0) {
           this.currentWeight = data[0].weight;
         }
@@ -125,35 +115,28 @@ export class WeightStore {
     });
   }
 
-  async addEntry(userId: string, weight: number, date?: Date, notes?: string) {
+  async addEntry(userId: string, weight: number, date?: Date, note?: string) {
     try {
       if (!userId) {
         logger.error("No valid user ID found");
         throw new Error('Not authenticated');
       }
-      
+
       const entryDate = date || new Date();
-      const entry = await weightService.addEntry({
+      const entry = await weightService.addWeightEntry(userId, {
         id: generateUUID(),
-        userId: userId,
         weight,
-        date: entryDate.toISOString(),
-        notes,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      } as any);
+        date: entryDate,
+        notes: note,
+      });
+
       runInAction(() => {
-        const newEntry = {
-          ...entry,
-          date: new Date(entry.date),
-          createdAt: entry.createdAt ? new Date(entry.createdAt) : new Date(),
-          updatedAt: entry.updatedAt ? new Date(entry.updatedAt) : new Date(),
-        };
-        this.entries = [newEntry, ...this.entries].sort(
+        this.entries = [entry, ...this.entries].sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
-        this.currentWeight = newEntry.weight;
+        this.currentWeight = entry.weight;
         this.recalculateStats();
+        storage.set('weight_entries_cache', this.entries);
       });
       return entry;
     } catch (error: any) {
@@ -165,37 +148,9 @@ export class WeightStore {
     }
   }
 
-  async updateEntry(entryId: string, weight: number, notes?: string) {
+  async deleteEntry(userId: string, entryId: string) {
     try {
-      const updated = await weightService.updateEntry(entryId, { weight, notes });
-      runInAction(() => {
-        const index = this.entries.findIndex((e) => e.id === entryId);
-        if (index !== -1) {
-          this.entries[index] = {
-            ...this.entries[index],
-            ...updated,
-            date: new Date(updated.date),
-            createdAt: updated.createdAt ? new Date(updated.createdAt) : this.entries[index].createdAt,
-            updatedAt: updated.updatedAt ? new Date(updated.updatedAt) : new Date(),
-          };
-          if (index === 0) {
-            this.currentWeight = updated.weight;
-          }
-        }
-        this.recalculateStats();
-      });
-      return updated;
-    } catch (error: any) {
-      runInAction(() => {
-        this.error = error.message;
-      });
-      throw error;
-    }
-  }
-
-  async deleteEntry(entryId: string) {
-    try {
-      await weightService.deleteEntry(entryId);
+      await weightService.deleteWeightEntry(userId, entryId);
       runInAction(() => {
         this.entries = this.entries.filter((e) => e.id !== entryId);
         if (this.entries.length > 0) {
@@ -204,6 +159,7 @@ export class WeightStore {
           this.currentWeight = null;
         }
         this.recalculateStats();
+        storage.set('weight_entries_cache', this.entries);
       });
     } catch (error: any) {
       runInAction(() => {

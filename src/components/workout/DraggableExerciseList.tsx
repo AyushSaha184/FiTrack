@@ -1,20 +1,23 @@
-import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, LayoutChangeEvent } from 'react-native';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { View, StyleSheet, LayoutChangeEvent, Dimensions } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   runOnJS,
-  FadeInDown,
   Easing,
 } from 'react-native-reanimated';
 import { ExerciseCard } from './ExerciseCard';
 import type { WorkoutExercise, Set } from '../../models';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 interface DraggableExerciseListProps {
   exercises: WorkoutExercise[];
   weightUnit?: 'kg' | 'lbs';
+  scrollViewRef?: React.RefObject<any>;
+  scrollYRef?: React.MutableRefObject<number>;
   onAddSet: (exerciseId: string) => void;
   onUpdateSet: (exerciseId: string, setId: string, updates: Partial<Set>) => void;
   onToggleSetComplete: (exerciseId: string, setId: string) => void;
@@ -37,6 +40,8 @@ const TIMING_CONFIG = {
 export const DraggableExerciseList = ({
   exercises,
   weightUnit,
+  scrollViewRef,
+  scrollYRef,
   onAddSet,
   onUpdateSet,
   onToggleSetComplete,
@@ -78,6 +83,8 @@ export const DraggableExerciseList = ({
           index={index}
           totalCount={exercises.length}
           weightUnit={weightUnit}
+          scrollViewRef={scrollViewRef}
+          scrollYRef={scrollYRef}
           activeIndex={activeIndex}
           translateY={translateY}
           targetIndex={targetIndex}
@@ -101,6 +108,8 @@ interface DraggableItemProps {
   index: number;
   totalCount: number;
   weightUnit?: 'kg' | 'lbs';
+  scrollViewRef?: React.RefObject<any>;
+  scrollYRef?: React.MutableRefObject<number>;
   activeIndex: Animated.SharedValue<number>;
   translateY: Animated.SharedValue<number>;
   targetIndex: Animated.SharedValue<number>;
@@ -120,6 +129,8 @@ const DraggableItem = ({
   index,
   totalCount,
   weightUnit,
+  scrollViewRef,
+  scrollYRef,
   activeIndex,
   translateY,
   targetIndex,
@@ -135,18 +146,71 @@ const DraggableItem = ({
 }: DraggableItemProps) => {
   const isDraggingItem = useSharedValue<boolean>(false);
   const itemOffsetY = useSharedValue<number>(0);
+  const accumulatedScrollY = useSharedValue<number>(0);
+  const initialScrollY = useRef<number>(0);
+  const autoScrollTimer = useRef<any>(null);
+  const currentSpeedRef = useRef<number>(0);
   const [isDraggingState, setIsDraggingState] = useState<boolean>(false);
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollTimer.current) {
+      clearInterval(autoScrollTimer.current);
+      autoScrollTimer.current = null;
+    }
+    currentSpeedRef.current = 0;
+  }, []);
+
+  const handleAutoScrollCheck = useCallback(
+    (absoluteY: number) => {
+      const TOP_BOUND = 180;
+      const BOTTOM_BOUND = SCREEN_HEIGHT - 180;
+
+      let speed = 0;
+      if (absoluteY < TOP_BOUND) {
+        speed = -Math.min(22, Math.max(4, (TOP_BOUND - absoluteY) * 0.3));
+      } else if (absoluteY > BOTTOM_BOUND) {
+        speed = Math.min(22, Math.max(4, (absoluteY - BOTTOM_BOUND) * 0.3));
+      }
+
+      currentSpeedRef.current = speed;
+
+      if (speed !== 0 && !autoScrollTimer.current) {
+        autoScrollTimer.current = setInterval(() => {
+          if (!scrollViewRef?.current || currentSpeedRef.current === 0) return;
+          const currentY = scrollYRef?.current || 0;
+          const nextY = Math.max(0, currentY + currentSpeedRef.current);
+          if (nextY !== currentY) {
+            scrollViewRef.current.scrollTo({ y: nextY, animated: false });
+            if (scrollYRef) scrollYRef.current = nextY;
+            const delta = nextY - initialScrollY.current;
+            accumulatedScrollY.value = delta;
+          }
+        }, 16);
+      } else if (speed === 0 && autoScrollTimer.current) {
+        stopAutoScroll();
+      }
+    },
+    [scrollViewRef, scrollYRef, stopAutoScroll, accumulatedScrollY]
+  );
+
+  useEffect(() => {
+    return () => {
+      stopAutoScroll();
+    };
+  }, [stopAutoScroll]);
 
   const handleFinishSwap = useCallback(
     (fromIdx: number, toIdx: number) => {
+      stopAutoScroll();
       activeIndex.value = -1;
       targetIndex.value = -1;
       translateY.value = 0;
       itemOffsetY.value = 0;
+      accumulatedScrollY.value = 0;
       setIsDraggingState(false);
       onReorder(fromIdx, toIdx);
     },
-    [onReorder, activeIndex, targetIndex, translateY, itemOffsetY]
+    [onReorder, activeIndex, targetIndex, translateY, itemOffsetY, accumulatedScrollY, stopAutoScroll]
   );
 
   const dragGesture = Gesture.Pan()
@@ -156,17 +220,26 @@ const DraggableItem = ({
       activeIndex.value = index;
       targetIndex.value = index;
       isDraggingItem.value = true;
+      accumulatedScrollY.value = 0;
+      if (scrollYRef) {
+        runOnJS((val: number) => {
+          initialScrollY.current = val;
+        })(scrollYRef.current);
+      }
       runOnJS(setIsDraggingState)(true);
     })
     .onUpdate((event) => {
       'worklet';
-      translateY.value = event.translationY;
+      const totalY = event.translationY + accumulatedScrollY.value;
+      translateY.value = totalY;
+
+      runOnJS(handleAutoScrollCheck)(event.absoluteY);
 
       // Estimate current drag item center relative to original position
       const currentLayout = layouts[index];
       if (!currentLayout) return;
 
-      const draggedCenterY = currentLayout.y + currentLayout.height / 2 + event.translationY;
+      const draggedCenterY = currentLayout.y + currentLayout.height / 2 + totalY;
 
       // Determine new target index
       let newTarget = index;
@@ -189,6 +262,7 @@ const DraggableItem = ({
       const fromIdx = activeIndex.value;
       const toIdx = targetIndex.value;
 
+      runOnJS(stopAutoScroll)();
       isDraggingItem.value = false;
 
       if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
@@ -196,6 +270,7 @@ const DraggableItem = ({
       } else {
         translateY.value = 0;
         itemOffsetY.value = 0;
+        accumulatedScrollY.value = 0;
         activeIndex.value = -1;
         targetIndex.value = -1;
         runOnJS(setIsDraggingState)(false);

@@ -1,6 +1,6 @@
 {
   "name": "fitrack",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -17,12 +17,12 @@
     "@notifee/react-native": "^9.1.8",
     "@react-native-firebase/app": "^25.1.0",
     "@react-native-firebase/auth": "^25.1.0",
+    "@react-native-firebase/firestore": "^25.1.0",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
     "@shopify/react-native-skia": "^1.11.2",
-    "@supabase/supabase-js": "^2.107.0",
     "@tanstack/react-query": "^5.101.0",
     "date-fns": "^3.6.0",
     "mobx": "^6.16.0",
@@ -36,7 +36,6 @@
     "react-native-safe-area-context": "^5.8.0",
     "react-native-screens": "^4.18.0",
     "react-native-svg": "^15.15.5",
-    "react-native-url-polyfill": "^3.0.0",
     "uuid": "^10.0.0",
     "victory-native": "^41.26.0",
     "zod": "^3.25.76"

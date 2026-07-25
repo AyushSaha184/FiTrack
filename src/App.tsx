@@ -4,7 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { logger, errorLogs } from './utils/logger';
-import { crashReportsService } from './services/supabase/crashReports';
+import { crashReportsService } from './services/firebase/crashReports';
 import { AppNavigator } from './navigation/AppNavigator';
 import { StoreContext, rootStore } from './stores';
 import { colors } from './theme';

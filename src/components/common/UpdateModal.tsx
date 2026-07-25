@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Linking,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Modal } from './Modal';
@@ -146,7 +147,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
                 Downloading update...
               </Text>
               <Text style={[styles.progressPctText, { color: colors.textMuted }]}>
-                {downloadedSize} / {totalSizeStr} ({Math.round(downloadProgress)}%)
+                {downloadedSize} / {totalSizeStr}
               </Text>
             </View>
             <ProgressBar progress={downloadProgress} height={8} animated={false} />
@@ -212,9 +213,19 @@ export const UpdateModal = memo<UpdateModalProps>(({
                 style={styles.primaryBtn}
               />
               <Button
+                title="Open Download Link in Browser"
+                onPress={() => {
+                  if (updateInfo.downloadUrl) {
+                    Linking.openURL(updateInfo.downloadUrl);
+                  }
+                }}
+                variant="secondary"
+                fullWidth
+              />
+              <Button
                 title="Close"
                 onPress={onClose}
-                variant="secondary"
+                variant="ghost"
                 fullWidth
               />
             </>

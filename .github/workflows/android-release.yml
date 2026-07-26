@@ -101,8 +101,6 @@ jobs:
           FITRACK_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || secrets.FITRACK_RELEASE_KEY_ALIAS }}
           FITRACK_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.FITRACK_RELEASE_KEY_PASSWORD }}
           EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY: ${{ secrets.EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }}
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL || 'https://jddzmsjnwomhppevocml.supabase.co' }}
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'dummy_anon_key' }}
           EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID || '' }}
 
       - name: Upload Signed Release APK Artifact

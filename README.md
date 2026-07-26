@@ -16,7 +16,7 @@ Your all-in-one fitness tracker for tracking workouts, exercises, sets, reps, we
 - React Native (Expo)
 - TypeScript
 - MobX for state management
-- Supabase for backend (Auth, PostgreSQL, Storage)
+- Firebase for backend (Auth, Firestore)
 - React Navigation
 - React Native Reanimated for animations
 - MMKV for fast local storage
@@ -28,7 +28,7 @@ Your all-in-one fitness tracker for tracking workouts, exercises, sets, reps, we
 - Node.js 18+
 - npm or yarn
 - Expo CLI (`npm install -g expo-cli`)
-- Supabase account
+- Firebase project
 
 ### Installation
 
@@ -45,17 +45,14 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` with your Supabase credentials.
+Edit `.env` with your Firebase and keystore credentials.
 
 4. Start the development server:
+
 
 ```bash
 npx expo start
 ```
-
-### Database Setup
-
-Run the SQL migrations in `supabase/migrations/` to set up your Supabase database.
 
 ## Project Structure
 
@@ -66,15 +63,13 @@ Fitrack/
 │   ├── screens/         # App screens
 │   ├── navigation/      # Navigation configuration
 │   ├── stores/          # MobX stores
-│   ├── services/        # Supabase services
+│   ├── services/        # Firebase services
 │   ├── hooks/           # Custom React hooks
 │   ├── utils/            # Utility functions
 │   ├── theme/            # Theme configuration
 │   ├── models/           # TypeScript types/models
 │   └── config/           # App configuration
-├── assets/              # Images, fonts, icons
-└── supabase/
-    └── migrations/       # Database migrations
+└── assets/              # Images, fonts, icons
 ```
 
 ## Scripts
@@ -108,8 +103,6 @@ Configure the following secrets in **Settings > Secrets and variables > Actions*
 | `ANDROID_KEY_PASSWORD` | Password for the release key |
 | `GOOGLE_SERVICES_JSON_BASE64` | Base64 string of `google-services.json` |
 | `EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY` | 32-byte hex storage encryption key |
-| `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 | `EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID` | Firebase Web Client ID |
 
 ## License

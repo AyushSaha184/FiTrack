@@ -6,7 +6,17 @@ export interface LogEntry {
   message: string;
 }
 
-export const errorLogs: LogEntry[] = [];
+const MAX_LOGS = 50;
+
+function loadLogs(): LogEntry[] {
+  return storage.get<LogEntry[]>(STORAGE_KEYS.ERROR_LOGS) ?? [];
+}
+
+function saveLogs(logs: LogEntry[]): void {
+  storage.set(STORAGE_KEYS.ERROR_LOGS, logs);
+}
+
+export const errorLogs: LogEntry[] = loadLogs();
 
 export const logger = {
   error(...args: any[]) {
@@ -28,9 +38,10 @@ export const logger = {
         .join(' ');
 
       errorLogs.push({ timestamp, message });
-      if (errorLogs.length > 50) {
+      if (errorLogs.length > MAX_LOGS) {
         errorLogs.shift();
       }
+      saveLogs(errorLogs);
     }
     console.error(...args);
   },

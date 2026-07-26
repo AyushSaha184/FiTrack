@@ -25,6 +25,7 @@ export const STORAGE_KEYS = {
   LAST_WORKOUT_DATE: 'workout.lastSelectedDate',
   LAST_UPDATE_CHECK: 'app.last_update_check',
   DISMISSED_UPDATE_VERSION: 'app.dismissed_update_version',
+  ERROR_LOGS: 'app.error_logs',
 } as const;
 
 export const DAY_ORDER: DayOfWeek[] = [

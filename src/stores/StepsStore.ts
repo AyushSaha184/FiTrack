@@ -139,6 +139,11 @@ export class StepsStore {
         this.todaySteps = steps;
         storage.set('steps_today_cache', this.todaySteps);
       });
+      
+      // Update background service if active and date is today
+      if (this.isLiveTracking && (!date || dateKey(date) === dateKey(new Date()))) {
+        await stepCounterService.setInitialSteps(steps);
+      }
     } catch (error: any) {
       logger.error('[StepsStore] addSteps error:', error);
       runInAction(() => {
@@ -187,6 +192,10 @@ export class StepsStore {
       this.dailyGoal = goal;
       storage.set(STORAGE_KEYS.STEP_DAILY_GOAL, goal);
     });
+    // Sync daily goal to service
+    if (this.isLiveTracking) {
+      stepCounterService.setGoal(goal).catch(() => {});
+    }
   }
 
   getChartData(): { date: Date; steps: number }[] {
@@ -203,47 +212,49 @@ export class StepsStore {
   async startLiveStepTracking(userId: string) {
     if (this.isLiveTracking || !userId) return;
 
-    this.unsubscribeStepCounter = await stepCounterService.startTracking(userId, (delta) => {
-      this.onHardwareStepDetected(userId, delta);
-    });
-
-    runInAction(() => {
-      this.isLiveTracking = true;
-    });
-  }
-
-  private onHardwareStepDetected(userId: string, delta: number) {
-    runInAction(() => {
-      this.todaySteps += delta;
-      storage.set('steps_today_cache', this.todaySteps);
-    });
-
-    if (this.syncDebounceTimer) {
-      clearTimeout(this.syncDebounceTimer);
+    const hasPermission = await stepCounterService.requestPermission(userId);
+    if (!hasPermission) {
+      logger.warn('[StepsStore] Physical activity recognition permission not granted');
+      return;
     }
 
-    this.syncDebounceTimer = setTimeout(async () => {
-      try {
-        const todayStr = dateKey(new Date());
-        await stepsService.saveStepLog(userId, this.todaySteps, this.dailyGoal, todayStr);
-      } catch (err) {
-        logger.error('[StepsStore] Live step auto-sync failed:', err);
-      }
-    }, 3000);
+    try {
+      // Seed foreground service on start with current steps/goal
+      await stepCounterService.startForegroundService(this.todaySteps, this.dailyGoal);
+      runInAction(() => {
+        this.isLiveTracking = true;
+      });
+    } catch (err) {
+      logger.error('[StepsStore] startLiveStepTracking error:', err);
+    }
   }
 
-  stopLiveStepTracking() {
-    if (this.unsubscribeStepCounter) {
-      this.unsubscribeStepCounter();
-      this.unsubscribeStepCounter = null;
-    }
-    if (this.syncDebounceTimer) {
-      clearTimeout(this.syncDebounceTimer);
-      this.syncDebounceTimer = null;
+  async stopLiveStepTracking() {
+    try {
+      await stepCounterService.stopForegroundService();
+    } catch (err) {
+      logger.error('[StepsStore] stopLiveStepTracking error:', err);
     }
     runInAction(() => {
       this.isLiveTracking = false;
     });
+  }
+
+  async syncFromBackgroundService(userId: string) {
+    if (!userId) return;
+    try {
+      const steps = await stepCounterService.getTodaySteps();
+      if (steps > this.todaySteps) {
+        runInAction(() => {
+          this.todaySteps = steps;
+          storage.set('steps_today_cache', this.todaySteps);
+        });
+        const todayStr = dateKey(new Date());
+        await stepsService.saveStepLog(userId, this.todaySteps, this.dailyGoal, todayStr);
+      }
+    } catch (err) {
+      logger.error('[StepsStore] syncFromBackgroundService error:', err);
+    }
   }
 
   clearError() {

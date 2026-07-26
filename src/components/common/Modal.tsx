@@ -1,4 +1,4 @@
-import React, { memo, ReactNode, useEffect } from 'react';
+import React, { memo, ReactNode, useEffect, useState } from 'react';
 import {
   View,
   Modal as RNModal,
@@ -18,7 +18,7 @@ import Animated, {
   withTiming,
   runOnJS,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
 
@@ -46,6 +46,10 @@ export const Modal = memo<ModalProps>(({
   bodyStyle,
 }) => {
   const colors = useColors();
+  
+  // Local state to keep the RNModal mounted during exit animations
+  const [mounted, setMounted] = useState(visible);
+
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);
   const translateY = useSharedValue(20);
@@ -53,47 +57,73 @@ export const Modal = memo<ModalProps>(({
 
   useEffect(() => {
     if (visible) {
+      setMounted(true);
       dragY.value = 0;
       opacity.value = withTiming(1, { duration: 200 });
       if (sheet) {
         scale.value = 1;
-        translateY.value = 400;
-        translateY.value = withSpring(0, { damping: 25, stiffness: 280 });
+        translateY.value = 600; // Slide from bottom
+        translateY.value = withSpring(0, { damping: 20, stiffness: 220 });
       } else {
-        scale.value = withSpring(1, { damping: 20, stiffness: 300 });
-        translateY.value = withSpring(0, { damping: 20, stiffness: 300 });
+        scale.value = 0.95;
+        scale.value = withSpring(1, { damping: 20, stiffness: 250 });
+        translateY.value = 50;
+        translateY.value = withSpring(0, { damping: 20, stiffness: 250 });
       }
     } else {
-      opacity.value = withTiming(0, { duration: 150 });
-      if (!sheet) {
-        scale.value = withTiming(0.95, { duration: 150 });
+      opacity.value = withTiming(0, { duration: 200 });
+      if (sheet) {
+        translateY.value = withTiming(600, { duration: 250 }, (finished) => {
+          if (finished) {
+            runOnJS(setMounted)(false);
+          }
+        });
+      } else {
+        scale.value = withTiming(0.95, { duration: 200 });
+        translateY.value = withTiming(50, { duration: 200 }, (finished) => {
+          if (finished) {
+            runOnJS(setMounted)(false);
+          }
+        });
       }
     }
   }, [visible, sheet]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
+    .onStart(() => {
+      'worklet';
+      // Touch feedback: slightly shrink the sheet springily to interact
+      scale.value = withSpring(0.985, { damping: 15, stiffness: 150 });
+    })
     .onUpdate((event) => {
       'worklet';
       if (event.translationY < 0) {
-        // Subtle rubber-band effect when dragging up
+        // Dragging above normal size -> make it resistive/springy
         dragY.value = event.translationY * 0.25;
       } else {
+        // Dragging down -> moves directly with finger
         dragY.value = event.translationY;
       }
     })
     .onEnd((event) => {
       'worklet';
-      const shouldClose = event.translationY > 100 || event.velocityY > 400;
+      // Reset scale feedback
+      scale.value = withSpring(1, { damping: 15, stiffness: 150 });
+
+      // If dragged down enough (e.g. 150px) or flicked down rapidly (velocityY > 600)
+      const shouldClose = event.translationY > 150 || event.velocityY > 600;
       if (shouldClose) {
-        opacity.value = withTiming(0, { duration: 180 });
-        dragY.value = withTiming(500, { duration: 200 }, (finished) => {
+        opacity.value = withTiming(0, { duration: 200 });
+        dragY.value = withTiming(600, { duration: 250 }, (finished) => {
           if (finished) {
             runOnJS(onClose)();
+            runOnJS(setMounted)(false);
           }
         });
       } else {
-        dragY.value = withSpring(0, { damping: 24, stiffness: 300 });
+        // Spring back to normal size
+        dragY.value = withSpring(0, { damping: 20, stiffness: 250 });
       }
     });
 
@@ -122,26 +152,47 @@ export const Modal = memo<ModalProps>(({
         contentStyle,
       ]}
     >
-      {sheet && (
-        <View style={styles.handleContainer}>
-          <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
-        </View>
-      )}
-      {(title || showCloseButton) && (
-        <View style={styles.header}>
-          {title && (
-            <Text style={[styles.title, { color: colors.text }]}>
-              {title}
-            </Text>
-          )}
-          {showCloseButton && (
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={[styles.closeText, { color: colors.textSecondary }]}>
-                ✕
+      {sheet ? (
+        <GestureDetector gesture={panGesture}>
+          <View style={{ backgroundColor: 'transparent' }}>
+            <View style={styles.handleContainer}>
+              <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
+            </View>
+            {(title || showCloseButton) && (
+              <View style={styles.header}>
+                {title && (
+                  <Text style={[styles.title, { color: colors.text }]}>
+                    {title}
+                  </Text>
+                )}
+                {showCloseButton && (
+                  <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                    <Text style={[styles.closeText, { color: colors.textSecondary }]}>
+                      ✕
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </View>
+        </GestureDetector>
+      ) : (
+        (title || showCloseButton) && (
+          <View style={styles.header}>
+            {title && (
+              <Text style={[styles.title, { color: colors.text }]}>
+                {title}
               </Text>
-            </TouchableOpacity>
-          )}
-        </View>
+            )}
+            {showCloseButton && (
+              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <Text style={[styles.closeText, { color: colors.textSecondary }]}>
+                  ✕
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )
       )}
       <View style={[styles.body, noPadding && { padding: 0 }, bodyStyle]}>{children}</View>
     </Animated.View>
@@ -149,28 +200,24 @@ export const Modal = memo<ModalProps>(({
 
   return (
     <RNModal
-      visible={visible}
+      visible={mounted}
       transparent
       animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardView}
-      >
-        <Animated.View style={[styles.backdrop, { backgroundColor: colors.overlay }, backdropStyle]}>
-          <Pressable style={styles.backdropPress} onPress={onClose} />
-        </Animated.View>
+      <GestureHandlerRootView style={{ flex: 1, width: '100%', height: '100%' }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardView}
+        >
+          <Animated.View style={[styles.backdrop, { backgroundColor: colors.overlay }, backdropStyle]}>
+            <Pressable style={styles.backdropPress} onPress={onClose} />
+          </Animated.View>
 
-        {sheet ? (
-          <GestureDetector gesture={panGesture}>
-            {animatedContent}
-          </GestureDetector>
-        ) : (
-          animatedContent
-        )}
-      </KeyboardAvoidingView>
+          {animatedContent}
+        </KeyboardAvoidingView>
+      </GestureHandlerRootView>
     </RNModal>
   );
 });

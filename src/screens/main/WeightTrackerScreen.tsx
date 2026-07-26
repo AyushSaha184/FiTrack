@@ -73,7 +73,7 @@ export const WeightTrackerScreen = observer(() => {
   const chartData = useMemo(() => {
     const now = new Date();
     let filteredEntries: WeightEntry[];
-    
+
     if (timeRange === 'all') {
       filteredEntries = [...entries];
     } else {
@@ -88,7 +88,7 @@ export const WeightTrackerScreen = observer(() => {
       const t = d.getTime();
       return isNaN(t) ? 0 : t;
     };
-    
+
     const sorted = [...filteredEntries].sort((a, b) => {
       const tA = getTimestamp(a);
       const tB = getTimestamp(b);
@@ -169,7 +169,7 @@ export const WeightTrackerScreen = observer(() => {
           {/* Current Weight Card */}
           <AnimatedCard index={0} style={styles.currentCard}>
             <View style={styles.currentHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.currentLabel, { color: colors.textMuted }]}>
                   Current Weight
                 </Text>
@@ -181,40 +181,41 @@ export const WeightTrackerScreen = observer(() => {
                     {weightUnit}
                   </Text>
                 </View>
-                {goalWeight ? (
-                  <TouchableOpacity onPress={() => { setGoalInput(String(goalWeight)); setShowGoalModal(true); }} style={styles.goalButton}>
-                    <Text style={[styles.goalText, { color: colors.textMuted }]}>
-                      Goal: {goalWeight.toFixed(1)} {weightUnit}
-                    </Text>
-                    <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth={2} style={styles.editIcon}>
-                      <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <Path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </Svg>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity onPress={() => { setGoalInput(''); setShowGoalModal(true); }} style={styles.goalButton}>
-                    <Text style={[styles.goalText, { color: colors.primary }]}>
-                      Set Weight Goal
-                    </Text>
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => { setGoalInput(goalWeight ? String(goalWeight) : ''); setShowGoalModal(true); }}
+                  style={styles.goalButton}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.goalButtonText, { color: colors.text }]}>
+                    Set weight goal
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ alignItems: 'flex-end' }}>
+                <TouchableOpacity
+                  style={[
+                    styles.addButton,
+                    {
+                      backgroundColor: 'rgba(255,255,255,0.08)',
+                      borderColor: colors.cardBorder,
+                    },
+                  ]}
+                  onPress={() => setShowAddModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.addButtonIcon, { color: colors.text }]}>+</Text>
+                  <Text style={[styles.addButtonText, { color: colors.text }]}>
+                    Add Weight
+                  </Text>
+                </TouchableOpacity>
+
+                {goalWeight !== null && goalWeight > 0 && (
+                  <Text style={[styles.goalUnderAdd, { color: colors.textMuted }]}>
+                    Goal: {goalWeight.toFixed(1)} {weightUnit}
+                  </Text>
                 )}
               </View>
-              <TouchableOpacity
-                style={[
-                  styles.addButton,
-                  {
-                    backgroundColor: 'rgba(255,255,255,0.08)',
-                    borderColor: colors.cardBorder,
-                  },
-                ]}
-                onPress={() => setShowAddModal(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.addButtonIcon, { color: colors.text }]}>+</Text>
-                <Text style={[styles.addButtonText, { color: colors.text }]}>
-                  Add Weight
-                </Text>
-              </TouchableOpacity>
             </View>
           </AnimatedCard>
 
@@ -376,14 +377,14 @@ export const WeightTrackerScreen = observer(() => {
         onClose={() => setShowAddModal(false)}
         title="Add Weight"
       >
-<Input
-        label="Weight"
-        value={newWeight}
-        onChangeText={(text) => setNewWeight(sanitizeWeightInput(text))}
-        placeholder={`Enter weight in ${weightUnit}`}
-        keyboardType="number-pad"
-        maxLength={5}
-      />
+        <Input
+          label="Weight"
+          value={newWeight}
+          onChangeText={(text) => setNewWeight(sanitizeWeightInput(text))}
+          placeholder={`Enter weight in ${weightUnit}`}
+          keyboardType="number-pad"
+          maxLength={5}
+        />
         <Button
           title="Save"
           onPress={async () => {
@@ -399,7 +400,8 @@ export const WeightTrackerScreen = observer(() => {
             }
           }}
           fullWidth
-          style={{ marginTop: spacing.base }}
+          style={{ backgroundColor: colors.text, marginTop: spacing.base }}
+          textStyle={{ color: colors.background }}
         />
       </Modal>
 
@@ -433,7 +435,8 @@ export const WeightTrackerScreen = observer(() => {
             }
           }}
           fullWidth
-          style={{ marginTop: spacing.base }}
+          style={{ backgroundColor: colors.text, marginTop: spacing.base }}
+          textStyle={{ color: colors.background }}
         />
       </Modal>
 
@@ -528,14 +531,24 @@ const styles = StyleSheet.create({
   goalButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.xs,
+    marginTop: spacing.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
   },
-  goalText: {
-    fontSize: 13,
-    fontWeight: '500',
+  goalButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
-  editIcon: {
-    marginLeft: 6,
+  goalUnderAdd: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'right',
   },
   addButton: {
     flexDirection: 'row',

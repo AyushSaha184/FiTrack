@@ -651,7 +651,7 @@ const styles = StyleSheet.create({
   setsHeaderText: {
     fontSize: 10,
     fontWeight: '600',
-    width: 50,
+    flex: 1,
   },
   setRow: {
     flexDirection: 'row',
@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
   setText: {
     fontSize: 11,
     fontWeight: '500',
-    width: 50,
+    flex: 1,
   },
   overlayContainer: {
     ...StyleSheet.absoluteFillObject,

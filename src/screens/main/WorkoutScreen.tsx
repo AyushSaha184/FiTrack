@@ -177,7 +177,6 @@ export const WorkoutScreen = observer(() => {
 
           {/* Title Row with Reset Week and Progress Buttons */}
           <View style={styles.titleRow}>
-            <Text style={[styles.title, { color: colors.text }]}>Today's Workout</Text>
             <View style={styles.buttonGroup}>
               <TouchableOpacity
                 onPress={() => navigation.navigate('ExerciseProgress' as any)}
@@ -304,23 +303,8 @@ export const WorkoutScreen = observer(() => {
                 Rest Day
               </Text>
               <Text style={[styles.restDaySubtitle, { color: colors.textSecondary }]}>
-                Take it easy today. Recovery is just as{'\n'}important as training.
+                Focus on recovery today.
               </Text>
-              <View style={styles.restDayTips}>
-                {[
-                  { icon: '💧', text: 'Stay hydrated' },
-                  { icon: '🧘', text: 'Light stretching' },
-                  { icon: '😴', text: 'Get quality sleep' },
-                  { icon: '🥗', text: 'Eat nutritious food' },
-                ].map((tip, i) => (
-                  <View key={i} style={styles.restTipRow}>
-                    <Text style={styles.restTipIcon}>{tip.icon}</Text>
-                    <Text style={[styles.restTipText, { color: colors.textSecondary }]}>
-                      {tip.text}
-                    </Text>
-                  </View>
-                ))}
-              </View>
             </AnimatedCard>
           ) : activeWorkout ? (
             /* Active Workout Exercise List */
@@ -353,7 +337,7 @@ export const WorkoutScreen = observer(() => {
                 No Workout Planned
               </Text>
               <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                Tap + below to add exercises to your workout
+                Tap + Add to get started.
               </Text>
             </AnimatedCard>
           )}
@@ -375,8 +359,7 @@ export const WorkoutScreen = observer(() => {
             }}
             activeOpacity={0.9}
           >
-            <Text style={[styles.fabIcon, { color: colors.text }]}>+</Text>
-            <Text style={[styles.fabText, { color: colors.text }]}>Add Exercise</Text>
+            <Text style={[styles.fabText, { color: colors.text }]}>Add</Text>
           </AnimatedTouchable>
         )}
       </AnimatedScreen>
@@ -672,27 +655,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.25)',
-    paddingVertical: spacing.base,
-    paddingHorizontal: spacing.xl,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
     borderRadius: radius.pill,
-    gap: spacing.sm,
+    gap: spacing.xs,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: {
-    fontSize: 20,
-    fontWeight: '300',
-  },
   fabText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600',
   },
   titleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     marginBottom: spacing.lg,
   },

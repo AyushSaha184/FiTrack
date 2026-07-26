@@ -135,17 +135,9 @@ export const SettingsScreen = observer(() => {
     const emailUrl = `mailto:ayushsaha184@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(crashReport)}`;
 
     try {
-      const canOpen = await Linking.canOpenURL(emailUrl);
-      if (canOpen) {
-        await Linking.openURL(emailUrl);
-      } else {
-        await Share.share({
-          title: 'FiTrack Crash Report',
-          message: crashReport,
-        });
-      }
+      await Linking.openURL(emailUrl);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to send crash report');
+      Alert.alert('Error', error.message || 'Failed to open email app');
     }
   };
 
@@ -322,7 +314,6 @@ export const SettingsScreen = observer(() => {
           {/* AI Configuration */}
           <AnimatedCard index={2} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionIcon}>🧠</Text>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
                 AI CONFIGURATION
               </Text>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, AppState, AppStateStatus } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { observer } from 'mobx-react-lite';
@@ -61,16 +61,29 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
 
   useEffect(() => {
     if (user?.id && isActive) {
-      const timer = setTimeout(() => {
-        stepsStore.startLiveStepTracking(user.id);
-      }, 600);
-
-      return () => {
-        clearTimeout(timer);
-        stepsStore.stopLiveStepTracking();
-      };
+      stepsStore.startLiveStepTracking(user.id);
     }
   }, [user?.id, isActive, stepsStore]);
+
+  useEffect(() => {
+    if (user?.id) {
+      stepsStore.syncFromBackgroundService(user.id);
+    }
+  }, [user?.id, stepsStore]);
+
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active' && user?.id) {
+        stepsStore.syncFromBackgroundService(user.id);
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [user?.id, stepsStore]);
 
   const currentWeight = weightStore.currentWeight;
 
@@ -103,7 +116,7 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
     };
   }, [entries, goalSteps, currentWeight, timeRange]);
 
-  
+
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalInput, setGoalInput] = useState('');
 
@@ -205,25 +218,13 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                     steps
                   </Text>
                 </View>
-                {goalSteps ? (
-                  <TouchableOpacity onPress={() => { setGoalInput(String(goalSteps)); setShowGoalModal(true); }} style={styles.goalButton}>
-                    <Text style={[styles.goalText, { color: colors.textMuted }]}>
-                      Goal: {formatStepsWithCommas(goalSteps)} steps
-                    </Text>
-                    <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth={2} style={styles.editIcon}>
-                      <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <Path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </Svg>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity onPress={() => { setGoalInput(''); setShowGoalModal(true); }} style={styles.goalButton}>
-                    <Text style={[styles.goalText, { color: colors.primary }]}>
-                      Set Daily Goal
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity onPress={() => { setGoalInput(goalSteps ? String(goalSteps) : ''); setShowGoalModal(true); }} style={styles.goalButton}>
+                  <Text style={[styles.goalText, { color: colors.text }]}>
+                    Set your steps goal
+                  </Text>
+                </TouchableOpacity>
               </View>
-              <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+              <View style={{ alignItems: 'center', justifyContent: 'center' }}>
                 <View style={styles.stepsIllustration}>
                   <Svg width={90} height={90} viewBox="0 0 90 90">
                     {/* Background Track Circle */}
@@ -257,6 +258,11 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                     </Svg>
                   </View>
                 </View>
+                {goalSteps > 0 && (
+                  <Text style={[styles.goalUnderRing, { color: colors.textMuted }]}>
+                    Goal: {formatStepsWithCommas(goalSteps)}
+                  </Text>
+                )}
               </View>
             </View>
 
@@ -410,7 +416,7 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
       <Modal
         visible={showGoalModal}
         onClose={() => setShowGoalModal(false)}
-        title="Set Daily Goal"
+        title="Set Step Goal"
       >
         <Input
           label="Steps Goal"
@@ -436,7 +442,8 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
             }
           }}
           fullWidth
-          style={{ marginTop: spacing.base }}
+          style={{ backgroundColor: colors.text, marginTop: spacing.base }}
+          textStyle={{ color: colors.background }}
         />
       </Modal>
 
@@ -534,14 +541,18 @@ const styles = StyleSheet.create({
   goalButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.xs,
+    marginTop: spacing.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
   },
   goalText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  editIcon: {
-    marginLeft: 6,
+    fontSize: 12,
+    fontWeight: '600',
   },
   stepsIllustration: {
     width: 90,
@@ -693,5 +704,11 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  goalUnderRing: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 6,
+    textAlign: 'center',
   },
 });

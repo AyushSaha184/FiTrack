@@ -1,48 +1,59 @@
-import { NativeModules, NativeEventEmitter, Platform, PermissionsAndroid } from 'react-native';
+import { NativeModules, Platform, PermissionsAndroid } from 'react-native';
 import { logger } from '../utils/logger';
 import { storage } from '../utils/storage';
 
 const { StepCounterModule } = NativeModules;
-const stepCounterEmitter = StepCounterModule
-  ? new NativeEventEmitter(StepCounterModule)
-  : null;
 
 export const stepCounterService = {
   async requestPermission(userId?: string): Promise<boolean> {
     if (Platform.OS !== 'android') return true;
 
     try {
+      let activityGranted = true;
       if (Platform.Version >= 29) {
         const perm = PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION;
-
-        // 1. If already granted, return true without prompting
         const alreadyGranted = await PermissionsAndroid.check(perm);
-        if (alreadyGranted) return true;
+        
+        if (!alreadyGranted) {
+          const storageKey = userId ? `asked_activity_perm_${userId}` : 'asked_activity_perm';
+          const alreadyAsked = storage.get<boolean>(storageKey);
 
-        // 2. Prompt only ONCE per user
-        const storageKey = userId ? `asked_activity_perm_${userId}` : 'asked_activity_perm';
-        const alreadyAsked = storage.get<boolean>(storageKey);
-
-        if (alreadyAsked) {
-          // Already prompted once for this user; do not prompt again
-          return false;
+          if (alreadyAsked) {
+            activityGranted = false;
+          } else {
+            storage.set(storageKey, true);
+            const granted = await PermissionsAndroid.request(
+              perm,
+              {
+                title: 'Physical Activity Permission',
+                message: 'FiTrack requires activity recognition permission to count your steps in real time as you walk.',
+                buttonPositive: 'Allow',
+                buttonNegative: 'Deny',
+              },
+            );
+            activityGranted = granted === PermissionsAndroid.RESULTS.GRANTED;
+          }
         }
-
-        // Remember that we prompted the user
-        storage.set(storageKey, true);
-
-        const granted = await PermissionsAndroid.request(
-          perm,
-          {
-            title: 'Physical Activity Permission',
-            message: 'FiTrack requires activity recognition permission to count your steps in real time as you walk.',
-            buttonPositive: 'Allow',
-            buttonNegative: 'Deny',
-          },
-        );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
       }
-      return true;
+
+      // Only request notifications permission on Android 13+ if Activity Recognition is already granted
+      if (activityGranted && Platform.Version >= 33) {
+        const notifPerm = PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS;
+        const alreadyGrantedNotif = await PermissionsAndroid.check(notifPerm);
+        if (!alreadyGrantedNotif) {
+          await PermissionsAndroid.request(
+            notifPerm,
+            {
+              title: 'Notification Permission',
+              message: 'FiTrack requires notification permission to show background tracking status.',
+              buttonPositive: 'Allow',
+              buttonNegative: 'Deny',
+            }
+          );
+        }
+      }
+
+      return activityGranted;
     } catch (error) {
       logger.error('[stepCounterService] requestPermission error:', error);
       return false;
@@ -58,37 +69,59 @@ export const stepCounterService = {
     }
   },
 
-  async startTracking(userId: string, onStep: (delta: number) => void): Promise<() => void> {
-    if (!StepCounterModule) return () => {};
-
-    const hasPermission = await this.requestPermission(userId);
-    if (!hasPermission) {
-      logger.warn('[stepCounterService] Activity recognition permission not granted');
-      return () => {};
-    }
-
+  async startForegroundService(initialSteps: number, goal: number): Promise<boolean> {
+    if (!StepCounterModule) return false;
     try {
+      await StepCounterModule.setInitialSteps(initialSteps);
+      await StepCounterModule.setGoal(goal);
       const started = await StepCounterModule.startStepCounter();
-      if (!started) {
-        logger.warn('[stepCounterService] Hardware step sensor not available on this device');
-        return () => {};
-      }
-
-      const subscription = stepCounterEmitter?.addListener(
-        'onStepDetected',
-        (event: { stepDelta?: number }) => {
-          const delta = event?.stepDelta ?? 1;
-          onStep(delta);
-        },
-      );
-
-      return () => {
-        subscription?.remove();
-        StepCounterModule.stopStepCounter().catch(() => {});
-      };
+      return !!started;
     } catch (error) {
-      logger.error('[stepCounterService] startTracking error:', error);
-      return () => {};
+      logger.error('[stepCounterService] startForegroundService error:', error);
+      return false;
+    }
+  },
+
+  async stopForegroundService(): Promise<boolean> {
+    if (!StepCounterModule) return false;
+    try {
+      await StepCounterModule.stopStepCounter();
+      return true;
+    } catch (error) {
+      logger.error('[stepCounterService] stopForegroundService error:', error);
+      return false;
+    }
+  },
+
+  async getTodaySteps(): Promise<number> {
+    if (!StepCounterModule) return 0;
+    try {
+      return await StepCounterModule.getTodaySteps();
+    } catch (error) {
+      logger.error('[stepCounterService] getTodaySteps error:', error);
+      return 0;
+    }
+  },
+
+  async setGoal(goal: number): Promise<boolean> {
+    if (!StepCounterModule) return false;
+    try {
+      await StepCounterModule.setGoal(goal);
+      return true;
+    } catch (error) {
+      logger.error('[stepCounterService] setGoal error:', error);
+      return false;
+    }
+  },
+
+  async setInitialSteps(steps: number): Promise<boolean> {
+    if (!StepCounterModule) return false;
+    try {
+      await StepCounterModule.setInitialSteps(steps);
+      return true;
+    } catch (error) {
+      logger.error('[stepCounterService] setInitialSteps error:', error);
+      return false;
     }
   },
 };

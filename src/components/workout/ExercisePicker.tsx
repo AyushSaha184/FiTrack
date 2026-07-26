@@ -37,8 +37,13 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [inlineCustomName, setInlineCustomName] = useState('');
 
-  const categories = getExerciseCategories();
-  const searchResults = searchQuery.length > 0 ? searchExercises(searchQuery) : [];
+  const categories = getExerciseCategories().map(cat => ({
+    ...cat,
+    exercises: [...cat.exercises].sort((a, b) => a.name.localeCompare(b.name))
+  }));
+  const searchResults = searchQuery.length > 0
+    ? [...searchExercises(searchQuery)].sort((a, b) => a.name.localeCompare(b.name))
+    : [];
 
   const handleSelect = (exercise: ExerciseItem) => {
     onSelectExercise(exercise);

@@ -1,19 +1,23 @@
 package com.fitrack.app
 
 import android.content.Context
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
-import com.facebook.react.bridge.Arguments
+import android.content.Intent
+import android.content.SharedPreferences
+import android.os.Build
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
-import com.facebook.react.modules.core.DeviceEventManagerModule
+import android.hardware.Sensor
+import android.hardware.SensorManager
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 
 class StepCounterModule(reactContext: ReactApplicationContext) :
-    ReactContextBaseJavaModule(reactContext), SensorEventListener {
+    ReactContextBaseJavaModule(reactContext) {
+
+    private val prefs: SharedPreferences =
+        reactContext.getSharedPreferences("StepCounterPrefs", Context.MODE_PRIVATE)
 
     private val sensorManager: SensorManager =
         reactContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -21,9 +25,6 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
     private var stepCounterSensor: Sensor? =
         sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
-
-    private var isListening = false
-    private var initialStepCount = -1f
 
     override fun getName(): String = "StepCounterModule"
 
@@ -35,89 +36,73 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun startStepCounter(promise: Promise) {
-        if (isListening) {
+        try {
+            val context = reactApplicationContext
+            val intent = Intent(context, StepCounterForegroundService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
             promise.resolve(true)
-            return
-        }
-
-        var registered = false
-        if (stepDetectorSensor != null) {
-            registered = sensorManager.registerListener(
-                this,
-                stepDetectorSensor,
-                SensorManager.SENSOR_DELAY_UI
-            )
-        }
-
-        if (stepCounterSensor != null) {
-            val counterRegistered = sensorManager.registerListener(
-                this,
-                stepCounterSensor,
-                SensorManager.SENSOR_DELAY_UI
-            )
-            registered = registered || counterRegistered
-        }
-
-        if (registered) {
-            isListening = true
-            promise.resolve(true)
-        } else {
-            promise.resolve(false)
+        } catch (e: Exception) {
+            promise.reject("START_SERVICE_FAILED", e.message)
         }
     }
 
     @ReactMethod
     fun stopStepCounter(promise: Promise) {
-        if (isListening) {
-            sensorManager.unregisterListener(this)
-            isListening = false
-            initialStepCount = -1f
+        try {
+            val context = reactApplicationContext
+            val intent = Intent(context, StepCounterForegroundService::class.java)
+            context.stopService(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("STOP_SERVICE_FAILED", e.message)
         }
+    }
+
+    @ReactMethod
+    fun getTodaySteps(promise: Promise) {
+        val today = StepCounterForegroundService.getTodayDateString()
+        val storedDate = prefs.getString("date", "")
+        val steps = if (storedDate == today) prefs.getInt("steps", 0) else 0
+        promise.resolve(steps)
+    }
+
+    @ReactMethod
+    fun getTodayDate(promise: Promise) {
+        val today = StepCounterForegroundService.getTodayDateString()
+        val storedDate = prefs.getString("date", today)
+        promise.resolve(storedDate)
+    }
+
+    @ReactMethod
+    fun setInitialSteps(steps: Int, promise: Promise) {
+        val today = StepCounterForegroundService.getTodayDateString()
+        prefs.edit().apply {
+            putInt("steps", steps)
+            putString("date", today)
+            apply()
+        }
+        updateWidget()
         promise.resolve(true)
     }
 
-    override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null) return
-
-        val params = Arguments.createMap()
-
-        if (event.sensor.type == Sensor.TYPE_STEP_DETECTOR) {
-            val stepCount = event.values[0].toInt()
-            params.putInt("stepDelta", if (stepCount > 0) stepCount else 1)
-            sendEvent("onStepDetected", params)
-        } else if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) {
-            val totalSensorSteps = event.values[0]
-            if (initialStepCount < 0) {
-                initialStepCount = totalSensorSteps
-            }
-            val stepsSinceStart = (totalSensorSteps - initialStepCount).toInt()
-            if (stepsSinceStart > 0) {
-                params.putInt("stepDelta", stepsSinceStart)
-                initialStepCount = totalSensorSteps
-                sendEvent("onStepDetected", params)
-            }
-        }
-    }
-
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // Not needed
-    }
-
-    private fun sendEvent(eventName: String, params: Any?) {
-        if (reactApplicationContext.hasActiveReactInstance()) {
-            reactApplicationContext
-                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                .emit(eventName, params)
-        }
-    }
-
     @ReactMethod
-    fun addListener(eventName: String) {
-        // Required for RN EventEmitter
+    fun setGoal(goal: Int, promise: Promise) {
+        prefs.edit().putInt("goal", goal).apply()
+        updateWidget()
+        promise.resolve(true)
     }
 
-    @ReactMethod
-    fun removeListeners(count: Int) {
-        // Required for RN EventEmitter
+    private fun updateWidget() {
+        val context = reactApplicationContext
+        val intent = Intent(context, FitrackStepsWidget::class.java).apply {
+            action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+        }
+        val ids = AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, FitrackStepsWidget::class.java))
+        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+        context.sendBroadcast(intent)
     }
 }

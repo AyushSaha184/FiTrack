@@ -93,6 +93,17 @@ export const stepCounterService = {
     }
   },
 
+  async updateAppVisibility(isForeground: boolean): Promise<boolean> {
+    if (!StepCounterModule) return false;
+    try {
+      await StepCounterModule.updateAppVisibility(isForeground);
+      return true;
+    } catch (error) {
+      logger.error('[stepCounterService] updateAppVisibility error:', error);
+      return false;
+    }
+  },
+
   async getTodaySteps(): Promise<number> {
     if (!StepCounterModule) return 0;
     try {

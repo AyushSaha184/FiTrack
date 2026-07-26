@@ -1,3 +1,4 @@
+import { AppState } from 'react-native';
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { StepEntry, StepSource } from '../models';
 import { stepsService } from '../services/firebase/stepsService';
@@ -24,6 +25,14 @@ export class StepsStore {
     makeAutoObservable(this);
     this.dailyGoal = storage.get<number>(STORAGE_KEYS.STEP_DAILY_GOAL) || DEFAULT_STEP_GOAL;
     this.restoreCachedSteps();
+
+    // Listen to AppState changes to show/hide the foreground notification
+    AppState.addEventListener('change', (nextAppState) => {
+      const isForeground = nextAppState === 'active';
+      if (this.isLiveTracking) {
+        stepCounterService.updateAppVisibility(isForeground).catch(() => {});
+      }
+    });
   }
 
   private restoreCachedSteps() {
@@ -221,6 +230,11 @@ export class StepsStore {
     try {
       // Seed foreground service on start with current steps/goal
       await stepCounterService.startForegroundService(this.todaySteps, this.dailyGoal);
+
+      // Sync visibility status immediately on start
+      const isForeground = AppState.currentState === 'active';
+      await stepCounterService.updateAppVisibility(isForeground);
+
       runInAction(() => {
         this.isLiveTracking = true;
       });

@@ -12,6 +12,7 @@ import {
   Alert,
   Linking,
   TextInput,
+  LayoutChangeEvent,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -62,13 +63,14 @@ export const SettingsScreen = observer(() => {
   const initialGender = user?.profile?.gender || 'male';
   const [gender, setGender] = useState<'male' | 'female'>(initialGender as any);
   const [heightInput, setHeightInput] = useState(user?.profile?.height ? String(user.profile.height) : '');
+  const [containerWidth, setContainerWidth] = useState(140);
 
   const slideOffset = useSharedValue(initialGender === 'male' ? 0 : 70);
 
   useEffect(() => {
-    // Sync shared value when gender changes
-    slideOffset.value = gender === 'male' ? 0 : 70;
-  }, [gender]);
+    // Sync shared value when gender or containerWidth changes
+    slideOffset.value = gender === 'male' ? 0 : containerWidth / 2;
+  }, [gender, containerWidth]);
 
   const handleGenderChange = async (newGender: 'male' | 'female') => {
     setGender(newGender);
@@ -268,9 +270,12 @@ export const SettingsScreen = observer(() => {
               {/* Gender selection */}
               <View style={styles.statsCol}>
                 <Text style={[styles.statsLabel, { color: colors.textMuted }]}>GENDER</Text>
-                <View style={[styles.genderContainer, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}>
+                <View 
+                  onLayout={(e: LayoutChangeEvent) => setContainerWidth(e.nativeEvent.layout.width)}
+                  style={[styles.genderContainer, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}
+                >
                   {/* Bubble animation */}
-                  <Animated.View style={[styles.genderBubble, { backgroundColor: 'rgba(255, 255, 255, 0.15)' }, animatedBubbleStyle]} />
+                  <Animated.View style={[styles.genderBubble, { backgroundColor: 'rgba(255, 255, 255, 0.15)', width: containerWidth / 2 }, animatedBubbleStyle]} />
                   <TouchableOpacity
                     style={styles.genderPill}
                     onPress={() => handleGenderChange('male')}
@@ -1037,7 +1042,7 @@ const styles = StyleSheet.create({
   },
   genderContainer: {
     flexDirection: 'row',
-    width: 140,
+    width: '100%',
     height: 32,
     borderRadius: radius.sm,
     borderWidth: 1,
@@ -1049,10 +1054,9 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    width: 70,
   },
   genderPill: {
-    width: 70,
+    flex: 1,
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',

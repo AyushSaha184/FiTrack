@@ -68,7 +68,19 @@ class StepCounterForegroundService : Service(), SensorEventListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         checkAndResetDate()
-        startForegroundServiceNotification()
+        
+        val action = intent?.action
+        if (action == "ACTION_APP_FOREGROUNDED") {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } else {
+            startForegroundServiceNotification()
+        }
+        
         registerSensors()
         
         // Save status that service is active

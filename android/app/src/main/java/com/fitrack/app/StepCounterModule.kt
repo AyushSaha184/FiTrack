@@ -63,6 +63,28 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun updateAppVisibility(isForeground: Boolean, promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val intent = Intent(context, StepCounterForegroundService::class.java).apply {
+                action = if (isForeground) "ACTION_APP_FOREGROUNDED" else "ACTION_APP_BACKGROUNDED"
+            }
+            if (isForeground) {
+                context.startService(intent)
+            } else {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("UPDATE_VISIBILITY_FAILED", e.message)
+        }
+    }
+
+    @ReactMethod
     fun getTodaySteps(promise: Promise) {
         val today = StepCounterForegroundService.getTodayDateString()
         val storedDate = prefs.getString("date", "")

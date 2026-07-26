@@ -1,6 +1,8 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { Workout, WorkoutExercise, Set, WorkoutType, DayOfWeek } from '../models';
 import { workoutsService } from '../services/firebase/workoutsService';
+import { collections } from '../services/firebase/firestore';
+import firestore from '@react-native-firebase/firestore';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS, getDayOfWeekKey } from '../utils/constants';
 import { generateUUID, dateKey } from '../utils/helpers';
@@ -51,11 +53,65 @@ export class WorkoutStore {
     return this.activeWorkout.exercises.reduce((total, ex) => total + ex.sets.length, 0);
   }
 
+  async pruneOldWorkouts() {
+    if (!this.userId) return;
+    try {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const ninetyDaysAgoIso = ninetyDaysAgo.toISOString();
+
+      // 1. Delete Firestore workouts older than 90 days
+      const snapshot = await collections.workouts(this.userId)
+        .where('date', '<', ninetyDaysAgoIso)
+        .get();
+
+      if (!snapshot.empty) {
+        const batch = firestore().batch();
+        snapshot.docs.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+        logger.info(`[WorkoutStore] Pruned ${snapshot.size} workouts older than 90 days from Firestore.`);
+      }
+
+      // 2. Prune local MMKV storage for files older than 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const allKeys = storage.getAllKeys();
+      allKeys.forEach((key: string) => {
+        if (key.startsWith('workout.archive.')) {
+          const dateStr = key.replace('workout.archive.', '');
+          const keyDate = new Date(dateStr);
+          if (!isNaN(keyDate.getTime()) && keyDate < thirtyDaysAgo) {
+            storage.delete(key);
+            logger.info(`[WorkoutStore] Pruned local archive: ${key}`);
+          }
+        }
+        if (key.startsWith('workout.draft.')) {
+          const draft = storage.get<any>(key);
+          if (draft && draft.date) {
+            const draftDate = new Date(draft.date);
+            if (!isNaN(draftDate.getTime()) && draftDate < thirtyDaysAgo) {
+              storage.delete(key);
+              logger.info(`[WorkoutStore] Pruned local draft: ${key}`);
+            }
+          }
+        }
+      });
+    } catch (err) {
+      logger.error('[WorkoutStore] pruneOldWorkouts error:', err);
+    }
+  }
+
   async loadWorkouts(userId: string, startDate?: string, endDate?: string) {
     if (!userId) {
       console.warn('[WorkoutStore] Skipping loadWorkouts: missing userId');
       return;
     }
+    // Run pruning in the background
+    this.pruneOldWorkouts().catch((e) => logger.error('[WorkoutStore] Pruning error:', e));
+
     try {
       this.isLoading = true;
       const data = await workoutsService.getWorkouts(userId, startDate, endDate);

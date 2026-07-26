@@ -67,7 +67,7 @@ export const useAuth = () => {
     await store.completeOnboarding();
   }, [store]);
 
-  const updateProfile = useCallback(async (updates: { name?: string; email?: string }) => {
+  const updateProfile = useCallback(async (updates: { name?: string; email?: string; profile?: any }) => {
     await store.updateProfile(updates);
   }, [store]);
 

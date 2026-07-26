@@ -61,6 +61,13 @@ export const storage = {
       return false;
     }
   },
+  getAllKeys: (): string[] => {
+    try {
+      return getStorage().getAllKeys();
+    } catch {
+      return [];
+    }
+  },
   clearAll: (): void => {
     try {
       getStorage().clearAll();

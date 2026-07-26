@@ -1,4 +1,4 @@
-export { stepsToCalories } from './calculations';
+export { stepsToCalories, calculateMaintenanceCalories } from './calculations';
 export * from './formatters';
 export * from './validators';
 export * from './constants';

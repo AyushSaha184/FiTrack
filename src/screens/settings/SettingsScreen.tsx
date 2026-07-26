@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,9 @@ import {
   Platform,
   Alert,
   Linking,
+  TextInput,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path, Circle, Line, Polyline } from 'react-native-svg';
@@ -25,9 +27,10 @@ import { Logo } from '../../components/common/Logo';
 import { observer } from 'mobx-react-lite';
 import { useAuth, useColors, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
-import { errorLogs } from '../../utils/logger';
+import { errorLogs, logger } from '../../utils/logger';
 import { CONFIG } from '../../config/constants';
 import { crashReportsService } from '../../services/firebase/crashReports';
+import { aiService, AIProvider, SavedKey } from '../../services/ai/aiService';
 import { updateService, type UpdateInfo } from '../../services/update/updateService';
 import { UpdateModal } from '../../components/common/UpdateModal';
 
@@ -46,6 +49,64 @@ export const SettingsScreen = observer(() => {
   const [showUpToDateAlert, setShowUpToDateAlert] = useState(false);
   const [updateErrorMessage, setUpdateErrorMessage] = useState('');
   const [showUpdateErrorAlert, setShowUpdateErrorAlert] = useState(false);
+
+  // AI Key configuration state
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiModalStep, setAiModalStep] = useState<1 | 2>(1);
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [savedKeys, setSavedKeys] = useState<SavedKey[]>(() => aiService.getSavedKeys());
+  const [deleteTargetProvider, setDeleteTargetProvider] = useState<AIProvider | null>(null);
+
+  // Physical stats state
+  const initialGender = user?.profile?.gender || 'male';
+  const [gender, setGender] = useState<'male' | 'female'>(initialGender as any);
+  const [heightInput, setHeightInput] = useState(user?.profile?.height ? String(user.profile.height) : '');
+
+  const slideOffset = useSharedValue(initialGender === 'male' ? 0 : 70);
+
+  useEffect(() => {
+    // Sync shared value when gender changes
+    slideOffset.value = gender === 'male' ? 0 : 70;
+  }, [gender]);
+
+  const handleGenderChange = async (newGender: 'male' | 'female') => {
+    setGender(newGender);
+    try {
+      const profileData: any = { gender: newGender };
+      if (heightInput && !isNaN(Number(heightInput)) && Number(heightInput) > 0) {
+        profileData.height = Number(heightInput);
+      }
+      await updateProfile({
+        profile: profileData,
+      });
+    } catch (e: any) {
+      logger.error('[SettingsScreen] Failed to update gender:', e);
+    }
+  };
+
+  const handleHeightChangeText = (text: string) => {
+    const cleanText = text.replace(/[^0-9]/g, '');
+    setHeightInput(cleanText);
+  };
+
+  const handleHeightBlur = async () => {
+    try {
+      const profileData: any = { gender };
+      if (heightInput && !isNaN(Number(heightInput)) && Number(heightInput) > 0) {
+        profileData.height = Number(heightInput);
+      }
+      await updateProfile({
+        profile: profileData,
+      });
+    } catch (e: any) {
+      logger.error('[SettingsScreen] Failed to update height:', e);
+    }
+  };
+
+  const animatedBubbleStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: withSpring(slideOffset.value, { damping: 20, stiffness: 220 }) }],
+  }));
 
   const handleLogout = () => {
     setShowLogoutAlert(true);
@@ -87,6 +148,41 @@ export const SettingsScreen = observer(() => {
       Alert.alert('Error', error.message || 'Failed to send crash report');
     }
   };
+
+  const handleSaveApiKey = () => {
+    if (!selectedProvider) return;
+    if (!apiKeyInput.trim()) {
+      Alert.alert('Error', 'Please enter a valid API key');
+      return;
+    }
+    aiService.addKey(selectedProvider, apiKeyInput.trim());
+    setSavedKeys(aiService.getSavedKeys());
+
+    // Reset states and close
+    setApiKeyInput('');
+    setSelectedProvider(null);
+    setAiModalStep(1);
+    setShowAiModal(false);
+  };
+
+  const handleDeleteApiKey = (provider: AIProvider) => {
+    setDeleteTargetProvider(provider);
+  };
+
+  const getProviderLabel = (provider: AIProvider): string => {
+    const labels: Record<AIProvider, string> = {
+      gemini: 'Google Gemini',
+      groq: 'Groq',
+      openrouter: 'OpenRouter',
+      openai: 'OpenAI',
+      anthropic: 'Anthropic',
+      deepseek: 'DeepSeek',
+      cohere: 'Cohere',
+    };
+    return labels[provider] || provider;
+  };
+
+
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -174,39 +270,139 @@ export const SettingsScreen = observer(() => {
             </TouchableOpacity>
           </AnimatedCard>
 
-          {/* Developer Options */}
+          {/* Physical Stats Section */}
           <AnimatedCard index={1} style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionIcon}>{'</>'}</Text>
-              <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
-                DEVELOPER OPTIONS
-              </Text>
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextGroup}>
-                <Text style={[styles.settingTitle, { color: colors.text }]}>
-                  Record Bug Reports
-                </Text>
-                <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
-                  Allow FiTrack to record bugs and send diagnostic logs to help improve
-                  the app.
-                </Text>
+            <View style={styles.statsCardRow}>
+              {/* Gender selection */}
+              <View style={styles.statsCol}>
+                <Text style={[styles.statsLabel, { color: colors.textMuted }]}>GENDER</Text>
+                <View style={[styles.genderContainer, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}>
+                  {/* Bubble animation */}
+                  <Animated.View style={[styles.genderBubble, { backgroundColor: 'rgba(255, 255, 255, 0.15)' }, animatedBubbleStyle]} />
+                  <TouchableOpacity
+                    style={styles.genderPill}
+                    onPress={() => handleGenderChange('male')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.genderText, { color: gender === 'male' ? colors.text : colors.textMuted }]}>
+                      Male
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.genderPill}
+                    onPress={() => handleGenderChange('female')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.genderText, { color: gender === 'female' ? colors.text : colors.textMuted }]}>
+                      Female
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Switch
-                value={settingsStore.recordBugReports}
-                onValueChange={(val) => settingsStore.setRecordBugReports(val)}
-                trackColor={{
-                  false: 'rgba(255,255,255,0.12)',
-                  true: 'rgba(255,255,255,0.35)',
-                }}
-                thumbColor="#FFFFFF"
-              />
+
+              {/* Height selection */}
+              <View style={[styles.statsCol, { borderLeftWidth: 1, borderLeftColor: colors.cardBorder, paddingLeft: spacing.lg }]}>
+                <Text style={[styles.statsLabel, { color: colors.textMuted }]}>HEIGHT</Text>
+                <View style={styles.heightInputContainer}>
+                  <TextInput
+                    keyboardType="numeric"
+                    placeholder="--"
+                    placeholderTextColor={colors.textDisabled}
+                    value={heightInput}
+                    onChangeText={handleHeightChangeText}
+                    onBlur={handleHeightBlur}
+                    style={[styles.heightInputText, { color: colors.text, borderBottomColor: colors.cardBorder }]}
+                  />
+                  <Text style={[styles.heightUnitLabel, { color: colors.textSecondary }]}>cm</Text>
+                </View>
+              </View>
             </View>
           </AnimatedCard>
 
-          {/* Help Improve FiTrack */}
+          {/* AI Configuration */}
           <AnimatedCard index={2} style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionIcon}>🧠</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+                AI CONFIGURATION
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.base }}>
+              {([
+                { id: 'gemini', label: 'Google Gemini' },
+                { id: 'groq', label: 'Groq' },
+                { id: 'openrouter', label: 'OpenRouter' },
+                { id: 'openai', label: 'OpenAI' },
+                { id: 'anthropic', label: 'Anthropic' },
+                { id: 'deepseek', label: 'DeepSeek' },
+                { id: 'cohere', label: 'Cohere' }
+              ] as const).map((prov) => {
+                const savedKeyObj = savedKeys.find(k => k.provider === prov.id);
+                return (
+                  <View key={prov.id} style={[styles.providerGridItem, { backgroundColor: 'rgba(255,255,255,0.03)', borderColor: colors.cardBorder }]}>
+                    <View style={styles.providerInfo}>
+                      <Text style={[styles.providerNameText, { color: colors.text }]} numberOfLines={1}>
+                        {prov.label}
+                      </Text>
+                      {savedKeyObj ? (
+                        <Text style={[styles.providerKeyText, { color: colors.textMuted }]}>
+                          ************
+                        </Text>
+                      ) : (
+                        <Text style={[styles.providerKeyText, { color: colors.textDisabled, fontStyle: 'italic' }]}>
+                          No key
+                        </Text>
+                      )}
+                    </View>
+                    {savedKeyObj && (
+                      <TouchableOpacity
+                        onPress={() => handleDeleteApiKey(prov.id)}
+                        style={styles.deleteKeyBtn}
+                        activeOpacity={0.7}
+                      >
+                        <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.error} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                          <Polyline points="3 6 5 6 21 6" />
+                          <Path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </Svg>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+
+            {savedKeys.length < 3 ? (
+              <TouchableOpacity
+                style={[
+                  styles.crashButton,
+                  {
+                    backgroundColor: 'rgba(255,255,255,0.06)',
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
+                onPress={() => {
+                  setAiModalStep(1);
+                  setSelectedProvider(null);
+                  setApiKeyInput('');
+                  setShowAiModal(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.crashIcon}>+ </Text>
+                <Text style={[styles.crashButtonText, { color: colors.text }]}>
+                  Add API Key
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={[styles.helpText, { color: colors.textMuted, fontStyle: 'italic', textAlign: 'center', marginBottom: 0 }]}>
+                Maximum limit of 3 keys reached.
+              </Text>
+            )}
+          </AnimatedCard>
+
+          {/* Help Improve FiTrack (Crash Reports) */}
+          <AnimatedCard index={3} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionIcon}>♡</Text>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
@@ -260,8 +456,39 @@ export const SettingsScreen = observer(() => {
             ))}
           </AnimatedCard>
 
+          {/* Developer Options */}
+          <AnimatedCard index={4} style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionIcon}>{'</>'}</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+                DEVELOPER OPTIONS
+              </Text>
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingTextGroup}>
+                <Text style={[styles.settingTitle, { color: colors.text }]}>
+                  Record Bug Reports
+                </Text>
+                <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                  Allow FiTrack to record bugs and send diagnostic logs to help improve
+                  the app.
+                </Text>
+              </View>
+              <Switch
+                value={settingsStore.recordBugReports}
+                onValueChange={(val) => settingsStore.setRecordBugReports(val)}
+                trackColor={{
+                  false: 'rgba(255,255,255,0.12)',
+                  true: 'rgba(255,255,255,0.35)',
+                }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </AnimatedCard>
+
           {/* App Updates Section */}
-          <AnimatedCard index={3} style={styles.sectionCard}>
+          <AnimatedCard index={5} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionIcon}>🔄</Text>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
@@ -403,6 +630,137 @@ export const SettingsScreen = observer(() => {
           style={{ marginTop: spacing.base }}
         />
       </Modal>
+
+      {/* AI Key Manager Modal */}
+      <Modal
+        visible={showAiModal}
+        onClose={() => {
+          setShowAiModal(false);
+          setAiModalStep(1);
+          setSelectedProvider(null);
+          setApiKeyInput('');
+        }}
+        title={aiModalStep === 1 ? 'Select AI Provider' : `Add ${getProviderLabel(selectedProvider!)} Key`}
+      >
+        {aiModalStep === 1 ? (
+          <View>
+            <Text style={[styles.modalDescText, { color: colors.textSecondary, marginBottom: spacing.base }]}>
+              Choose a provider to add your API key. You can store up to 3 keys.
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+              {([
+                { id: 'gemini', label: 'Google Gemini' },
+                { id: 'groq', label: 'Groq' },
+                { id: 'openrouter', label: 'OpenRouter' },
+                { id: 'openai', label: 'OpenAI' },
+                { id: 'anthropic', label: 'Anthropic' },
+                { id: 'deepseek', label: 'DeepSeek' },
+                { id: 'cohere', label: 'Cohere' }
+              ] as const).map((prov) => {
+                const alreadyHasKey = savedKeys.some(k => k.provider === prov.id);
+                return (
+                  <TouchableOpacity
+                    key={prov.id}
+                    disabled={alreadyHasKey}
+                    style={[
+                      styles.modalProviderGridItem,
+                      {
+                        borderColor: colors.cardBorder,
+                        backgroundColor: 'rgba(255,255,255,0.03)',
+                        opacity: alreadyHasKey ? 0.4 : 1
+                      }
+                    ]}
+                    onPress={() => {
+                      setSelectedProvider(prov.id);
+                      setAiModalStep(2);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1, marginRight: 4 }}>
+                      <Text style={[styles.modalProviderText, { color: colors.text }]} numberOfLines={1}>
+                        {prov.label}
+                      </Text>
+                      {alreadyHasKey && (
+                        <Text style={[styles.alreadyHasKeyText, { color: colors.textMuted, fontSize: 10, marginTop: 2 }]}>
+                          Added
+                        </Text>
+                      )}
+                    </View>
+                    {!alreadyHasKey && (
+                      <Text style={[styles.chevron, { color: colors.textMuted }]}>›</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ) : (
+          <View>
+            {/* Back action */}
+            <TouchableOpacity
+              onPress={() => {
+                setAiModalStep(1);
+                setSelectedProvider(null);
+                setApiKeyInput('');
+              }}
+              style={styles.whiteBackBtn}
+              activeOpacity={0.7}
+            >
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                <Line x1="19" y1="12" x2="5" y2="12" />
+                <Polyline points="12 19 5 12 12 5" />
+              </Svg>
+            </TouchableOpacity>
+
+            <Text style={[styles.modalDescText, { color: colors.textSecondary, marginBottom: spacing.md }]}>
+              Enter your API key below. The key is encrypted and stored locally on your device.
+            </Text>
+
+            <Input
+              placeholder="Paste your API key here"
+              value={apiKeyInput}
+              onChangeText={setApiKeyInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+
+            <View style={{ marginTop: spacing.md }}>
+              <Button
+                title="Save Key"
+                onPress={handleSaveApiKey}
+                variant="primary"
+              />
+            </View>
+          </View>
+        )}
+      </Modal>
+
+      {/* Delete Key Confirmation CustomAlert */}
+      <CustomAlert
+        visible={deleteTargetProvider !== null}
+        onClose={() => setDeleteTargetProvider(null)}
+        title="Remove Key"
+        message={deleteTargetProvider ? `Are you sure you want to remove the key for ${getProviderLabel(deleteTargetProvider)}?` : ''}
+        actions={[
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => setDeleteTargetProvider(null),
+          },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => {
+              if (deleteTargetProvider) {
+                aiService.deleteKey(deleteTargetProvider);
+                setSavedKeys(aiService.getSavedKeys());
+                setDeleteTargetProvider(null);
+              }
+            },
+          },
+        ]}
+      />
     </SafeAreaView>
   );
 });
@@ -617,5 +975,118 @@ const styles = StyleSheet.create({
   },
   version: {
     fontSize: 14,
+  },
+  providerGridItem: {
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  providerInfo: {
+    flex: 1,
+  },
+  providerNameText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  providerKeyText: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  deleteKeyBtn: {
+    padding: 8,
+  },
+  modalDescText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modalProviderGridItem: {
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: spacing.xs,
+  },
+  modalProviderText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  alreadyHasKeyText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  whiteBackBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.base,
+  },
+  statsCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statsCol: {
+    flex: 1,
+  },
+  statsLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+  },
+  genderContainer: {
+    flexDirection: 'row',
+    width: 140,
+    height: 32,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  genderBubble: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 70,
+  },
+  genderPill: {
+    width: 70,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  genderText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  heightInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  heightInputText: {
+    width: 60,
+    height: 32,
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+    borderBottomWidth: 1,
+    padding: 0,
+  },
+  heightUnitLabel: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

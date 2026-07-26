@@ -16,7 +16,7 @@ import { Logo } from '../../components/common/Logo';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { useColors, useAuth, useWeightStore, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
-import { formatWeight, formatDate } from '../../utils/helpers';
+import { formatWeight, formatDate, formatCalories, calculateMaintenanceCalories } from '../../utils/helpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -105,31 +105,33 @@ export const WeightTrackerScreen = observer(() => {
 
   const chartWidth = SCREEN_WIDTH - spacing.xl * 2 - spacing.xl * 2;
 
-  // Calculate stats for the selected time range
-  const filteredStats = useMemo(() => {
-    const now = new Date();
-    let filteredEntries: WeightEntry[];
-    
-    if (timeRange === 'all') {
-      filteredEntries = [...entries];
-    } else {
-      const days = parseInt(timeRange);
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - days);
-      filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
-    }
-    
-    if (filteredEntries.length === 0) {
-      return { highest: null, lowest: null, average: null };
-    }
-    
-    const weights = filteredEntries.map(e => e.weight);
-    const highest = filteredEntries.reduce((max, e) => e.weight > max.weight ? e : max, filteredEntries[0]);
-    const lowest = filteredEntries.reduce((min, e) => e.weight < min.weight ? e : min, filteredEntries[0]);
-    const average = weights.reduce((sum, w) => sum + w, 0) / weights.length;
-    
-    return { highest, lowest, average };
-  }, [entries, timeRange]);
+  // Maintenance calories calculation inputs
+  const userGender = auth.user?.profile?.gender;
+  const userHeight = auth.user?.profile?.height;
+  const latestWeight = currentWeight;
+
+  const hasWeight = Boolean(latestWeight && latestWeight > 0);
+  const hasHeight = Boolean(userHeight && userHeight > 0);
+  const hasGender = Boolean(userGender);
+
+  const missingFields = useMemo(() => {
+    const missing: string[] = [];
+    if (!hasWeight) missing.push('weight');
+    if (!hasHeight) missing.push('height');
+    if (!hasGender) missing.push('gender');
+    return missing;
+  }, [hasWeight, hasHeight, hasGender]);
+
+  const maintenanceCalories = useMemo(() => {
+    if (!hasWeight || !hasHeight || !hasGender) return null;
+    return calculateMaintenanceCalories({
+      weight: latestWeight!,
+      weightUnit: weightUnit as 'kg' | 'lbs',
+      heightCm: userHeight,
+      gender: userGender,
+      age: auth.user?.profile?.age || 25,
+    });
+  }, [hasWeight, hasHeight, hasGender, latestWeight, weightUnit, userHeight, userGender, auth.user?.profile?.age]);
 
   const [deleteTarget, setDeleteTarget] = useState<WeightEntry | null>(null);
 
@@ -240,62 +242,70 @@ export const WeightTrackerScreen = observer(() => {
             </View>
           </AnimatedCard>
 
-          {/* Statistics */}
-          <AnimatedCard index={2} style={styles.statsCard}>
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
-                  <Text style={styles.statIconText}>📈</Text>
-                </View>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>
-                  Highest Weight
-                </Text>
-                <Text style={[styles.statValue, { color: colors.text }]}>
-                  {filteredStats.highest?.weight?.toFixed(1) || '--'} {weightUnit}
-                </Text>
-                <Text style={[styles.statDate, { color: colors.textMuted }]}>
-                  {filteredStats.highest?.date
-                    ? formatDate(filteredStats.highest.date, 'short')
-                    : ''}
-                </Text>
+          {/* Maintenance Calories */}
+          <AnimatedCard index={2} style={styles.maintenanceCard}>
+            <View style={styles.maintenanceMainRow}>
+              <View style={[styles.maintenanceIconBox, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+                <Text style={styles.maintenanceIconText}>🔥</Text>
               </View>
-
-              <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
-
-              <View style={styles.statItem}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
-                  <Text style={styles.statIconText}>📉</Text>
-                </View>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>
-                  Lowest Weight
+              <View style={styles.maintenanceInfoGroup}>
+                <Text style={[styles.maintenanceLabel, { color: colors.textMuted }]}>
+                  Your Maintenance Calories
                 </Text>
-                <Text style={[styles.statValue, { color: colors.text }]}>
-                  {filteredStats.lowest?.weight?.toFixed(1) || '--'} {weightUnit}
-                </Text>
-                <Text style={[styles.statDate, { color: colors.textMuted }]}>
-                  {filteredStats.lowest?.date
-                    ? formatDate(filteredStats.lowest.date, 'short')
-                    : ''}
-                </Text>
-              </View>
-
-              <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
-
-              <View style={styles.statItem}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
-                  <Text style={styles.statIconText}>📊</Text>
-                </View>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>
-                  Average Weight
-                </Text>
-                <Text style={[styles.statValue, { color: colors.text }]}>
-                  {filteredStats.average?.toFixed(1) || '--'} {weightUnit}
-                </Text>
-                <Text style={[styles.statDate, { color: colors.textMuted }]}>
-                  {timeRange === 'all' ? 'All time' : `Last ${timeRange} days`}
-                </Text>
+                {maintenanceCalories !== null ? (
+                  <View style={styles.maintenanceValRow}>
+                    <Text style={[styles.maintenanceValText, { color: colors.text }]}>
+                      {formatCalories(maintenanceCalories)}
+                    </Text>
+                    <Text style={[styles.maintenanceUnitText, { color: colors.textMuted }]}>
+                      / day
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={[styles.maintenanceValText, { color: colors.textMuted }]}>
+                    --
+                  </Text>
+                )}
               </View>
             </View>
+
+            <View style={[styles.maintenanceDivider, { backgroundColor: colors.cardBorder }]} />
+
+            {missingFields.length > 0 ? (
+              <View style={styles.maintenancePromptRow}>
+                <Text style={[styles.maintenancePromptText, { color: colors.textSecondary }]}>
+                  Add {missingFields.join(', ')} to calculate.
+                </Text>
+                {(!hasHeight || !hasGender) && (
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('Settings')}
+                    activeOpacity={0.7}
+                    style={styles.promptActionBtn}
+                  >
+                    <Text style={[styles.promptActionText, { color: colors.primary }]}>
+                      Go to Settings ›
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {!hasWeight && hasHeight && hasGender && (
+                  <TouchableOpacity
+                    onPress={() => setShowAddModal(true)}
+                    activeOpacity={0.7}
+                    style={styles.promptActionBtn}
+                  >
+                    <Text style={[styles.promptActionText, { color: colors.primary }]}>
+                      + Add Weight ›
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : (
+              <View style={styles.maintenancePromptRow}>
+                <Text style={[styles.maintenancePromptText, { color: colors.textMuted }]}>
+                  Daily calorie intake estimated to maintain your weight at {currentWeight?.toFixed(1)} {weightUnit}.
+                </Text>
+              </View>
+            )}
           </AnimatedCard>
 
           {/* Weight History */}
@@ -607,45 +617,70 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '300',
   },
-  statsCard: {
+  maintenanceCard: {
+    padding: spacing.lg,
     marginBottom: spacing.base,
   },
-  statsRow: {
+  maintenanceMainRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  statItem: {
-    flex: 1,
     alignItems: 'center',
+    gap: spacing.md,
   },
-  statDivider: {
-    width: 1,
-    height: '100%',
-    opacity: 0.5,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  maintenanceIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
   },
-  statIconText: { fontSize: 18 },
-  statLabel: {
+  maintenanceIconText: {
+    fontSize: 22,
+  },
+  maintenanceInfoGroup: {
+    flex: 1,
+  },
+  maintenanceLabel: {
     fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-    marginBottom: spacing.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
-  statValue: {
-    fontSize: 18,
+  maintenanceValRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  maintenanceValText: {
+    fontSize: 22,
     fontWeight: '700',
-    textAlign: 'center',
   },
-  statDate: {
-    fontSize: 11,
-    marginTop: 2,
-    textAlign: 'center',
+  maintenanceUnitText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  maintenanceDivider: {
+    height: 1,
+    marginVertical: spacing.md,
+  },
+  maintenancePromptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  maintenancePromptText: {
+    fontSize: 13,
+    lineHeight: 18,
+    flex: 1,
+  },
+  promptActionBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  promptActionText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

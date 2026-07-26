@@ -6,6 +6,8 @@ import { MainTabNavigator } from './MainTabNavigator';
 import { MetricSelectionScreen } from '../screens/onboarding/MetricSelectionScreen';
 import { NameInputScreen } from '../screens/auth/NameInputScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
+import { ExerciseProgressScreen } from '../screens/main/ExerciseProgressScreen';
+import { AIReportScreen } from '../screens/main/AIReportScreen';
 import { observer } from 'mobx-react-lite';
 import { useAuth } from '../hooks';
 import { Loading } from '../components/common/Loading';
@@ -48,6 +50,16 @@ export const AppNavigator = observer(() => {
             <Stack.Screen
               name="Settings"
               component={SettingsScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="ExerciseProgress"
+              component={ExerciseProgressScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="AIReport"
+              component={AIReportScreen}
               options={{ animation: 'slide_from_right' }}
             />
           </>

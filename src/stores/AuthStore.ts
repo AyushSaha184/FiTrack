@@ -6,7 +6,7 @@ import { workoutStore } from './WorkoutStore';
 import { weightStore } from './WeightStore';
 import { stepsStore } from './StepsStore';
 import auth from '@react-native-firebase/auth';
-import type { User, UserPreferences, Units } from '../models';
+import type { User, UserPreferences, Units, UserProfile } from '../models';
 import { storage } from '../utils/storage';
 import type { LoginInput, SignupInput } from '../utils/validators';
 import { logger } from '../utils/logger';
@@ -171,12 +171,12 @@ export class AuthStore {
             updatedAt: new Date(),
             preferences: defaultPreferences,
             profile: {
-              fitnessLevel: profileData?.fitnessLevel || 'beginner',
-              age: profileData?.age,
-              gender: profileData?.gender,
-              height: profileData?.height ? Number(profileData.height) : undefined,
-              goalWeight: profileData?.goalWeight ? Number(profileData.goalWeight) : undefined,
-              weeklyGoal: profileData?.weeklyGoal,
+              fitnessLevel: profileData?.profile?.fitnessLevel || profileData?.fitnessLevel || 'beginner',
+              age: profileData?.profile?.age || profileData?.age,
+              gender: profileData?.profile?.gender || profileData?.gender,
+              height: (profileData?.profile?.height ?? profileData?.height) ? Number(profileData?.profile?.height ?? profileData?.height) : undefined,
+              goalWeight: (profileData?.profile?.goalWeight ?? profileData?.goalWeight) ? Number(profileData?.profile?.goalWeight ?? profileData?.goalWeight) : undefined,
+              weeklyGoal: profileData?.profile?.weeklyGoal || profileData?.weeklyGoal,
             },
             onboardingCompleted,
           };
@@ -334,13 +334,38 @@ export class AuthStore {
     });
   }
 
-  async updateProfile(updates: { name?: string; email?: string }) {
+  async updateProfile(updates: { name?: string; email?: string; profile?: Partial<UserProfile> }) {
     if (!this.user) return;
     try {
-      await firebaseAuthService.updateProfile(updates);
-      await collections.userDoc(this.user.id).set(updates, { merge: true });
+      const authUpdates = { name: updates.name, email: updates.email };
+      if (authUpdates.name || authUpdates.email) {
+        await firebaseAuthService.updateProfile(authUpdates);
+      }
+      
+      const firestorePayload: any = {};
+      if (updates.name) firestorePayload.name = updates.name;
+      if (updates.email) firestorePayload.email = updates.email;
+      if (updates.profile) {
+        firestorePayload.profile = {
+          ...this.user.profile,
+          ...updates.profile,
+        };
+      }
+      
+      if (Object.keys(firestorePayload).length > 0) {
+        const cleanPayload = JSON.parse(JSON.stringify(firestorePayload));
+        await collections.userDoc(this.user.id).set(cleanPayload, { merge: true });
+      }
+      
       runInAction(() => {
         if (updates.name && this.user) this.user.name = updates.name;
+        if (updates.profile && this.user) {
+          this.user.profile = {
+            ...this.user.profile,
+            ...updates.profile,
+          };
+          storage.set('user_cached_profile', this.user);
+        }
       });
     } catch (error: any) {
       runInAction(() => {

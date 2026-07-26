@@ -175,14 +175,25 @@ export const WorkoutScreen = observer(() => {
             </TouchableOpacity>
           </View>
 
-          {/* Title Row with Reset Week Button */}
+          {/* Title Row with Reset Week and Progress Buttons */}
           <View style={styles.titleRow}>
             <Text style={[styles.title, { color: colors.text }]}>Today's Workout</Text>
-            <TouchableOpacity onPress={handleResetWeek} style={[styles.resetButton, { borderColor: colors.cardBorder }]} activeOpacity={0.7}>
-              <Text style={[styles.resetButtonText, { color: colors.textSecondary }]}>
-                Reset Week
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.buttonGroup}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('ExerciseProgress' as any)}
+                style={[styles.progressButton, { borderColor: colors.cardBorder }]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.progressButtonText, { color: colors.textSecondary }]}>
+                  Progress
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleResetWeek} style={[styles.resetButton, { borderColor: colors.cardBorder }]} activeOpacity={0.7}>
+                <Text style={[styles.resetButtonText, { color: colors.textSecondary }]}>
+                  Reset Week
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Weekly Calendar */}
@@ -684,6 +695,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.lg,
+  },
+  buttonGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  progressButton: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+  },
+  progressButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   resetButton: {
     paddingVertical: spacing.xs,

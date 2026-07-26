@@ -11,16 +11,25 @@ export const weightService = {
         .orderBy('date', 'desc')
         .get();
 
+      const parseDate = (val: any): Date => {
+        if (!val) return new Date();
+        if (val instanceof Date) return isNaN(val.getTime()) ? new Date() : val;
+        if (typeof val === 'object' && typeof val.toDate === 'function') return val.toDate();
+        if (typeof val === 'object' && 'seconds' in val) return new Date(val.seconds * 1000);
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? new Date() : d;
+      };
+
       return snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
           id: doc.id,
           userId: data.userId || userId,
           weight: Number(data.weight),
-          date: data.date ? new Date(data.date) : new Date(),
+          date: parseDate(data.date),
           notes: data.notes || undefined,
-          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
-          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
+          createdAt: parseDate(data.createdAt),
+          updatedAt: parseDate(data.updatedAt),
         } as WeightEntry;
       });
     } catch (err) {

@@ -17,10 +17,11 @@ export const crashReportsService = {
   async submit(payload: CrashReportPayload) {
     try {
       const docRef = firestore().collection('crashReports').doc();
+      const cleanPayload = JSON.parse(JSON.stringify(payload));
       await docRef.set({
         id: docRef.id,
         userId: payload.user.id !== 'unknown' ? payload.user.id : null,
-        reportData: payload,
+        reportData: cleanPayload,
         appVersion: payload.app.version,
         os: payload.device.os,
         osVersion: String(payload.device.osVersion),

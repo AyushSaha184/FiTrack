@@ -8,14 +8,13 @@ import {
   Platform,
   ScrollView,
   TextInput,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button } from '../../components/common/Button';
 import { useAuth, useColors } from '../../hooks';
-import { spacing, typography, radius, responsive } from '../../theme';
+import { spacing, radius, responsive } from '../../theme';
 import { signupSchema } from '../../utils/validators';
 import type { AuthStackParamList } from '../../types/navigation';
 import { logger } from '../../utils/logger';

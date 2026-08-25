@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuthStore } from '../stores';
 import { reaction } from 'mobx';
 import type { LoginInput, SignupInput } from '../utils/validators';

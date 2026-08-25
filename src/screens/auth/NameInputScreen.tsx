@@ -23,7 +23,7 @@ const PersonIcon = ({ color }: { color: string }) => (
 );
 
 export const NameInputScreen = () => {
-  const { user, setUserName, isLoading } = useAuth();
+  const { setUserName, isLoading } = useAuth();
   const [name, setName] = useState('');
   const [error, setError] = useState('');
 

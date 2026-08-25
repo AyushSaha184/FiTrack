@@ -15,7 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
 import { useAuth, useColors } from '../../hooks';
-import { spacing, typography, radius, responsive } from '../../theme';
+import { spacing, radius, responsive } from '../../theme';
 import { loginSchema } from '../../utils/validators';
 import type { AuthStackParamList } from '../../types/navigation';
 import { logger } from '../../utils/logger';

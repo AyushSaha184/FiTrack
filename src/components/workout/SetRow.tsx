@@ -14,12 +14,14 @@ interface SetRowProps {
   set: Set;
   setId: string;
   setNumber: number;
-  weightUnit?: 'kg' | 'lbs';
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  _weightUnit?: 'kg' | 'lbs';
   onWeightChange: (setId: string, weight: number) => void;
   onRepsChange: (setId: string, reps: number) => void;
   onToggleComplete: (setId: string) => void;
   onDelete?: (setId: string) => void;
-  onStartRest?: (setId: string) => void;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  _onStartRest?: (setId: string) => void;
 }
 
 // Hoist pure sanitizers outside component (rerender-hoist-jsx)
@@ -45,12 +47,12 @@ export const SetRow = memo<SetRowProps>(({
   set,
   setId,
   setNumber,
-  weightUnit = 'kg',
+  _weightUnit = 'kg',
   onWeightChange,
   onRepsChange,
   onToggleComplete,
   onDelete,
-  onStartRest,
+  _onStartRest,
 }) => {
   const colors = useColors();
   const checkScale = useSharedValue(1);

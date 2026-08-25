@@ -169,12 +169,12 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
               set={set}
               setId={set.id}
               setNumber={index + 1}
-              weightUnit={weightUnit}
+              _weightUnit={weightUnit}
               onWeightChange={handleWeightChange}
               onRepsChange={handleRepsChange}
               onToggleComplete={onToggleSetComplete}
               onDelete={onRemoveSet}
-              onStartRest={onStartRest}
+              _onStartRest={onStartRest}
             />
           ))}
 

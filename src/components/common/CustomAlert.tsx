@@ -1,17 +1,17 @@
-import React, { memo, ReactNode, useEffect } from 'react';
+import React, { memo, ReactNode, useEffect, useState, useCallback } from 'react';
 import {
   View,
   Modal as RNModal,
   Text,
   StyleSheet,
   Pressable,
-  TouchableOpacity,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
+  runOnJS,
 } from 'react-native-reanimated';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
@@ -40,42 +40,57 @@ export const CustomAlert = memo<CustomAlertProps>(({
   children,
 }) => {
   const colors = useColors();
+  const [mounted, setMounted] = useState(visible);
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.9);
 
+  const handleUnmount = useCallback(() => {
+    setMounted(false);
+  }, []);
+
   useEffect(() => {
     if (visible) {
-      opacity.value = withTiming(1, { duration: 200 });
-      scale.value = withSpring(1, { damping: 20, stiffness: 300 });
-    } else {
-      opacity.value = withTiming(0, { duration: 150 });
-      scale.value = withTiming(0.9, { duration: 150 });
+      setMounted(true);
+      opacity.set(withTiming(1, { duration: 200 }));
+      scale.set(withSpring(1, { damping: 20, stiffness: 300 }));
+    } else if (mounted) {
+      opacity.set(withTiming(0, { duration: 150 }));
+      scale.set(
+        withTiming(0.9, { duration: 150 }, (finished) => {
+          if (finished) {
+            runOnJS(handleUnmount)();
+          }
+        })
+      );
     }
-  }, [visible]);
+  }, [visible, mounted, opacity, scale, handleUnmount]);
 
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+    opacity: opacity.get(),
   }));
 
   const contentStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ scale: scale.value }],
+    opacity: opacity.get(),
+    transform: [{ scale: scale.get() }],
   }));
 
-  const getActionColor = (style?: string) => {
-    switch (style) {
-      case 'destructive':
-        return colors.error;
-      case 'cancel':
-        return colors.textSecondary;
-      default:
-        return colors.text;
-    }
-  };
+  const getActionColor = useCallback(
+    (style?: string) => {
+      switch (style) {
+        case 'destructive':
+          return colors.error;
+        case 'cancel':
+          return colors.textSecondary;
+        default:
+          return colors.text;
+      }
+    },
+    [colors.error, colors.textSecondary, colors.text]
+  );
 
   return (
     <RNModal
-      visible={visible}
+      visible={mounted}
       transparent
       animationType="none"
       onRequestClose={onClose}
@@ -99,25 +114,25 @@ export const CustomAlert = memo<CustomAlertProps>(({
           ]}
         >
           <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-          {message && (
+          {message ? (
             <Text style={[styles.message, { color: colors.textSecondary }]}>
               {message}
             </Text>
-          )}
+          ) : null}
           {children}
           <View style={[styles.actionsContainer, { borderTopColor: colors.cardBorder }]}>
             {actions.map((action, index) => (
-              <TouchableOpacity
+              <Pressable
                 key={index}
-                style={[
+                style={({ pressed }) => [
                   styles.actionButton,
                   index > 0 && { borderLeftWidth: 1, borderLeftColor: colors.cardBorder },
+                  pressed && { opacity: 0.6 },
                 ]}
                 onPress={() => {
                   action.onPress?.();
                   onClose();
                 }}
-                activeOpacity={0.7}
               >
                 <Text
                   style={[
@@ -130,7 +145,7 @@ export const CustomAlert = memo<CustomAlertProps>(({
                 >
                   {action.text}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             ))}
           </View>
         </Animated.View>

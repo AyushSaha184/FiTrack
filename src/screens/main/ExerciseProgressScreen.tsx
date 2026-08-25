@@ -17,8 +17,6 @@ import { observer } from 'mobx-react-lite';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { useColors, useSpacing, useTypography, useWorkoutStore } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
-import { collections } from '../../services/firebase/firestore';
-import { workoutsService } from '../../services/firebase/workoutsService';
 import { aiService } from '../../services/ai/aiService';
 import { storage } from '../../utils/storage';
 import { dateKey } from '../../utils/helpers';
@@ -116,7 +114,6 @@ export const ExerciseProgressScreen = observer(() => {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       thirtyDaysAgo.setHours(0, 0, 0, 0);
-      const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
 
       const parseLocalDate = (dateStr: string): Date => {
         const parts = dateStr.split('-');
@@ -191,23 +188,20 @@ export const ExerciseProgressScreen = observer(() => {
         }
       });
 
-      // 2. Fetch workouts from Firestore if logged in
-      let dbWorkouts: Workout[] = [];
-      if (userId) {
-        try {
-          dbWorkouts = await workoutsService.getWorkouts(
-            userId,
-            thirtyDaysAgoIso,
-            new Date().toISOString()
-          );
-        } catch (err) {
-          logger.error('[ExerciseProgressScreen] Failed to fetch workouts from DB:', err);
+      // 2. Use the cached workouts already in WorkoutStore instead of
+      //    re-querying Firestore. The store is fed by an onSnapshot
+      //    subscription (capped to 100 most-recent docs), so we get
+      //    live + dedupe + no extra network calls for free.
+      const storeWorkouts: Workout[] = Array.from(workoutStore.workouts.values()).filter(
+        (w) => {
+          const wDate = parseDateSafely(w.date);
+          return !isNaN(wDate.getTime()) && wDate >= thirtyDaysAgo;
         }
-      }
+      );
 
-      // 3. Merge Local and DB workouts (remove duplicates by date/id)
+      // 3. Merge Local and Store workouts (remove duplicates by date)
       const mergedWorkoutsMap = new Map<string, Workout>();
-      
+
       // Filter for target day of week
       const filterAndAdd = (workoutList: Workout[]) => {
         workoutList.forEach((w) => {
@@ -224,7 +218,7 @@ export const ExerciseProgressScreen = observer(() => {
       };
 
       filterAndAdd(localWorkouts);
-      filterAndAdd(dbWorkouts);
+      filterAndAdd(storeWorkouts);
 
       // Sort workouts: newest to oldest
       const sortedWorkouts = Array.from(mergedWorkoutsMap.values()).sort(

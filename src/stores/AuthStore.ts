@@ -307,6 +307,30 @@ export class AuthStore {
     }
   }
 
+  async deleteAccount() {
+    try {
+      this.isLoading = true;
+      this.error = null;
+      await firebaseAuthService.deleteAccount();
+      runInAction(() => {
+        this.user = null;
+        this.isAuthenticated = false;
+        this.isNameRequired = false;
+        storage.clearAll();
+      });
+    } catch (error: any) {
+      logger.error('[AuthStore] deleteAccount error:', error);
+      runInAction(() => {
+        this.error = error.message || 'Failed to delete account';
+      });
+      throw error;
+    } finally {
+      runInAction(() => {
+        this.isLoading = false;
+      });
+    }
+  }
+
   async resetPassword(email: string) {
     try {
       this.error = null;

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import React, { useMemo } from 'react';
+import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthNavigator } from './AuthNavigator';
 import { MainTabNavigator } from './MainTabNavigator';
@@ -9,27 +9,35 @@ import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { ExerciseProgressScreen } from '../screens/main/ExerciseProgressScreen';
 import { AIReportScreen } from '../screens/main/AIReportScreen';
 import { observer } from 'mobx-react-lite';
-import { useAuth } from '../hooks';
+import { useAuth, useColors } from '../hooks';
 import { Loading } from '../components/common/Loading';
-import { useColors } from '../hooks';
 
 const Stack = createNativeStackNavigator();
+
+const settingsScreenOptions = { animation: 'slide_from_right' as const };
+const exerciseProgressScreenOptions = { animation: 'slide_from_bottom' as const };
+const aiReportScreenOptions = { animation: 'slide_from_right' as const };
+const defaultScreenOptions = { headerShown: false };
 
 export const AppNavigator = observer(() => {
   const { isInitialized, isAuthenticated, isOnboarded, isNameRequired } = useAuth();
   const colors = useColors();
 
-  const theme = {
-    ...DarkTheme,
-    colors: {
-      ...DarkTheme.colors,
-      background: colors.background,
-      card: colors.card,
-      text: colors.text,
-      border: colors.cardBorder,
-      primary: colors.primary,
-    },
-  };
+  // Memoize theme object to prevent NavigationContainer re-renders (rerender-memo)
+  const theme = useMemo(
+    () => ({
+      ...DarkTheme,
+      colors: {
+        ...DarkTheme.colors,
+        background: colors.background,
+        card: colors.card,
+        text: colors.text,
+        border: colors.cardBorder,
+        primary: colors.primary,
+      },
+    }),
+    [colors]
+  );
 
   if (!isInitialized) {
     return <Loading fullScreen message="Loading FiTrack..." />;
@@ -37,7 +45,7 @@ export const AppNavigator = observer(() => {
 
   return (
     <NavigationContainer theme={theme}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={defaultScreenOptions}>
         {!isAuthenticated ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
         ) : isNameRequired ? (
@@ -50,17 +58,17 @@ export const AppNavigator = observer(() => {
             <Stack.Screen
               name="Settings"
               component={SettingsScreen}
-              options={{ animation: 'slide_from_right' }}
+              options={settingsScreenOptions}
             />
             <Stack.Screen
               name="ExerciseProgress"
               component={ExerciseProgressScreen}
-              options={{ animation: 'slide_from_bottom' }}
+              options={exerciseProgressScreenOptions}
             />
             <Stack.Screen
               name="AIReport"
               component={AIReportScreen}
-              options={{ animation: 'slide_from_right' }}
+              options={aiReportScreenOptions}
             />
           </>
         )}

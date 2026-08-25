@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert } from 'react-native';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, useWindowDimensions, Alert } from 'react-native';
 import type { WeightEntry } from '../../models';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -16,9 +16,7 @@ import { Logo } from '../../components/common/Logo';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { useColors, useAuth, useWeightStore, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
-import { formatWeight, formatDate, formatCalories, calculateMaintenanceCalories } from '../../utils/helpers';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { formatDate, formatCalories, calculateMaintenanceCalories } from '../../utils/helpers';
 
 const timeRangeOptions = [
   { value: '7', label: '7 Days' },
@@ -29,17 +27,26 @@ const timeRangeOptions = [
   { value: 'all', label: 'All Time' },
 ];
 
+// Hoist pure sanitizer outside component (rerender-hoist-jsx)
+const sanitizeWeightInput = (raw: string): string => {
+  let text = raw.replace(/[^0-9.]/g, '');
+  const dotIndex = text.indexOf('.');
+  if (dotIndex !== -1) {
+    text = text.slice(0, dotIndex + 1) + text.slice(dotIndex + 1).replace(/\./g, '');
+  }
+  if (text.length > 5) text = text.slice(0, 5);
+  return text;
+};
+
 export const WeightTrackerScreen = observer(() => {
   const colors = useColors();
   const navigation = useNavigation<any>();
   const auth = useAuth();
   const weightStore = useWeightStore();
+  const { width: screenWidth } = useWindowDimensions();
 
   const currentWeight = weightStore.currentWeight;
   const goalWeight = weightStore.goalWeight;
-  const progress = weightStore.progress;
-  const trend = weightStore.trend;
-  const stats = weightStore.stats;
   const entries = weightStore.entries;
 
   useEffect(() => {
@@ -51,27 +58,26 @@ export const WeightTrackerScreen = observer(() => {
     loadWeightData();
   }, [auth.isAuthenticated, auth.user?.id, weightStore]);
 
+  // Live Firestore subscription: keeps the chart, history, and stats up to
+  // date with writes from any other device (or this device's background
+  // sync) without re-fetching.
+  useEffect(() => {
+    const userId = auth.user?.id;
+    if (!userId) return;
+    const unsubscribe = weightStore.subscribeEntries(userId);
+    return unsubscribe;
+  }, [auth.user?.id, weightStore]);
+
   const weightUnit = useSettingsStore().units.weight;
-
-
 
   const [timeRange, setTimeRange] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
-  const sanitizeWeightInput = (raw: string): string => {
-    let text = raw.replace(/[^0-9.]/g, '');
-    const dotIndex = text.indexOf('.');
-    if (dotIndex !== -1) {
-      text = text.slice(0, dotIndex + 1) + text.slice(dotIndex + 1).replace(/\./g, '');
-    }
-    if (text.length > 5) text = text.slice(0, 5);
-    return text;
-  };
   const [newWeight, setNewWeight] = useState('');
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalInput, setGoalInput] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<WeightEntry | null>(null);
 
   const chartData = useMemo(() => {
-    const now = new Date();
     let filteredEntries: WeightEntry[];
 
     if (timeRange === 'all') {
@@ -89,7 +95,27 @@ export const WeightTrackerScreen = observer(() => {
       return isNaN(t) ? 0 : t;
     };
 
-    const sorted = [...filteredEntries].sort((a, b) => {
+    // Deduplicate entries by calendar day. Multiple weights logged on the same
+    // day collapse into a single chart point using the most recent value, so
+    // we don't show "today" twice (once mid-chart from a prior entry and once
+    // at the end from a new one).
+    const dayKey = (e: WeightEntry): string => {
+      const raw: any = e.createdAt ?? e.date;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      if (isNaN(d.getTime())) return String(e.date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const byDay = new Map<string, WeightEntry>();
+    for (const e of filteredEntries) {
+      const key = dayKey(e);
+      const existing = byDay.get(key);
+      if (!existing || getTimestamp(e) >= getTimestamp(existing)) {
+        byDay.set(key, e);
+      }
+    }
+
+    const sorted = Array.from(byDay.values()).sort((a, b) => {
       const tA = getTimestamp(a);
       const tB = getTimestamp(b);
       if (tA !== tB) return tA - tB;
@@ -103,7 +129,7 @@ export const WeightTrackerScreen = observer(() => {
     }));
   }, [entries, timeRange]);
 
-  const chartWidth = SCREEN_WIDTH - spacing.xl * 2 - spacing.xl * 2;
+  const chartWidth = screenWidth - spacing.xl * 2 - spacing.xl * 2;
 
   // Maintenance calories calculation inputs
   const userGender = auth.user?.profile?.gender;
@@ -113,14 +139,6 @@ export const WeightTrackerScreen = observer(() => {
   const hasWeight = Boolean(latestWeight && latestWeight > 0);
   const hasHeight = Boolean(userHeight && userHeight > 0);
   const hasGender = Boolean(userGender);
-
-  const missingFields = useMemo(() => {
-    const missing: string[] = [];
-    if (!hasWeight) missing.push('weight');
-    if (!hasHeight) missing.push('height');
-    if (!hasGender) missing.push('gender');
-    return missing;
-  }, [hasWeight, hasHeight, hasGender]);
 
   const maintenanceCalories = useMemo(() => {
     if (!hasWeight || !hasHeight || !hasGender) return null;
@@ -133,11 +151,82 @@ export const WeightTrackerScreen = observer(() => {
     });
   }, [hasWeight, hasHeight, hasGender, latestWeight, weightUnit, userHeight, userGender, auth.user?.profile?.age]);
 
-  const [deleteTarget, setDeleteTarget] = useState<WeightEntry | null>(null);
-
-  const handleDeleteEntry = (entry: WeightEntry) => {
+  // Memoized handlers (list-performance-callbacks)
+  const handleDeleteEntry = useCallback((entry: WeightEntry) => {
     setDeleteTarget(entry);
-  };
+  }, []);
+
+  const handleCloseDeleteAlert = useCallback(() => {
+    setDeleteTarget(null);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (deleteTarget && auth.user?.id) {
+      await weightStore.deleteEntry(auth.user.id, deleteTarget.id);
+      setDeleteTarget(null);
+    }
+  }, [deleteTarget, auth.user?.id, weightStore]);
+
+  const handleOpenGoalModal = useCallback(() => {
+    setGoalInput(goalWeight ? String(goalWeight) : '');
+    setShowGoalModal(true);
+  }, [goalWeight]);
+
+  const handleCloseGoalModal = useCallback(() => {
+    setShowGoalModal(false);
+  }, []);
+
+  const handleOpenAddModal = useCallback(() => {
+    setShowAddModal(true);
+  }, []);
+
+  const handleCloseAddModal = useCallback(() => {
+    setShowAddModal(false);
+  }, []);
+
+  const handleWeightInputChange = useCallback((text: string) => {
+    setNewWeight(sanitizeWeightInput(text));
+  }, []);
+
+  const handleSaveWeight = useCallback(async () => {
+    const weight = parseFloat(newWeight);
+    if (weight > 0 && auth.user?.id) {
+      try {
+        await weightStore.addEntry(auth.user.id, weight);
+        setNewWeight('');
+        setShowAddModal(false);
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'Failed to add weight entry');
+      }
+    }
+  }, [newWeight, auth.user?.id, weightStore]);
+
+  const handleSaveGoal = useCallback(async () => {
+    const weight = parseFloat(goalInput);
+    if (weight > 0 && auth.user?.id) {
+      try {
+        weightStore.setGoalWeight(weight);
+        await weightStore.loadEntries(auth.user.id);
+        await weightStore.loadStats(auth.user.id);
+        setGoalInput('');
+        setShowGoalModal(false);
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'Failed to set goal weight');
+      }
+    }
+  }, [goalInput, auth.user?.id, weightStore]);
+
+  const deleteAlertActions = useMemo(
+    () => [
+      { text: 'Cancel', style: 'cancel' as const, onPress: handleCloseDeleteAlert },
+      {
+        text: 'Delete',
+        style: 'destructive' as const,
+        onPress: handleConfirmDelete,
+      },
+    ],
+    [handleCloseDeleteAlert, handleConfirmDelete]
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -155,7 +244,7 @@ export const WeightTrackerScreen = observer(() => {
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Circle cx="12" cy="12" r="3" />
-                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </Svg>
             </TouchableOpacity>
           </View>
@@ -182,7 +271,7 @@ export const WeightTrackerScreen = observer(() => {
                   </Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => { setGoalInput(goalWeight ? String(goalWeight) : ''); setShowGoalModal(true); }}
+                  onPress={handleOpenGoalModal}
                   style={styles.goalButton}
                   activeOpacity={0.7}
                 >
@@ -201,7 +290,7 @@ export const WeightTrackerScreen = observer(() => {
                       borderColor: colors.cardBorder,
                     },
                   ]}
-                  onPress={() => setShowAddModal(true)}
+                  onPress={handleOpenAddModal}
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.addButtonIcon, { color: colors.text }]}>+</Text>
@@ -210,11 +299,11 @@ export const WeightTrackerScreen = observer(() => {
                   </Text>
                 </TouchableOpacity>
 
-                {goalWeight !== null && goalWeight > 0 && (
+                {goalWeight !== null && goalWeight > 0 ? (
                   <Text style={[styles.goalUnderAdd, { color: colors.textMuted }]}>
                     Goal: {goalWeight.toFixed(1)} {weightUnit}
                   </Text>
-                )}
+                ) : null}
               </View>
             </View>
           </AnimatedCard>
@@ -246,67 +335,24 @@ export const WeightTrackerScreen = observer(() => {
           {/* Maintenance Calories */}
           <AnimatedCard index={2} style={styles.maintenanceCard}>
             <View style={styles.maintenanceMainRow}>
-              <View style={[styles.maintenanceIconBox, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
-                <Text style={styles.maintenanceIconText}>🔥</Text>
-              </View>
-              <View style={styles.maintenanceInfoGroup}>
-                <Text style={[styles.maintenanceLabel, { color: colors.textMuted }]}>
-                  Your Maintenance Calories
-                </Text>
-                {maintenanceCalories !== null ? (
-                  <View style={styles.maintenanceValRow}>
-                    <Text style={[styles.maintenanceValText, { color: colors.text }]}>
-                      {formatCalories(maintenanceCalories)}
-                    </Text>
-                    <Text style={[styles.maintenanceUnitText, { color: colors.textMuted }]}>
-                      / day
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={[styles.maintenanceValText, { color: colors.textMuted }]}>
-                    --
+              <Text style={[styles.maintenanceLabel, { color: colors.textMuted }]}>
+                Your Maintenance Calories
+              </Text>
+              {maintenanceCalories !== null ? (
+                <View style={styles.maintenanceValRow}>
+                  <Text style={[styles.maintenanceValText, { color: colors.text }]}>
+                    {formatCalories(maintenanceCalories)}
                   </Text>
-                )}
-              </View>
+                  <Text style={[styles.maintenanceUnitText, { color: colors.textMuted }]}>
+                    / day
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.maintenanceValText, { color: colors.textMuted }]}>
+                  --
+                </Text>
+              )}
             </View>
-
-            <View style={[styles.maintenanceDivider, { backgroundColor: colors.cardBorder }]} />
-
-            {missingFields.length > 0 ? (
-              <View style={styles.maintenancePromptRow}>
-                <Text style={[styles.maintenancePromptText, { color: colors.textSecondary }]}>
-                  Add {missingFields.join(', ')} to calculate.
-                </Text>
-                {(!hasHeight || !hasGender) && (
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('Settings')}
-                    activeOpacity={0.7}
-                    style={styles.promptActionBtn}
-                  >
-                    <Text style={[styles.promptActionText, { color: colors.primary }]}>
-                      Go to Settings ›
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {!hasWeight && hasHeight && hasGender && (
-                  <TouchableOpacity
-                    onPress={() => setShowAddModal(true)}
-                    activeOpacity={0.7}
-                    style={styles.promptActionBtn}
-                  >
-                    <Text style={[styles.promptActionText, { color: colors.primary }]}>
-                      + Add Weight ›
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ) : (
-              <View style={styles.maintenancePromptRow}>
-                <Text style={[styles.maintenancePromptText, { color: colors.textMuted }]}>
-                  Daily calorie intake estimated to maintain your weight at {currentWeight?.toFixed(1)} {weightUnit}.
-                </Text>
-              </View>
-            )}
           </AnimatedCard>
 
           {/* Weight History */}
@@ -350,55 +396,43 @@ export const WeightTrackerScreen = observer(() => {
                     <Text style={[styles.historyWeight, { color: colors.text }]}>
                       {entry.weight.toFixed(1)} {weightUnit}
                     </Text>
-                    <TouchableOpacity
+                    <Pressable
                       onPress={() => handleDeleteEntry(entry)}
-                      style={styles.deleteButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      activeOpacity={0.7}
+                      style={({ pressed }) => [styles.deleteButton, pressed && { opacity: 0.6 }]}
+                      hitSlop={8}
                     >
                       <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FF453A" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                         <Path d="M3 6h18" />
                         <Path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
                       </Svg>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 </View>
               );
             })}
           </AnimatedCard>
 
-          <View style={{ height: 100 }} />
+          <View style={styles.bottomSpacer} />
         </ScrollView>
       </AnimatedScreen>
 
       {/* Add Weight Modal */}
       <Modal
         visible={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={handleCloseAddModal}
         title="Add Weight"
       >
         <Input
           label="Weight"
           value={newWeight}
-          onChangeText={(text) => setNewWeight(sanitizeWeightInput(text))}
+          onChangeText={handleWeightInputChange}
           placeholder={`Enter weight in ${weightUnit}`}
           keyboardType="number-pad"
           maxLength={5}
         />
         <Button
           title="Save"
-          onPress={async () => {
-            const weight = parseFloat(newWeight);
-            if (weight > 0) {
-              try {
-                await weightStore.addEntry(auth.user!.id, weight);
-                setNewWeight('');
-                setShowAddModal(false);
-              } catch (e: any) {
-                Alert.alert('Error', e.message || 'Failed to add weight entry');
-              }
-            }
-          }}
+          onPress={handleSaveWeight}
           fullWidth
           style={{ backgroundColor: colors.text, marginTop: spacing.base }}
           textStyle={{ color: colors.background }}
@@ -408,7 +442,7 @@ export const WeightTrackerScreen = observer(() => {
       {/* Goal Modal */}
       <Modal
         visible={showGoalModal}
-        onClose={() => setShowGoalModal(false)}
+        onClose={handleCloseGoalModal}
         title="Set Goal Weight"
       >
         <Input
@@ -420,20 +454,7 @@ export const WeightTrackerScreen = observer(() => {
         />
         <Button
           title="Save"
-          onPress={async () => {
-            const weight = parseFloat(goalInput);
-            if (weight > 0) {
-              try {
-                weightStore.setGoalWeight(weight);
-                await weightStore.loadEntries(auth.user!.id);
-                await weightStore.loadStats(auth.user!.id);
-                setGoalInput('');
-                setShowGoalModal(false);
-              } catch (e: any) {
-                Alert.alert('Error', e.message || 'Failed to set goal weight');
-              }
-            }
-          }}
+          onPress={handleSaveGoal}
           fullWidth
           style={{ backgroundColor: colors.text, marginTop: spacing.base }}
           textStyle={{ color: colors.background }}
@@ -443,29 +464,10 @@ export const WeightTrackerScreen = observer(() => {
       {/* Custom Delete Confirmation Alert */}
       <CustomAlert
         visible={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
+        onClose={handleCloseDeleteAlert}
         title="Delete Weight Entry"
         message={deleteTarget ? `Are you sure you want to delete ${deleteTarget.weight.toFixed(1)} ${weightUnit} from ${formatDate(deleteTarget.date, 'short')}?` : ''}
-        actions={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setDeleteTarget(null) },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              if (deleteTarget) {
-                try {
-                  if (auth.user?.id) {
-                    await weightStore.deleteEntry(auth.user.id, deleteTarget.id);
-                  }
-                } catch (e: any) {
-                  Alert.alert('Error', e.message || 'Failed to delete entry');
-                } finally {
-                  setDeleteTarget(null);
-                }
-              }
-            },
-          },
-        ]}
+        actions={deleteAlertActions}
       />
     </SafeAreaView>
   );
@@ -490,19 +492,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 20,
   },
-  settingsIcon: { fontSize: 20 },
   title: {
-    fontSize: 26,
+    fontSize: typography.h2.fontSize,
     fontWeight: '700',
-    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 16,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
+    fontSize: typography.body.fontSize,
+    marginBottom: spacing.xl,
   },
   currentCard: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   currentHeader: {
     flexDirection: 'row',
@@ -510,81 +510,72 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   currentLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: spacing.xs,
+    fontSize: typography.caption.fontSize,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   weightRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
+    marginVertical: spacing.xs,
   },
   currentWeight: {
-    fontSize: 58,
-    fontWeight: '800',
-    letterSpacing: -1,
+    fontSize: typography.h1.fontSize,
+    fontWeight: '700',
   },
   unit: {
-    fontSize: 20,
-    fontWeight: '500',
+    fontSize: typography.body.fontSize,
     marginLeft: spacing.xs,
   },
   goalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
   },
   goalButtonText: {
-    fontSize: 12,
+    fontSize: typography.caption.fontSize,
     fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   goalUnderAdd: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 8,
-    textAlign: 'right',
+    fontSize: typography.caption.fontSize,
+    fontWeight: '500',
+    marginTop: spacing.xs,
   },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.base,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
-    borderWidth: 1,
+    borderWidth: 1.5,
     gap: spacing.xs,
   },
   addButtonIcon: {
-    fontSize: 18,
-    fontWeight: '300',
+    fontSize: 16,
+    fontWeight: '600',
   },
   addButtonText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   chartCard: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   chartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   cardTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: typography.h4.fontSize,
+    fontWeight: '600',
   },
   chartContainer: {
-    alignItems: 'center',
+    marginVertical: spacing.sm,
   },
   historyCard: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   historyItem: {
     flexDirection: 'row',
@@ -598,102 +589,65 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   historyIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  historyIconText: { fontSize: 18 },
+  historyIconText: {
+    fontSize: 18,
+  },
   historyDate: {
-    fontSize: 16,
+    fontSize: typography.body.fontSize,
     fontWeight: '500',
   },
   historyTime: {
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: typography.caption.fontSize,
   },
   historyRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
+  },
+  historyWeight: {
+    fontSize: typography.body.fontSize,
+    fontWeight: '600',
   },
   deleteButton: {
     padding: spacing.xs,
-    marginLeft: spacing.xs,
-  },
-  historyWeight: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  historyChevron: {
-    fontSize: 20,
-    fontWeight: '300',
   },
   maintenanceCard: {
-    padding: spacing.lg,
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   maintenanceMainRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-  },
-  maintenanceIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  maintenanceIconText: {
-    fontSize: 22,
-  },
-  maintenanceInfoGroup: {
-    flex: 1,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
   },
   maintenanceLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 2,
+    textTransform: 'uppercase',
+    flex: 1,
+    marginRight: spacing.sm,
   },
   maintenanceValRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 6,
   },
   maintenanceValText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
   },
   maintenanceUnitText: {
-    fontSize: 13,
+    fontSize: 12,
+    marginLeft: 4,
     fontWeight: '500',
   },
-  maintenanceDivider: {
-    height: 1,
-    marginVertical: spacing.md,
-  },
-  maintenancePromptRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  maintenancePromptText: {
-    fontSize: 13,
-    lineHeight: 18,
-    flex: 1,
-  },
-  promptActionBtn: {
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-  },
-  promptActionText: {
-    fontSize: 13,
-    fontWeight: '600',
+  bottomSpacer: {
+    height: 100,
   },
 });

@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, AppState, AppStateStatus } from 'react-native';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, useWindowDimensions, Alert, AppState, AppStateStatus } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { observer } from 'mobx-react-lite';
@@ -20,13 +20,11 @@ import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
 import { CustomAlert } from '../../components/common/CustomAlert';
-import { useColors, useSettingsStore, useAuth, useStepsStore, useWeightStore } from '../../hooks';
-import { spacing, typography, radius, durations } from '../../theme';
-import { formatDate, formatStepsWithCommas, formatCalories } from '../../utils/helpers';
+import { useColors, useAuth, useStepsStore, useWeightStore } from '../../hooks';
+import { spacing, typography, durations } from '../../theme';
+import { formatDate, formatStepsWithCommas } from '../../utils/helpers';
 import { stepsToCalories } from '../../utils/calculations';
 import type { StepEntry } from '../../models';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const timeRangeOptions = [
   { value: '7', label: '7 Days' },
@@ -46,7 +44,12 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
   const { user } = useAuth();
   const stepsStore = useStepsStore();
   const weightStore = useWeightStore();
+  const { width: screenWidth } = useWindowDimensions();
+
   const [timeRange, setTimeRange] = useState('7');
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [goalInput, setGoalInput] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<StepEntry | null>(null);
 
   const todaySteps = stepsStore.todaySteps;
   const goalSteps = stepsStore.dailyGoal;
@@ -60,9 +63,14 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
   }, [user?.id, stepsStore]);
 
   useEffect(() => {
-    if (user?.id && isActive) {
+    if (!user?.id || !isActive) return;
+    // Defer the permission request until after the swipe-in animation
+    // (250ms in MainTabNavigator) and the initial layout settle. This avoids
+    // the system dialog popping up while the screen is still animating in.
+    const timer = setTimeout(() => {
       stepsStore.startLiveStepTracking(user.id);
-    }
+    }, 600);
+    return () => clearTimeout(timer);
   }, [user?.id, isActive, stepsStore]);
 
   useEffect(() => {
@@ -87,19 +95,25 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
 
   const currentWeight = weightStore.currentWeight;
 
-  const weeklyStats = useMemo(() => {
-    const now = new Date();
-    let filteredEntries: StepEntry[];
-
-    if (timeRange === 'all') {
-      filteredEntries = [...entries];
-    } else {
-      const days = parseInt(timeRange);
+  // Single shared filter+sort used by both weekly stats and the chart so we
+  // never compute the same filtered entry list twice.
+  const getFilteredEntries = useCallback(
+    (source: StepEntry[], range: string): StepEntry[] => {
+      if (range === 'all') return [...source];
+      const days = parseInt(range, 10);
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
-      filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
-    }
+      return source.filter((e) => new Date(e.date) >= cutoffDate);
+    },
+    []
+  );
 
+  const filteredEntries = useMemo(
+    () => getFilteredEntries(entries, timeRange),
+    [entries, timeRange, getFilteredEntries]
+  );
+
+  const weeklyStats = useMemo(() => {
     const totalSteps = filteredEntries.reduce((sum, e) => sum + e.steps, 0);
     const userWeight = currentWeight || 70;
     const caloriesBurned = stepsToCalories(totalSteps, userWeight);
@@ -114,40 +128,26 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
       goalAchievedPercent,
       entryCount: filteredEntries.length,
     };
-  }, [entries, goalSteps, currentWeight, timeRange]);
+  }, [filteredEntries, goalSteps, currentWeight]);
 
+  const percentage = Math.min(100, Math.round((todaySteps / (goalSteps || 10000)) * 100));
 
-  const [showGoalModal, setShowGoalModal] = useState(false);
-  const [goalInput, setGoalInput] = useState('');
-
-  const percentage = Math.min(100, Math.round((todaySteps / goalSteps) * 100));
-
-  // Animated progress bar
+  // Animated progress bar (.get() and .set() for React Compiler compat)
   const progressWidth = useSharedValue(0);
   useEffect(() => {
-    progressWidth.value = withDelay(
-      400,
-      withTiming(percentage, { duration: durations.chartDraw, easing: Easing.out(Easing.cubic) }),
+    progressWidth.set(
+      withDelay(
+        400,
+        withTiming(percentage, { duration: durations.chartDraw, easing: Easing.out(Easing.cubic) }),
+      )
     );
-  }, [percentage]);
+  }, [percentage, progressWidth]);
 
   const progressStyle = useAnimatedStyle(() => ({
-    width: `${progressWidth.value}%`,
+    width: `${progressWidth.get()}%`,
   }));
 
   const chartData = useMemo(() => {
-    const now = new Date();
-    let filteredEntries: StepEntry[];
-
-    if (timeRange === 'all') {
-      filteredEntries = [...entries];
-    } else {
-      const days = parseInt(timeRange);
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - days);
-      filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
-    }
-
     const getTimestamp = (e: StepEntry) => {
       const d = e.createdAt ? new Date(e.createdAt) : new Date(e.date);
       const t = d.getTime();
@@ -157,7 +157,9 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
     const sorted = [...filteredEntries].sort((a, b) => {
       const tA = getTimestamp(a);
       const tB = getTimestamp(b);
-      if (tA !== tB) return tA - tB;
+      if (tA !== tB) {
+        return tA - tB;
+      }
       return filteredEntries.indexOf(b) - filteredEntries.indexOf(a);
     });
 
@@ -166,15 +168,66 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
       value: e.steps,
       timestamp: getTimestamp(e),
     }));
-  }, [entries, timeRange]);
+  }, [filteredEntries]);
 
-  const chartWidth = SCREEN_WIDTH - spacing.xl * 2 - spacing.xl * 2;
+  const chartWidth = screenWidth - spacing.xl * 2 - spacing.xl * 2;
 
-  const [deleteTarget, setDeleteTarget] = useState<StepEntry | null>(null);
-
-  const handleDeleteEntry = (entry: StepEntry) => {
+  // Memoized handlers
+  const handleDeleteEntry = useCallback((entry: StepEntry) => {
     setDeleteTarget(entry);
-  };
+  }, []);
+
+  const handleCloseDeleteAlert = useCallback(() => {
+    setDeleteTarget(null);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (deleteTarget) {
+      try {
+        await stepsStore.deleteEntry(deleteTarget.id);
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'Failed to delete step entry');
+      } finally {
+        setDeleteTarget(null);
+      }
+    }
+  }, [deleteTarget, stepsStore]);
+
+  const handleOpenGoalModal = useCallback(() => {
+    setGoalInput(goalSteps ? String(goalSteps) : '');
+    setShowGoalModal(true);
+  }, [goalSteps]);
+
+  const handleCloseGoalModal = useCallback(() => {
+    setShowGoalModal(false);
+  }, []);
+
+  const handleSaveGoal = useCallback(async () => {
+    const steps = parseInt(goalInput, 10);
+    if (steps > 0 && user?.id) {
+      try {
+        stepsStore.setDailyGoal(steps);
+        await stepsStore.loadTodaySteps(user.id);
+        await stepsStore.loadWeeklySteps(user.id);
+        setGoalInput('');
+        setShowGoalModal(false);
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'Failed to set daily goal');
+      }
+    }
+  }, [goalInput, user?.id, stepsStore]);
+
+  const deleteAlertActions = useMemo(
+    () => [
+      { text: 'Cancel', style: 'cancel' as const, onPress: handleCloseDeleteAlert },
+      {
+        text: 'Delete',
+        style: 'destructive' as const,
+        onPress: handleConfirmDelete,
+      },
+    ],
+    [handleCloseDeleteAlert, handleConfirmDelete]
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -188,11 +241,11 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
             <Logo size="medium" />
             <TouchableOpacity
               onPress={() => navigation.navigate('Settings')}
-              style={[styles.settingsButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
+              style={styles.settingsButton}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Circle cx="12" cy="12" r="3" />
-                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </Svg>
             </TouchableOpacity>
           </View>
@@ -218,13 +271,13 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                     steps
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => { setGoalInput(goalSteps ? String(goalSteps) : ''); setShowGoalModal(true); }} style={styles.goalButton}>
+                <TouchableOpacity onPress={handleOpenGoalModal} style={styles.goalButton}>
                   <Text style={[styles.goalText, { color: colors.text }]}>
                     Set your steps goal
                   </Text>
                 </TouchableOpacity>
               </View>
-              <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+              <View style={styles.illustrationCenter}>
                 <View style={styles.stepsIllustration}>
                   <Svg width={90} height={90} viewBox="0 0 90 90">
                     {/* Background Track Circle */}
@@ -258,22 +311,17 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                     </Svg>
                   </View>
                 </View>
-                {goalSteps > 0 && (
+                {goalSteps > 0 ? (
                   <Text style={[styles.goalUnderRing, { color: colors.textMuted }]}>
                     Goal: {formatStepsWithCommas(goalSteps)}
                   </Text>
-                )}
+                ) : null}
               </View>
             </View>
 
             {/* Progress Bar */}
             <View style={styles.progressBarContainer}>
-              <View
-                style={[
-                  styles.progressTrack,
-                  { backgroundColor: 'rgba(255,255,255,0.08)' },
-                ]}
-              >
+              <View style={styles.progressTrack}>
                 <Animated.View
                   style={[
                     styles.progressFill,
@@ -310,6 +358,8 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                     ? formatStepsWithCommas(todaySteps)
                     : undefined
                 }
+                yMax={goalSteps > 0 ? goalSteps : undefined}
+                yTickCount={6}
               />
             </View>
           </AnimatedCard>
@@ -318,9 +368,6 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
           <AnimatedCard index={2} style={styles.statsCard}>
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
-                  <Text style={styles.statIconText}>👣</Text>
-                </View>
                 <Text style={[styles.statLabel, { color: colors.textMuted }]}>
                   Total Steps
                 </Text>
@@ -335,9 +382,6 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
               <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
 
               <View style={styles.statItem}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
-                  <Text style={styles.statIconText}>🔥</Text>
-                </View>
                 <Text style={[styles.statLabel, { color: colors.textMuted }]}>
                   Calories Burned
                 </Text>
@@ -363,19 +407,14 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                   key={entry.id}
                   style={[
                     styles.historyItem,
-                    index < displayLimit - 1 && {
-                      borderBottomWidth: 1,
-                      borderBottomColor: colors.cardBorder,
-                    },
+                    index < displayLimit - 1 && [
+                      styles.historyItemBorder,
+                      { borderBottomColor: colors.cardBorder },
+                    ],
                   ]}
                 >
                   <View style={styles.historyLeft}>
-                    <View
-                      style={[
-                        styles.historyIcon,
-                        { backgroundColor: 'rgba(255,255,255,0.05)' },
-                      ]}
-                    >
+                    <View style={styles.historyIcon}>
                       <Text style={styles.historyIconText}>👟</Text>
                     </View>
                     <View>
@@ -391,31 +430,30 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                     <Text style={[styles.historySteps, { color: colors.text }]}>
                       {formatStepsWithCommas(entry.steps)} steps
                     </Text>
-                    <TouchableOpacity
+                    <Pressable
                       onPress={() => handleDeleteEntry(entry)}
-                      style={styles.deleteButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      activeOpacity={0.7}
+                      style={({ pressed }) => [styles.deleteButton, pressed && { opacity: 0.6 }]}
+                      hitSlop={8}
                     >
                       <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FF453A" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                         <Path d="M3 6h18" />
                         <Path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
                       </Svg>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 </View>
               );
             })}
           </AnimatedCard>
 
-          <View style={{ height: 100 }} />
+          <View style={styles.bottomSpacer} />
         </ScrollView>
       </AnimatedScreen>
 
       {/* Goal Modal */}
       <Modal
         visible={showGoalModal}
-        onClose={() => setShowGoalModal(false)}
+        onClose={handleCloseGoalModal}
         title="Set Step Goal"
       >
         <Input
@@ -427,20 +465,7 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
         />
         <Button
           title="Save"
-          onPress={async () => {
-            const steps = parseInt(goalInput);
-            if (steps > 0) {
-              try {
-                stepsStore.setDailyGoal(steps);
-                await stepsStore.loadTodaySteps(user!.id);
-                await stepsStore.loadWeeklySteps(user!.id);
-                setGoalInput('');
-                setShowGoalModal(false);
-              } catch (e: any) {
-                Alert.alert('Error', e.message || 'Failed to set daily goal');
-              }
-            }
-          }}
+          onPress={handleSaveGoal}
           fullWidth
           style={{ backgroundColor: colors.text, marginTop: spacing.base }}
           textStyle={{ color: colors.background }}
@@ -450,27 +475,10 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
       {/* Custom Delete Confirmation Alert */}
       <CustomAlert
         visible={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
+        onClose={handleCloseDeleteAlert}
         title="Delete Step Entry"
         message={deleteTarget ? `Are you sure you want to delete ${formatStepsWithCommas(deleteTarget.steps)} steps from ${formatDate(deleteTarget.date, 'short')}?` : ''}
-        actions={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setDeleteTarget(null) },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              if (deleteTarget) {
-                try {
-                  await stepsStore.deleteEntry(deleteTarget.id);
-                } catch (e: any) {
-                  Alert.alert('Error', e.message || 'Failed to delete step entry');
-                } finally {
-                  setDeleteTarget(null);
-                }
-              }
-            },
-          },
-        ]}
+        actions={deleteAlertActions}
       />
     </SafeAreaView>
   );
@@ -494,78 +502,76 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
   },
-  settingsIcon: { fontSize: 20 },
   title: {
-    fontSize: 26,
+    fontSize: typography.h2.fontSize,
     fontWeight: '700',
-    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 16,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
+    fontSize: typography.body.fontSize,
+    marginBottom: spacing.xl,
   },
   progressCard: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   progressContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.xl,
+    alignItems: 'center',
+    marginBottom: spacing.base,
   },
   progressLeft: {
     flex: 1,
   },
-  progressRight: {},
   progressLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: spacing.xs,
+    fontSize: typography.caption.fontSize,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   stepsRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
+    marginVertical: spacing.xs,
   },
   stepsValue: {
-    fontSize: 56,
-    fontWeight: '800',
-    letterSpacing: -1,
+    fontSize: typography.h1.fontSize,
+    fontWeight: '700',
   },
   stepsUnit: {
-    fontSize: 18,
-    fontWeight: '500',
+    fontSize: typography.body.fontSize,
     marginLeft: spacing.xs,
   },
   goalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
   },
   goalText: {
-    fontSize: 12,
+    fontSize: typography.caption.fontSize,
     fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  illustrationCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stepsIllustration: {
     width: 90,
     height: 90,
-    borderRadius: 45,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   stepsIconCenter: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  goalUnderRing: {
+    fontSize: typography.caption.fontSize,
+    fontWeight: '500',
+    marginTop: spacing.xs,
   },
   progressBarContainer: {
     flexDirection: 'row',
@@ -574,51 +580,48 @@ const styles = StyleSheet.create({
   },
   progressTrack: {
     flex: 1,
-    height: 16,
-    borderRadius: 8,
+    height: 8,
+    borderRadius: 4,
     overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 8,
+    borderRadius: 4,
   },
   percentageText: {
-    fontSize: 18,
+    fontSize: typography.caption.fontSize,
     fontWeight: '700',
-    minWidth: 50,
+    minWidth: 40,
     textAlign: 'right',
   },
   chartCard: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   chartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   cardTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: typography.h4.fontSize,
+    fontWeight: '600',
   },
   chartContainer: {
-    alignItems: 'center',
+    marginVertical: spacing.sm,
   },
   statsCard: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   statsRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    justifyContent: 'space-around',
+    alignItems: 'center',
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: '100%',
-    opacity: 0.5,
   },
   statIcon: {
     width: 40,
@@ -626,27 +629,33 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
-  statIconText: { fontSize: 18 },
+  statIconText: {
+    fontSize: 20,
+  },
   statLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
+    fontSize: typography.caption.fontSize,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
     marginBottom: spacing.xs,
   },
   statValue: {
-    fontSize: 18,
+    fontSize: typography.h3.fontSize,
     fontWeight: '700',
-    textAlign: 'center',
+    marginBottom: 2,
   },
   statUnit: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 2,
+    fontSize: typography.caption.fontSize,
+  },
+  statDivider: {
+    width: 1,
+    height: 60,
   },
   historyCard: {
-    marginBottom: spacing.base,
+    marginBottom: spacing.lg,
   },
   historyItem: {
     flexDirection: 'row',
@@ -654,61 +663,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.md,
   },
+  historyItemBorder: {
+    borderBottomWidth: 1,
+  },
   historyLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
   },
   historyIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
-  historyIconText: { fontSize: 18 },
+  historyIconText: {
+    fontSize: 18,
+  },
   historyDate: {
-    fontSize: 16,
+    fontSize: typography.body.fontSize,
     fontWeight: '500',
   },
   historyDay: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  historySteps: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: typography.caption.fontSize,
   },
   historyRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
+  },
+  historySteps: {
+    fontSize: typography.body.fontSize,
+    fontWeight: '600',
   },
   deleteButton: {
     padding: spacing.xs,
-    marginLeft: spacing.xs,
   },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.base,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    gap: spacing.xs,
-  },
-  addButtonIcon: {
-    fontSize: 18,
-    fontWeight: '300',
-  },
-  addButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  goalUnderRing: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 6,
-    textAlign: 'center',
+  bottomSpacer: {
+    height: 100,
   },
 });

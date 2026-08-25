@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -28,19 +28,28 @@ import { Logo } from '../../components/common/Logo';
 import { observer } from 'mobx-react-lite';
 import { useAuth, useColors, useSettingsStore } from '../../hooks';
 import { spacing, typography, radius } from '../../theme';
-import { errorLogs, logger } from '../../utils/logger';
+import { getErrorLogs, logger } from '../../utils/logger';
 import { CONFIG } from '../../config/constants';
 import { crashReportsService } from '../../services/firebase/crashReports';
 import { aiService, AIProvider, SavedKey } from '../../services/ai/aiService';
+import { firebaseAuthService } from '../../services/firebase/auth';
+import { storage } from '../../utils/storage';
 import { updateService, type UpdateInfo } from '../../services/update/updateService';
 import { UpdateModal } from '../../components/common/UpdateModal';
 
 export const SettingsScreen = observer(() => {
   const colors = useColors();
   const navigation = useNavigation();
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, deleteAccount, updateProfile } = useAuth();
   const settingsStore = useSettingsStore();
   const [showLogoutAlert, setShowLogoutAlert] = useState(false);
+  const [showDeleteAccountAlert, setShowDeleteAccountAlert] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteErrorMessage, setDeleteErrorMessage] = useState('');
+  const [showDeleteErrorAlert, setShowDeleteErrorAlert] = useState(false);
+  const [showReauthModal, setShowReauthModal] = useState(false);
+  const [reauthPassword, setReauthPassword] = useState('');
+  const [reauthError, setReauthError] = useState('');
   const [showEditNameModal, setShowEditNameModal] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [isUpdatingName, setIsUpdatingName] = useState(false);
@@ -63,13 +72,14 @@ export const SettingsScreen = observer(() => {
   const initialGender = user?.profile?.gender || 'male';
   const [gender, setGender] = useState<'male' | 'female'>(initialGender as any);
   const [heightInput, setHeightInput] = useState(user?.profile?.height ? String(user.profile.height) : '');
-  const [containerWidth, setContainerWidth] = useState(140);
+  const [containerWidth, setContainerWidth] = useState(0);
 
-  const slideOffset = useSharedValue(initialGender === 'male' ? 0 : 70);
+  const slideOffset = useSharedValue(0);
 
   useEffect(() => {
-    // Sync shared value when gender or containerWidth changes
-    slideOffset.value = gender === 'male' ? 0 : containerWidth / 2;
+    if (containerWidth > 0) {
+      slideOffset.value = gender === 'male' ? 0 : containerWidth / 2;
+    }
   }, [gender, containerWidth]);
 
   const handleGenderChange = async (newGender: 'male' | 'female') => {
@@ -110,8 +120,59 @@ export const SettingsScreen = observer(() => {
     transform: [{ translateX: withSpring(slideOffset.value, { damping: 20, stiffness: 220 }) }],
   }));
 
+  const avatarSource = useMemo(
+    () => (user?.avatarUrl ? { uri: user.avatarUrl } : null),
+    [user?.avatarUrl]
+  );
+
   const handleLogout = () => {
     setShowLogoutAlert(true);
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeletingAccount(true);
+    try {
+      await deleteAccount();
+    } catch (e: any) {
+      logger.error('[SettingsScreen] Failed to delete account:', e);
+      const msg = e?.message || 'Failed to delete account. Please try again.';
+      const needsReauth =
+        e?.code === 'auth/requires-recent-login' ||
+        msg.toLowerCase().includes('log out and log back in') ||
+        msg.toLowerCase().includes('recent authentication');
+      if (needsReauth) {
+        setReauthError('');
+        setReauthPassword('');
+        setShowReauthModal(true);
+      } else {
+        setDeleteErrorMessage(msg);
+        setShowDeleteErrorAlert(true);
+      }
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const handleReauthAndDelete = async () => {
+    if (!user?.email || !reauthPassword) {
+      setReauthError('Please enter your password to confirm.');
+      return;
+    }
+    setIsDeletingAccount(true);
+    setReauthError('');
+    try {
+      await firebaseAuthService.reauthenticate(user.email, reauthPassword);
+      // Store the credential so the actual delete call can re-use it without re-asking.
+      storage.set(`auth_credentials_${user.id}`, { email: user.email, password: reauthPassword });
+      setShowReauthModal(false);
+      setReauthPassword('');
+      await handleDeleteAccount();
+    } catch (e: any) {
+      logger.error('[SettingsScreen] Reauth failed:', e);
+      setReauthError(e?.message || 'Incorrect password. Please try again.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   const handleSendCrashReport = async () => {
@@ -126,7 +187,7 @@ export const SettingsScreen = observer(() => {
         workout: settingsStore.workout,
         recordBugReports: settingsStore.recordBugReports,
       },
-      diagnosticLogs: errorLogs,
+      diagnosticLogs: getErrorLogs(),
     });
 
     const crashReport = JSON.stringify(payload, null, 2);
@@ -210,26 +271,41 @@ export const SettingsScreen = observer(() => {
                   PROFILE
                 </Text>
               </View>
-              <TouchableOpacity
-                style={[
-                  styles.logoutPill,
-                  {
-                    backgroundColor: 'rgba(255,255,255,0.06)',
-                    borderColor: colors.cardBorder,
-                  },
-                ]}
-                onPress={handleLogout}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.logoutText, { color: colors.text }]}>Logout</Text>
-              </TouchableOpacity>
+              <View style={styles.profileHeaderActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.logoutPill,
+                    {
+                      backgroundColor: 'rgba(255,255,255,0.06)',
+                      borderColor: colors.cardBorder,
+                    },
+                  ]}
+                  onPress={handleLogout}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.logoutText, { color: colors.text }]}>Logout</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.deleteAccountPill,
+                    {
+                      backgroundColor: 'rgba(255, 69, 58, 0.12)',
+                      borderColor: 'rgba(255, 69, 58, 0.4)',
+                    },
+                  ]}
+                  onPress={() => setShowDeleteAccountAlert(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.deleteAccountText, { color: '#FF453A' }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.profileInfo}>
               {/* Profile Picture - show image if avatarUrl exists, otherwise initial */}
-              {user?.avatarUrl ? (
+              {avatarSource ? (
                 <Image
-                  source={{ uri: user.avatarUrl }}
+                  source={avatarSource}
                   style={styles.avatarImage}
                 />
               ) : (
@@ -250,17 +326,22 @@ export const SettingsScreen = observer(() => {
             </View>
 
             <TouchableOpacity
-              style={[styles.profileNav, { borderTopColor: colors.cardBorder }]}
+              style={[
+                styles.editNamePill,
+                {
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  borderColor: colors.cardBorder,
+                },
+              ]}
               onPress={() => {
                 setNameInput(user?.name || '');
                 setShowEditNameModal(true);
               }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.profileNavText, { color: colors.text }]}>
+              <Text style={[styles.editNamePillText, { color: colors.text }]}>
                 Edit Name
               </Text>
-              <Text style={[styles.chevron, { color: colors.textMuted }]}>›</Text>
             </TouchableOpacity>
           </AnimatedCard>
 
@@ -268,14 +349,22 @@ export const SettingsScreen = observer(() => {
           <AnimatedCard index={1} style={styles.sectionCard}>
             <View style={styles.statsCardRow}>
               {/* Gender selection */}
-              <View style={styles.statsCol}>
+              <View style={styles.statsColLeft}>
                 <Text style={[styles.statsLabel, { color: colors.textMuted }]}>GENDER</Text>
                 <View 
                   onLayout={(e: LayoutChangeEvent) => setContainerWidth(e.nativeEvent.layout.width)}
                   style={[styles.genderContainer, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}
                 >
                   {/* Bubble animation */}
-                  <Animated.View style={[styles.genderBubble, { backgroundColor: 'rgba(255, 255, 255, 0.15)', width: containerWidth / 2 }, animatedBubbleStyle]} />
+                  {containerWidth > 0 && (
+                    <Animated.View
+                      style={[
+                        styles.genderBubble,
+                        { backgroundColor: 'rgba(255, 255, 255, 0.15)', width: containerWidth / 2 },
+                        animatedBubbleStyle,
+                      ]}
+                    />
+                  )}
                   <TouchableOpacity
                     style={styles.genderPill}
                     onPress={() => handleGenderChange('male')}
@@ -297,10 +386,13 @@ export const SettingsScreen = observer(() => {
                 </View>
               </View>
 
+              {/* Vertical divider */}
+              <View style={[styles.statsDivider, { backgroundColor: colors.cardBorder }]} />
+
               {/* Height selection */}
-              <View style={[styles.statsCol, { borderLeftWidth: 1, borderLeftColor: colors.cardBorder, paddingLeft: spacing.lg }]}>
+              <View style={styles.statsColRight}>
                 <Text style={[styles.statsLabel, { color: colors.textMuted }]}>HEIGHT</Text>
-                <View style={styles.heightInputContainer}>
+                <View style={[styles.heightInputContainer, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}>
                   <TextInput
                     keyboardType="numeric"
                     placeholder="--"
@@ -308,9 +400,10 @@ export const SettingsScreen = observer(() => {
                     value={heightInput}
                     onChangeText={handleHeightChangeText}
                     onBlur={handleHeightBlur}
-                    style={[styles.heightInputText, { color: colors.text, borderBottomColor: colors.cardBorder }]}
+                    style={[styles.heightInputText, { color: colors.text }]}
+                    maxLength={3}
                   />
-                  <Text style={[styles.heightUnitLabel, { color: colors.textSecondary }]}>cm</Text>
+                  <Text style={[styles.heightUnitLabel, { color: colors.textMuted }]}>cm</Text>
                 </View>
               </View>
             </View>
@@ -400,7 +493,6 @@ export const SettingsScreen = observer(() => {
           {/* Help Improve FiTrack (Crash Reports) */}
           <AnimatedCard index={3} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionIcon}>♡</Text>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
                 HELP IMPROVE FITRACK
               </Text>
@@ -417,7 +509,6 @@ export const SettingsScreen = observer(() => {
               onPress={handleSendCrashReport}
               activeOpacity={0.7}
             >
-              <Text style={styles.crashIcon}>🐛</Text>
               <Text style={[styles.crashButtonText, { color: colors.text }]}>
                 Send Crash Report
               </Text>
@@ -434,8 +525,7 @@ export const SettingsScreen = observer(() => {
             </Text>
 
             {[
-              'Crash reports are sent automatically when an error occurs.',
-              'The "Record Bug Reports" toggle controls local error logging.',
+              'The "Record Bug Reports" toggle controls local error logging. It is off by default — turn it on to help us fix issues.',
               'Tap "Send Crash Report" to manually send a report anytime.',
               'Your reports help us make FiTrack better for everyone.',
             ].map((step, index) => (
@@ -481,12 +571,32 @@ export const SettingsScreen = observer(() => {
                 thumbColor="#FFFFFF"
               />
             </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingTextGroup}>
+                <Text style={[styles.settingTitle, { color: colors.text }]}>
+                  Restart Step Tracking on Boot
+                </Text>
+                <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                  Automatically resume step counting after a device reboot when step
+                  tracking was active.
+                </Text>
+              </View>
+              <Switch
+                value={settingsStore.restartOnBoot}
+                onValueChange={(val) => settingsStore.setRestartOnBoot(val)}
+                trackColor={{
+                  false: 'rgba(255,255,255,0.12)',
+                  true: 'rgba(255,255,255,0.35)',
+                }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
           </AnimatedCard>
 
           {/* App Updates Section */}
           <AnimatedCard index={5} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionIcon}>🔄</Text>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
                 APP UPDATES
               </Text>
@@ -496,6 +606,9 @@ export const SettingsScreen = observer(() => {
               <View style={styles.settingTextGroup}>
                 <Text style={[styles.settingTitle, { color: colors.text }]}>
                   Check for Updates
+                </Text>
+                <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                  FiTrack v{CONFIG.APP_VERSION} is installed.
                 </Text>
               </View>
               <TouchableOpacity
@@ -508,6 +621,9 @@ export const SettingsScreen = observer(() => {
                 ]}
                 onPress={async () => {
                   setIsCheckingUpdate(true);
+                  // Force-check clears the in-memory "Later" so a deferred
+                  // update is shown again when the user explicitly asks.
+                  updateService.clearSessionDismissed();
                   try {
                     const info = await updateService.checkForUpdate(true);
                     if (info) {
@@ -527,8 +643,34 @@ export const SettingsScreen = observer(() => {
                 activeOpacity={0.7}
               >
                 <Text style={[styles.logoutText, { color: colors.text }]}>
-                  {isCheckingUpdate ? 'Checking...' : 'Check for Updates'}
+                  {isCheckingUpdate ? 'Checking...' : 'Check'}
                 </Text>
+              </TouchableOpacity>
+            </View>
+          </AnimatedCard>
+
+          {/* About Section */}
+          <AnimatedCard index={6} style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+                ABOUT
+              </Text>
+            </View>
+
+            <View style={[styles.legalRow, { borderBottomColor: colors.cardBorder }]}>
+              <Text style={[styles.legalText, { color: colors.text }]}>Check old APKs</Text>
+              <TouchableOpacity
+                style={[
+                  styles.logoutPill,
+                  {
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
+                onPress={() => Linking.openURL(CONFIG.GITHUB_RELEASES_URL)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.logoutText, { color: colors.text }]}>View</Text>
               </TouchableOpacity>
             </View>
           </AnimatedCard>
@@ -540,6 +682,42 @@ export const SettingsScreen = observer(() => {
           </View>
         </ScrollView>
       </AnimatedScreen>
+
+      <CustomAlert
+        visible={showLogoutAlert}
+        onClose={() => setShowLogoutAlert(false)}
+        title="Logout"
+        message="Are you sure you want to logout?"
+        actions={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowLogoutAlert(false) },
+          {
+            text: 'Logout',
+            style: 'destructive',
+            onPress: () => {
+              setShowLogoutAlert(false);
+              logout();
+            },
+          },
+        ]}
+      />
+
+      <CustomAlert
+        visible={showDeleteAccountAlert}
+        onClose={() => setShowDeleteAccountAlert(false)}
+        title="Delete Account"
+        message="Are you sure you want to permanently delete your account? All your workouts, weight logs, step history, and profile data will be permanently removed. This action cannot be undone."
+        actions={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowDeleteAccountAlert(false) },
+          {
+            text: isDeletingAccount ? 'Deleting...' : 'Delete',
+            style: 'destructive',
+            onPress: () => {
+              setShowDeleteAccountAlert(false);
+              handleDeleteAccount();
+            },
+          },
+        ]}
+      />
 
       <UpdateModal
         visible={showUpdateModal}
@@ -567,23 +745,53 @@ export const SettingsScreen = observer(() => {
         ]}
       />
 
-      <CustomAlert
-        visible={showLogoutAlert}
-        onClose={() => setShowLogoutAlert(false)}
-        title="Logout"
-        message="Are you sure you want to logout?"
-        actions={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setShowLogoutAlert(false) },
-          {
-            text: 'Logout',
-            style: 'destructive',
-            onPress: () => {
-              setShowLogoutAlert(false);
-              logout();
-            },
-          },
-        ]}
-      />
+      {/* Re-auth Modal: shown when Firebase requires a recent login for deletion. */}
+      <Modal
+        visible={showReauthModal}
+        onClose={() => {
+          if (!isDeletingAccount) {
+            setShowReauthModal(false);
+            setReauthPassword('');
+            setReauthError('');
+          }
+        }}
+        title="Confirm Your Password"
+      >
+        <Text style={[styles.modalDescText, { color: colors.textSecondary, marginBottom: spacing.base }]}>
+          For security, please re-enter your password to permanently delete your FiTrack account and all associated data.
+        </Text>
+        <Input
+          label="Password"
+          value={reauthPassword}
+          onChangeText={setReauthPassword}
+          placeholder="Your password"
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {reauthError ? (
+          <Text style={{ color: '#FF453A', fontSize: 13, marginTop: spacing.sm }}>{reauthError}</Text>
+        ) : null}
+        <Button
+          title={isDeletingAccount ? 'Verifying...' : 'Verify and Delete'}
+          disabled={isDeletingAccount}
+          onPress={handleReauthAndDelete}
+          fullWidth
+          style={{ marginTop: spacing.base, backgroundColor: '#FF453A' }}
+        />
+        <Button
+          title="Cancel"
+          variant="secondary"
+          disabled={isDeletingAccount}
+          onPress={() => {
+            setShowReauthModal(false);
+            setReauthPassword('');
+            setReauthError('');
+          }}
+          fullWidth
+          style={{ marginTop: spacing.sm }}
+        />
+      </Modal>
 
       {/* Edit Name Modal */}
       <Modal
@@ -623,7 +831,8 @@ export const SettingsScreen = observer(() => {
             }
           }}
           fullWidth
-          style={{ marginTop: spacing.base }}
+          style={{ marginTop: spacing.base, backgroundColor: colors.text }}
+          textStyle={{ color: colors.background }}
         />
       </Modal>
 
@@ -672,7 +881,7 @@ export const SettingsScreen = observer(() => {
                     }}
                     activeOpacity={0.7}
                   >
-                    <View style={{ flex: 1, marginRight: 4 }}>
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={[styles.modalProviderText, { color: colors.text }]} numberOfLines={1}>
                         {prov.label}
                       </Text>
@@ -683,7 +892,7 @@ export const SettingsScreen = observer(() => {
                       )}
                     </View>
                     {!alreadyHasKey && (
-                      <Text style={[styles.chevron, { color: colors.textMuted }]}>›</Text>
+                      <Text style={[styles.chevron, { color: colors.textMuted, position: 'absolute', right: 8 }]}>›</Text>
                     )}
                   </TouchableOpacity>
                 );
@@ -811,6 +1020,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.8,
   },
+  profileHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   logoutPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -819,6 +1033,42 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
     gap: spacing.xs,
+  },
+  deleteAccountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    gap: spacing.xs,
+  },
+  deleteAccountText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  editNamePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  editNamePillText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+  },
+  legalText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   logoutIcon: {
     fontSize: 14,
@@ -860,17 +1110,6 @@ const styles = StyleSheet.create({
   userEmail: {
     fontSize: 16,
     marginTop: 4,
-  },
-  profileNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: spacing.base,
-    borderTopWidth: 1,
-  },
-  profileNavText: {
-    fontSize: 16,
-    fontWeight: '400',
   },
   chevron: {
     fontSize: 22,
@@ -976,25 +1215,36 @@ const styles = StyleSheet.create({
     width: '48.5%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
     borderWidth: 1,
+    position: 'relative',
   },
   providerInfo: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   providerNameText: {
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
   providerKeyText: {
     fontSize: 12,
     marginTop: 2,
+    textAlign: 'center',
   },
   deleteKeyBtn: {
-    padding: 8,
+    position: 'absolute',
+    right: 4,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    padding: 6,
+    zIndex: 5,
   },
   modalDescText: {
     fontSize: 13,
@@ -1004,20 +1254,23 @@ const styles = StyleSheet.create({
     width: '48.5%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
     borderWidth: 1,
     marginBottom: spacing.xs,
+    position: 'relative',
   },
   modalProviderText: {
     fontSize: 13,
     fontWeight: '600',
+    textAlign: 'center',
   },
   alreadyHasKeyText: {
     fontSize: 12,
     fontWeight: '500',
+    textAlign: 'center',
   },
   whiteBackBtn: {
     width: 32,
@@ -1029,22 +1282,32 @@ const styles = StyleSheet.create({
   statsCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    width: '100%',
   },
-  statsCol: {
+  statsColLeft: {
     flex: 1,
+    paddingRight: spacing.md,
+  },
+  statsDivider: {
+    width: 1,
+    height: 44,
+    alignSelf: 'center',
+  },
+  statsColRight: {
+    flex: 1,
+    paddingLeft: spacing.md,
   },
   statsLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.5,
-    marginBottom: spacing.sm,
+    letterSpacing: 0.8,
+    marginBottom: spacing.xs,
   },
   genderContainer: {
     flexDirection: 'row',
     width: '100%',
-    height: 32,
-    borderRadius: radius.sm,
+    height: 38,
+    borderRadius: radius.md,
     borderWidth: 1,
     position: 'relative',
     overflow: 'hidden',
@@ -1054,6 +1317,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
+    borderRadius: radius.md - 1,
   },
   genderPill: {
     flex: 1,
@@ -1069,16 +1333,20 @@ const styles = StyleSheet.create({
   heightInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: 38,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
     gap: spacing.xs,
   },
   heightInputText: {
-    width: 60,
-    height: 32,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     textAlign: 'center',
-    borderBottomWidth: 1,
     padding: 0,
+    minWidth: 36,
   },
   heightUnitLabel: {
     fontSize: 13,

@@ -3,7 +3,7 @@ import { StatusBar, LogBox, View, Text, ScrollView, StyleSheet, TouchableOpacity
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { logger, errorLogs } from './utils/logger';
+import { logger, getErrorLogs } from './utils/logger';
 import { crashReportsService } from './services/firebase/crashReports';
 import { AppNavigator } from './navigation/AppNavigator';
 import { StoreContext, rootStore } from './stores';
@@ -17,7 +17,7 @@ const globalErrorHandler = (error: Error, isFatal?: boolean) => {
   logger.error('[Global] Unhandled error:', error, `isFatal: ${isFatal}`);
   if (isFatal || __DEV__) {
     const payload = crashReportsService.buildPayload({
-      diagnosticLogs: [...errorLogs, {
+      diagnosticLogs: [...getErrorLogs(), {
         timestamp: new Date().toISOString(),
         message: `${error.message}\n${error.stack || ''}`,
       }],
@@ -59,7 +59,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, Error
 
   async sendCrashReport(error: Error, componentStack?: string) {
     const payload = crashReportsService.buildPayload({
-      diagnosticLogs: [...errorLogs, {
+      diagnosticLogs: [...getErrorLogs(), {
         timestamp: new Date().toISOString(),
         message: `${error.message}\n${error.stack || ''}\nComponent Stack: ${componentStack || ''}`,
       }],

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, memo } from 'react';
 import { View, StyleSheet, LayoutChangeEvent, Dimensions } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -18,6 +18,7 @@ interface DraggableExerciseListProps {
   weightUnit?: 'kg' | 'lbs';
   scrollViewRef?: React.RefObject<any>;
   scrollYRef?: React.MutableRefObject<number>;
+  maxScrollYRef?: React.MutableRefObject<number>;
   onAddSet: (exerciseId: string) => void;
   onUpdateSet: (exerciseId: string, setId: string, updates: Partial<Set>) => void;
   onToggleSetComplete: (exerciseId: string, setId: string) => void;
@@ -37,11 +38,12 @@ const TIMING_CONFIG = {
   easing: Easing.out(Easing.quad),
 };
 
-export const DraggableExerciseList = ({
+export const DraggableExerciseList = memo(({
   exercises,
   weightUnit,
   scrollViewRef,
   scrollYRef,
+  maxScrollYRef,
   onAddSet,
   onUpdateSet,
   onToggleSetComplete,
@@ -57,13 +59,13 @@ export const DraggableExerciseList = ({
   // Store layout height & position of each item
   const [layouts, setLayouts] = useState<Record<number, ItemLayout>>({});
 
-  const handleLayout = (index: number, e: LayoutChangeEvent) => {
+  const handleLayout = useCallback((index: number, e: LayoutChangeEvent) => {
     const { y, height } = e.nativeEvent.layout;
     setLayouts((prev) => ({
       ...prev,
       [index]: { y, height },
     }));
-  };
+  }, []);
 
   const handleReorderJS = useCallback(
     (fromIdx: number, toIdx: number) => {
@@ -85,23 +87,31 @@ export const DraggableExerciseList = ({
           weightUnit={weightUnit}
           scrollViewRef={scrollViewRef}
           scrollYRef={scrollYRef}
+          maxScrollYRef={maxScrollYRef}
           activeIndex={activeIndex}
           translateY={translateY}
           targetIndex={targetIndex}
           layouts={layouts}
-          onLayout={(e) => handleLayout(index, e)}
-          onAddSet={() => onAddSet(exercise.id)}
-          onUpdateSet={(setId, updates) => onUpdateSet(exercise.id, setId, updates)}
-          onToggleSetComplete={(setId) => onToggleSetComplete(exercise.id, setId)}
-          onRemoveSet={(setId) => onRemoveSet(exercise.id, setId)}
-          onRemoveExercise={() => onRemoveExercise(exercise.id, exercise.exercise?.name)}
+          onLayout={handleLayout}
+          onAddSet={onAddSet}
+          onUpdateSet={onUpdateSet}
+          onToggleSetComplete={onToggleSetComplete}
+          onRemoveSet={onRemoveSet}
+          onRemoveExercise={onRemoveExercise}
           onStartRest={onStartRest}
           onReorder={handleReorderJS}
         />
       ))}
     </View>
   );
-};
+});
+
+DraggableExerciseList.displayName = 'DraggableExerciseList';
+
+const TOP_LIMIT_Y = 220; // Top boundary: card cannot travel above Customize / Rest Day buttons
+const BOTTOM_LIMIT_Y = SCREEN_HEIGHT - 170; // Bottom boundary: card cannot travel below bottom tab bar
+const TOP_TRIGGER_ZONE = 250; // Finger in top 250px triggers upward auto-scroll
+const BOTTOM_TRIGGER_ZONE = SCREEN_HEIGHT - 210; // Finger in bottom area triggers downward auto-scroll
 
 interface DraggableItemProps {
   exercise: WorkoutExercise;
@@ -110,27 +120,29 @@ interface DraggableItemProps {
   weightUnit?: 'kg' | 'lbs';
   scrollViewRef?: React.RefObject<any>;
   scrollYRef?: React.MutableRefObject<number>;
+  maxScrollYRef?: React.MutableRefObject<number>;
   activeIndex: Animated.SharedValue<number>;
   translateY: Animated.SharedValue<number>;
   targetIndex: Animated.SharedValue<number>;
   layouts: Record<number, ItemLayout>;
-  onLayout: (e: LayoutChangeEvent) => void;
-  onAddSet: () => void;
-  onUpdateSet: (setId: string, updates: Partial<Set>) => void;
-  onToggleSetComplete: (setId: string) => void;
-  onRemoveSet: (setId: string) => void;
-  onRemoveExercise: () => void;
+  onLayout: (index: number, e: LayoutChangeEvent) => void;
+  onAddSet: (exerciseId: string) => void;
+  onUpdateSet: (exerciseId: string, setId: string, updates: Partial<Set>) => void;
+  onToggleSetComplete: (exerciseId: string, setId: string) => void;
+  onRemoveSet: (exerciseId: string, setId: string) => void;
+  onRemoveExercise: (exerciseId: string, name?: string) => void;
   onStartRest?: (setId: string) => void;
   onReorder: (fromIdx: number, toIdx: number) => void;
 }
 
-const DraggableItem = ({
+const DraggableItem = memo(({
   exercise,
   index,
   totalCount,
   weightUnit,
   scrollViewRef,
   scrollYRef,
+  maxScrollYRef,
   activeIndex,
   translateY,
   targetIndex,
@@ -145,12 +157,55 @@ const DraggableItem = ({
   onReorder,
 }: DraggableItemProps) => {
   const isDraggingItem = useSharedValue<boolean>(false);
-  const itemOffsetY = useSharedValue<number>(0);
   const accumulatedScrollY = useSharedValue<number>(0);
+  const startCardScreenY = useSharedValue<number>(0);
   const initialScrollY = useRef<number>(0);
+  const latestTranslationYRef = useRef<number>(0);
   const autoScrollTimer = useRef<any>(null);
   const currentSpeedRef = useRef<number>(0);
+  const layoutsRef = useRef<Record<number, ItemLayout>>(layouts);
+  layoutsRef.current = layouts;
   const [isDraggingState, setIsDraggingState] = useState<boolean>(false);
+
+  const exerciseId = exercise.id;
+  const exerciseName = exercise.exercise?.name;
+
+  // Stabilize callbacks to ExerciseCard (list-performance-callbacks)
+  const handleAddSet = useCallback(() => {
+    onAddSet(exerciseId);
+  }, [onAddSet, exerciseId]);
+
+  const handleUpdateSet = useCallback(
+    (setId: string, updates: Partial<Set>) => {
+      onUpdateSet(exerciseId, setId, updates);
+    },
+    [onUpdateSet, exerciseId]
+  );
+
+  const handleToggleSetComplete = useCallback(
+    (setId: string) => {
+      onToggleSetComplete(exerciseId, setId);
+    },
+    [onToggleSetComplete, exerciseId]
+  );
+
+  const handleRemoveSet = useCallback(
+    (setId: string) => {
+      onRemoveSet(exerciseId, setId);
+    },
+    [onRemoveSet, exerciseId]
+  );
+
+  const handleRemoveExercise = useCallback(() => {
+    onRemoveExercise(exerciseId, exerciseName);
+  }, [onRemoveExercise, exerciseId, exerciseName]);
+
+  const handleItemLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      onLayout(index, e);
+    },
+    [onLayout, index]
+  );
 
   const stopAutoScroll = useCallback(() => {
     if (autoScrollTimer.current) {
@@ -162,14 +217,13 @@ const DraggableItem = ({
 
   const handleAutoScrollCheck = useCallback(
     (absoluteY: number) => {
-      const TOP_BOUND = 180;
-      const BOTTOM_BOUND = SCREEN_HEIGHT - 180;
-
       let speed = 0;
-      if (absoluteY < TOP_BOUND) {
-        speed = -Math.min(22, Math.max(4, (TOP_BOUND - absoluteY) * 0.3));
-      } else if (absoluteY > BOTTOM_BOUND) {
-        speed = Math.min(22, Math.max(4, (absoluteY - BOTTOM_BOUND) * 0.3));
+      if (absoluteY <= TOP_TRIGGER_ZONE) {
+        const dist = TOP_TRIGGER_ZONE - absoluteY;
+        speed = -(10 + Math.min(22, dist * 0.35));
+      } else if (absoluteY >= BOTTOM_TRIGGER_ZONE) {
+        const dist = absoluteY - BOTTOM_TRIGGER_ZONE;
+        speed = 10 + Math.min(22, dist * 0.35);
       }
 
       currentSpeedRef.current = speed;
@@ -178,19 +232,44 @@ const DraggableItem = ({
         autoScrollTimer.current = setInterval(() => {
           if (!scrollViewRef?.current || currentSpeedRef.current === 0) return;
           const currentY = scrollYRef?.current || 0;
-          const nextY = Math.max(0, currentY + currentSpeedRef.current);
+          const maxScroll = maxScrollYRef?.current ?? 3000;
+          const nextY = Math.min(maxScroll, Math.max(0, currentY + currentSpeedRef.current));
           if (nextY !== currentY) {
-            scrollViewRef.current.scrollTo({ y: nextY, animated: false });
+            scrollViewRef.current.scrollTo({ y: nextY, x: 0, animated: false });
             if (scrollYRef) scrollYRef.current = nextY;
             const delta = nextY - initialScrollY.current;
             accumulatedScrollY.value = delta;
+
+            // Continuously update card translateY and target index while scrolling under stationary finger
+            const currentTotalY = latestTranslationYRef.current + delta;
+            translateY.value = currentTotalY;
+
+            const curLayouts = layoutsRef.current;
+            const currentLayout = curLayouts[index];
+            if (currentLayout) {
+              const draggedCenterY = currentLayout.y + currentLayout.height / 2 + currentTotalY;
+              let newTarget = index;
+              for (let i = 0; i < totalCount; i++) {
+                if (i === index) continue;
+                const itemL = curLayouts[i];
+                if (!itemL) continue;
+
+                const itemCenterY = itemL.y + itemL.height / 2;
+                if (i < index && draggedCenterY < itemCenterY) {
+                  newTarget = Math.min(newTarget, i);
+                } else if (i > index && draggedCenterY > itemCenterY) {
+                  newTarget = Math.max(newTarget, i);
+                }
+              }
+              targetIndex.value = newTarget;
+            }
           }
         }, 16);
       } else if (speed === 0 && autoScrollTimer.current) {
         stopAutoScroll();
       }
     },
-    [scrollViewRef, scrollYRef, stopAutoScroll, accumulatedScrollY]
+    [scrollViewRef, scrollYRef, maxScrollYRef, stopAutoScroll, accumulatedScrollY, translateY, targetIndex, index, totalCount]
   );
 
   useEffect(() => {
@@ -202,38 +281,69 @@ const DraggableItem = ({
   const handleFinishSwap = useCallback(
     (fromIdx: number, toIdx: number) => {
       stopAutoScroll();
-      activeIndex.value = -1;
-      targetIndex.value = -1;
-      translateY.value = 0;
-      itemOffsetY.value = 0;
-      accumulatedScrollY.value = 0;
+      activeIndex.set(-1);
+      targetIndex.set(-1);
+      translateY.set(0);
+      accumulatedScrollY.set(0);
       setIsDraggingState(false);
       onReorder(fromIdx, toIdx);
     },
-    [onReorder, activeIndex, targetIndex, translateY, itemOffsetY, accumulatedScrollY, stopAutoScroll]
+    [onReorder, activeIndex, targetIndex, translateY, accumulatedScrollY, stopAutoScroll]
   );
+
+  const handleStartDrag = useCallback(() => {
+    if (scrollYRef) {
+      initialScrollY.current = scrollYRef.current;
+    }
+    latestTranslationYRef.current = 0;
+    setIsDraggingState(true);
+  }, [scrollYRef]);
+
+  const handleDragUpdate = useCallback(
+    (translationY: number, absoluteY: number) => {
+      latestTranslationYRef.current = translationY;
+      handleAutoScrollCheck(absoluteY);
+    },
+    [handleAutoScrollCheck]
+  );
+
+  const handleCancelDrag = useCallback(() => {
+    stopAutoScroll();
+    setIsDraggingState(false);
+  }, [stopAutoScroll]);
 
   const dragGesture = Gesture.Pan()
     .activateAfterLongPress(250)
-    .onStart(() => {
+    .onStart((event) => {
       'worklet';
-      activeIndex.value = index;
-      targetIndex.value = index;
-      isDraggingItem.value = true;
-      accumulatedScrollY.value = 0;
-      if (scrollYRef) {
-        runOnJS((val: number) => {
-          initialScrollY.current = val;
-        })(scrollYRef.current);
-      }
-      runOnJS(setIsDraggingState)(true);
+      activeIndex.set(index);
+      targetIndex.set(index);
+      isDraggingItem.set(true);
+      accumulatedScrollY.set(0);
+      startCardScreenY.set(event.absoluteY - event.y);
+      runOnJS(handleStartDrag)();
     })
     .onUpdate((event) => {
       'worklet';
-      const totalY = event.translationY + accumulatedScrollY.value;
-      translateY.value = totalY;
+      const cardTop0 = startCardScreenY.get();
+      const cardHeight = layouts[index]?.height ?? 160;
 
-      runOnJS(handleAutoScrollCheck)(event.absoluteY);
+      // Clamp card movement so it stays strictly below Customize/Rest Day buttons and above the Tab Bar
+      const minAllowedTranslation = TOP_LIMIT_Y - cardTop0;
+      const maxAllowedTranslation = Math.max(
+        minAllowedTranslation,
+        (BOTTOM_LIMIT_Y - cardHeight) - cardTop0
+      );
+
+      const clampedTranslationY = Math.min(
+        maxAllowedTranslation,
+        Math.max(minAllowedTranslation, event.translationY)
+      );
+
+      const totalY = clampedTranslationY + accumulatedScrollY.get();
+      translateY.set(totalY);
+
+      runOnJS(handleDragUpdate)(clampedTranslationY, event.absoluteY);
 
       // Estimate current drag item center relative to original position
       const currentLayout = layouts[index];
@@ -255,38 +365,36 @@ const DraggableItem = ({
           newTarget = Math.max(newTarget, i);
         }
       }
-      targetIndex.value = newTarget;
+      targetIndex.set(newTarget);
     })
     .onFinalize(() => {
       'worklet';
-      const fromIdx = activeIndex.value;
-      const toIdx = targetIndex.value;
+      const fromIdx = activeIndex.get();
+      const toIdx = targetIndex.get();
 
       runOnJS(stopAutoScroll)();
-      isDraggingItem.value = false;
+      isDraggingItem.set(false);
 
       if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
         runOnJS(handleFinishSwap)(fromIdx, toIdx);
       } else {
-        translateY.value = 0;
-        itemOffsetY.value = 0;
-        accumulatedScrollY.value = 0;
-        activeIndex.value = -1;
-        targetIndex.value = -1;
-        runOnJS(setIsDraggingState)(false);
+        translateY.set(0);
+        accumulatedScrollY.set(0);
+        activeIndex.set(-1);
+        targetIndex.set(-1);
+        runOnJS(handleCancelDrag)();
       }
     });
 
   const animatedStyle = useAnimatedStyle(() => {
-    const isActive = activeIndex.value === index;
-    const isTargeting = activeIndex.value !== -1 && !isActive;
+    const currentActiveIdx = activeIndex.get();
+    const isActive = currentActiveIdx === index;
+    const isTargeting = currentActiveIdx !== -1 && !isActive;
 
     let shiftY = 0;
-    if (isActive) {
-      shiftY = translateY.value;
-    } else if (isTargeting) {
-      const activeIdx = activeIndex.value;
-      const targetIdx = targetIndex.value;
+    if (isTargeting) {
+      const activeIdx = currentActiveIdx;
+      const targetIdx = targetIndex.get();
       const activeLayout = layouts[activeIdx];
 
       if (activeLayout) {
@@ -299,51 +407,43 @@ const DraggableItem = ({
       }
     }
 
-    if (isActive) {
-      itemOffsetY.value = translateY.value;
-    } else if (activeIndex.value === -1) {
-      itemOffsetY.value = 0;
-    } else {
-      itemOffsetY.value = withTiming(shiftY, TIMING_CONFIG);
-    }
-
     return {
       transform: [
-        { translateY: itemOffsetY.value },
-        { scale: isActive ? 1.01 : 1 },
+        { translateY: isActive ? translateY.get() : withTiming(shiftY, TIMING_CONFIG) },
+        { scale: isActive ? withTiming(1.02, { duration: 120 }) : withTiming(1, { duration: 120 }) },
       ],
-      zIndex: isActive ? 999 : 1,
-      elevation: isActive ? 8 : 0,
-      shadowOpacity: isActive ? 0.25 : 0,
+      zIndex: isActive ? 9999 : 1,
+      elevation: isActive ? 24 : 0,
+      opacity: isActive ? 0.96 : 1,
     };
   });
 
   return (
     <GestureDetector gesture={dragGesture}>
-      <Animated.View onLayout={onLayout} style={[styles.cardShadow, animatedStyle]}>
+      <Animated.View onLayout={handleItemLayout} style={[styles.cardShadow, animatedStyle]}>
         <ExerciseCard
           exercise={exercise}
           weightUnit={weightUnit}
-          onAddSet={onAddSet}
-          onUpdateSet={onUpdateSet}
-          onToggleSetComplete={onToggleSetComplete}
-          onRemoveSet={onRemoveSet}
-          onRemoveExercise={onRemoveExercise}
+          onAddSet={handleAddSet}
+          onUpdateSet={handleUpdateSet}
+          onToggleSetComplete={handleToggleSetComplete}
+          onRemoveSet={handleRemoveSet}
+          onRemoveExercise={handleRemoveExercise}
           onStartRest={onStartRest}
           isDragging={isDraggingState}
         />
       </Animated.View>
     </GestureDetector>
   );
-};
+});
+
+DraggableItem.displayName = 'DraggableItem';
 
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
   },
   cardShadow: {
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
+    position: 'relative',
   },
 });

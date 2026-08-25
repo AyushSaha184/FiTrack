@@ -1,5 +1,5 @@
-import React, { memo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { memo, useState, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Svg, { Path, Polyline, Line } from 'react-native-svg';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
@@ -21,28 +21,6 @@ interface ExerciseCardProps {
   isDragging?: boolean;
 }
 
-// Get appropriate emoji icon based on equipment type
-const getEquipmentIcon = (equipment?: string): string => {
-  switch (equipment?.toLowerCase()) {
-    case 'barbell':
-      return '🏋️';
-    case 'dumbbell':
-      return '🏋️‍♂️';
-    case 'machine':
-      return '⚙️';
-    case 'cable':
-      return '🔗';
-    case 'bodyweight':
-      return '🤸';
-    case 'kettlebell':
-      return '🔔';
-    case 'resistance_band':
-      return '🎗️';
-    default:
-      return '💪';
-  }
-};
-
 export const ExerciseCard = memo<ExerciseCardProps>(({
   exercise,
   weightUnit = 'kg',
@@ -56,20 +34,44 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
 }) => {
   const colors = useColors();
   const collapsedKey = exercise.exerciseId || exercise.id;
+
+  // Lazy state init
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     const map = storage.get<Record<string, boolean>>('workout.collapsed_exercises') || {};
     return !!map[collapsedKey];
   });
 
-  const toggleCollapse = () => {
-    const nextState = !isCollapsed;
-    setIsCollapsed(nextState);
-    const map = storage.get<Record<string, boolean>>('workout.collapsed_exercises') || {};
-    map[collapsedKey] = nextState;
-    storage.set('workout.collapsed_exercises', map);
-  };
+  // Functional setState updater with useCallback (rerender-functional-setstate)
+  const toggleCollapse = useCallback(() => {
+    setIsCollapsed((prev) => {
+      const nextState = !prev;
+      const map = storage.get<Record<string, boolean>>('workout.collapsed_exercises') || {};
+      map[collapsedKey] = nextState;
+      storage.set('workout.collapsed_exercises', map);
+      return nextState;
+    });
+  }, [collapsedKey]);
 
-  const completedSetsCount = exercise.sets.filter((s) => s.completed).length;
+  // Stable callbacks for SetRow instances (list-performance-callbacks)
+  const handleWeightChange = useCallback(
+    (setId: string, weight: number) => {
+      onUpdateSet(setId, { weight });
+    },
+    [onUpdateSet]
+  );
+
+  const handleRepsChange = useCallback(
+    (setId: string, reps: number) => {
+      onUpdateSet(setId, { reps });
+    },
+    [onUpdateSet]
+  );
+
+  // Derived counts during render (rerender-derived-state-no-effect)
+  const completedSetsCount = useMemo(
+    () => exercise.sets.filter((s) => s.completed).length,
+    [exercise.sets]
+  );
   const totalSetsCount = exercise.sets.length;
 
   return (
@@ -77,19 +79,14 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
       padding="base"
       style={[
         styles.container,
-        isDragging && {
-          borderColor: 'rgba(255, 255, 255, 0.7)',
-          borderWidth: 2.5,
-          backgroundColor: '#1C1C1E',
-        },
+        isDragging && styles.draggingContainer,
       ]}
     >
       {/* Header — Tapping exercise name line expands/collapses card */}
-      <View style={[styles.header, isCollapsed && { marginBottom: 0 }]}>
-        <TouchableOpacity
+      <View style={[styles.header, isCollapsed && styles.headerCollapsed]}>
+        <Pressable
           style={styles.exerciseInfo}
           onPress={toggleCollapse}
-          activeOpacity={0.7}
         >
           <View style={styles.nameContainer}>
             <View style={styles.titleRow}>
@@ -114,21 +111,20 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
               </Svg>
             </View>
 
-            {isCollapsed && (
+            {isCollapsed ? (
               <Text style={[styles.summaryText, { color: colors.textSecondary }]}>
                 {totalSetsCount} {totalSetsCount === 1 ? 'set' : 'sets'}
                 {completedSetsCount > 0 ? ` (${completedSetsCount} completed)` : ''}
               </Text>
-            )}
+            ) : null}
           </View>
-        </TouchableOpacity>
+        </Pressable>
 
-        {/* Delete Icon Button */}
-        <TouchableOpacity
+        {/* Delete Icon Button (ui-pressable) */}
+        <Pressable
           onPress={onRemoveExercise}
-          style={styles.deleteButton}
-          activeOpacity={0.7}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={({ pressed }) => [styles.deleteButton, pressed && { opacity: 0.6 }]}
+          hitSlop={10}
         >
           <Svg
             width={18}
@@ -145,14 +141,14 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
             <Line x1="10" y1="11" x2="10" y2="17" />
             <Line x1="14" y1="11" x2="14" y2="17" />
           </Svg>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Table & Content (Hidden when collapsed) */}
-      {!isCollapsed && (
+      {!isCollapsed ? (
         <>
           <View style={styles.tableHeader}>
-            <View style={{ width: 24 + spacing.xs }} />
+            <View style={styles.tableHeaderSpacer} />
             <Text style={[styles.headerText, styles.setCol, { color: colors.textMuted }]}>
               SET
             </Text>
@@ -171,13 +167,14 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
             <SetRow
               key={set.id}
               set={set}
+              setId={set.id}
               setNumber={index + 1}
               weightUnit={weightUnit}
-              onWeightChange={(weight) => onUpdateSet(set.id, { weight })}
-              onRepsChange={(reps) => onUpdateSet(set.id, { reps })}
-              onToggleComplete={() => onToggleSetComplete(set.id)}
-              onDelete={() => onRemoveSet(set.id)}
-              onStartRest={onStartRest ? () => onStartRest(set.id) : undefined}
+              onWeightChange={handleWeightChange}
+              onRepsChange={handleRepsChange}
+              onToggleComplete={onToggleSetComplete}
+              onDelete={onRemoveSet}
+              onStartRest={onStartRest}
             />
           ))}
 
@@ -190,7 +187,7 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
             style={styles.addSetButton}
           />
         </>
-      )}
+      ) : null}
     </Card>
   );
 });
@@ -201,33 +198,23 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: spacing.base,
   },
+  draggingContainer: {
+    borderColor: 'rgba(255, 255, 255, 0.7)',
+    borderWidth: 2.5,
+    backgroundColor: '#1C1C1E',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.base,
   },
+  headerCollapsed: {
+    marginBottom: 0,
+  },
   exerciseInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
-  },
-  iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.base,
-  },
-  iconText: {
-    fontSize: 22,
-  },
-  exerciseImage: {
-    width: 28,
-    height: 28,
-  },
-  textInfo: {
     flex: 1,
   },
   exerciseName: {
@@ -259,6 +246,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.08)',
     marginBottom: spacing.xs,
+  },
+  tableHeaderSpacer: {
+    width: 24 + spacing.xs,
   },
   headerText: {
     fontSize: 11,

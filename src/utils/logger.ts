@@ -16,11 +16,32 @@ function saveLogs(logs: LogEntry[]): void {
   storage.set(STORAGE_KEYS.ERROR_LOGS, logs);
 }
 
-export const errorLogs: LogEntry[] = loadLogs();
+/**
+ * Re-read the on-disk log buffer on demand. The in-memory `errorLogs` array
+ * is kept in sync by `recordLog`. Always re-read at crash-report submission
+ * time so we capture entries that may have been appended after the module
+ * was first imported (e.g. by error boundaries in other parts of the app).
+ */
+export function getErrorLogs(): LogEntry[] {
+  return loadLogs();
+}
+
+function recordLog(timestamp: string, message: string) {
+  const logs = loadLogs();
+  logs.push({ timestamp, message });
+  if (logs.length > MAX_LOGS) {
+    logs.splice(0, logs.length - MAX_LOGS);
+  }
+  saveLogs(logs);
+}
 
 export const logger = {
   error(...args: any[]) {
-    const enabled = storage.get<boolean>(STORAGE_KEYS.RECORD_BUG_REPORTS) ?? true;
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.error(...args);
+    }
+    const enabled = storage.get<boolean>(STORAGE_KEYS.RECORD_BUG_REPORTS) ?? false;
     if (enabled) {
       const timestamp = new Date().toISOString();
       const message = args
@@ -37,27 +58,27 @@ export const logger = {
         })
         .join(' ');
 
-      errorLogs.push({ timestamp, message });
-      if (errorLogs.length > MAX_LOGS) {
-        errorLogs.shift();
-      }
-      saveLogs(errorLogs);
+      recordLog(timestamp, message);
     }
-    console.error(...args);
   },
 
   warn(...args: any[]) {
-    console.warn(...args);
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn(...args);
+    }
   },
 
   info(...args: any[]) {
     if (__DEV__) {
+      // eslint-disable-next-line no-console
       console.info(...args);
     }
   },
 
   debug(...args: any[]) {
     if (__DEV__) {
+      // eslint-disable-next-line no-console
       console.debug(...args);
     }
   },

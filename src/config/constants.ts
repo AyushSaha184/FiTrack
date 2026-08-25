@@ -20,4 +20,7 @@ export const CONFIG = {
   WORKOUT_PAGE_SIZE: 20,
   EXERCISE_LIBRARY_PAGE_SIZE: 50,
   DAILY_STEP_REFRESH_HOUR: 4,
+  PLAY_STORE_URL: 'https://play.google.com/store/apps/details?id=com.fitrack.app',
+  GITHUB_RELEASES_URL: 'https://github.com/AyushSaha184/FiTrack/releases',
+  SUPPORT_EMAIL: 'ayushsaha184@gmail.com',
 } as const;

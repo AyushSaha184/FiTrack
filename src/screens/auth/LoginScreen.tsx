@@ -98,11 +98,11 @@ export const LoginScreen = () => {
   };
 
   const handleLogin = async () => {
-    console.log('[LoginScreen] handleLogin triggered with email:', email);
+    logger.info('[LoginScreen] handleLogin triggered');
     const normalizedEmail = email.trim().toLowerCase();
     const result = loginSchema.safeParse({ email: normalizedEmail, password });
     if (!result.success) {
-      console.log('[LoginScreen] Validation failed:', result.error.errors);
+      logger.info('[LoginScreen] Validation failed:', result.error.errors);
       const fieldErrors: any = {};
       result.error.errors.forEach((e) => {
         if (e.path[0] === 'email') fieldErrors.email = e.message;
@@ -114,9 +114,9 @@ export const LoginScreen = () => {
 
     setErrors({});
     try {
-      console.log('[LoginScreen] Calling login function...');
+      logger.info('[LoginScreen] Calling login function...');
       await login(result.data);
-      console.log('[LoginScreen] Login completed successfully');
+      logger.info('[LoginScreen] Login completed successfully');
     } catch (e: any) {
       logger.error('[LoginScreen] Login caught error:', e);
       const generalError = mapAuthError(e);

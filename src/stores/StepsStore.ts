@@ -87,7 +87,7 @@ export class StepsStore {
 
   async loadTodaySteps(userId: string) {
     if (!userId) {
-      console.warn('[StepsStore] Skipping loadTodaySteps: invalid userId', userId);
+      if (__DEV__) logger.warn('[StepsStore] Skipping loadTodaySteps: invalid userId', userId);
       return;
     }
     try {
@@ -128,7 +128,7 @@ export class StepsStore {
 
   async addSteps(userId: string, steps: number, date?: Date) {
     if (!userId) {
-      console.warn('[StepsStore] Skipping addSteps: invalid userId', userId);
+      if (__DEV__) logger.warn('[StepsStore] Skipping addSteps: invalid userId', userId);
       return;
     }
     try {

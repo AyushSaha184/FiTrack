@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import {
   TouchableOpacity,
   Text,
@@ -33,6 +33,21 @@ interface ButtonProps {
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
+// Module-scope lookup tables so we don't allocate a new style object per
+// variant/size combination on every render. Each entry is a static object
+// referencing theme tokens (which are themselves stable references).
+const PADDING_BY_SIZE: Record<ButtonSize, { paddingVertical: number; paddingHorizontal: number }> = {
+  small: { paddingVertical: spacing.sm, paddingHorizontal: spacing.base },
+  medium: { paddingVertical: spacing.md, paddingHorizontal: spacing.xl },
+  large: { paddingVertical: spacing.lg, paddingHorizontal: spacing.xxl },
+};
+
+const FONT_SIZE_BY_SIZE: Record<ButtonSize, number> = {
+  small: 14,
+  medium: 16,
+  large: 18,
+};
+
 export const Button = memo<ButtonProps>(({
   title,
   onPress,
@@ -50,93 +65,62 @@ export const Button = memo<ButtonProps>(({
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    transform: [{ scale: scale.get() }],
   }));
 
   const handlePressIn = () => {
-    scale.value = withTiming(0.97, { duration: 120 });
+    scale.set(withTiming(0.97, { duration: 120 }));
   };
 
   const handlePressOut = () => {
-    scale.value = withTiming(1, { duration: 120 });
+    scale.set(withTiming(1, { duration: 120 }));
   };
 
-  const getBackgroundColor = () => {
-    if (disabled) return colors.textMuted;
-    switch (variant) {
-      case 'primary':
-        return colors.primary;
-      case 'secondary':
-        return colors.cardSurface;
-      case 'ghost':
-        return 'transparent';
-      case 'outline':
-        return 'transparent';
-      default:
-        return colors.primary;
-    }
-  };
+  const backgroundColor = disabled
+    ? colors.textMuted
+    : variant === 'primary'
+    ? colors.primary
+    : variant === 'secondary'
+    ? colors.cardSurface
+    : 'transparent';
 
-  const getTextColor = () => {
-    if (disabled) return colors.textMuted;
-    switch (variant) {
-      case 'primary':
-        return '#FFFFFF';
-      case 'secondary':
-        return colors.text;
-      case 'ghost':
-        return colors.primary;
-      case 'outline':
-        return colors.primary;
-      default:
-        return '#FFFFFF';
-    }
-  };
+  const textColor = disabled
+    ? colors.textMuted
+    : variant === 'primary'
+    ? '#FFFFFF'
+    : variant === 'secondary'
+    ? colors.text
+    : colors.primary;
 
-  const getPadding = () => {
-    switch (size) {
-      case 'small':
-        return { paddingVertical: spacing.sm, paddingHorizontal: spacing.base };
-      case 'medium':
-        return { paddingVertical: spacing.md, paddingHorizontal: spacing.xl };
-      case 'large':
-        return { paddingVertical: spacing.lg, paddingHorizontal: spacing.xxl };
-      default:
-        return { paddingVertical: spacing.md, paddingHorizontal: spacing.xl };
-    }
-  };
-
-  const getFontSize = () => {
-    switch (size) {
-      case 'small':
-        return 14;
-      case 'medium':
-        return 16;
-      case 'large':
-        return 18;
-      default:
-        return 16;
-    }
-  };
-
-  const containerStyles: ViewStyle = {
-    backgroundColor: getBackgroundColor(),
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...getPadding(),
-    ...(variant === 'outline' && {
-      borderWidth: 1,
-      borderColor: disabled ? colors.textMuted : colors.primary,
+  const containerStyles: ViewStyle = useMemo(
+    () => ({
+      backgroundColor,
+      borderRadius: radius.pill,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...PADDING_BY_SIZE[size],
+      ...(variant === 'outline'
+        ? { borderWidth: 1, borderColor: disabled ? colors.textMuted : colors.primary }
+        : {}),
+      ...(fullWidth ? { width: '100%' } : {}),
+      ...(variant === 'secondary'
+        ? { backgroundColor: colors.cardSurface, borderWidth: 1, borderColor: colors.cardBorder }
+        : {}),
     }),
-    ...(fullWidth && { width: '100%' }),
-    ...(variant === 'secondary' && {
-      backgroundColor: colors.cardSurface,
-      borderWidth: 1,
-      borderColor: colors.cardBorder,
+    [backgroundColor, size, variant, fullWidth, disabled, colors.textMuted, colors.primary, colors.cardSurface, colors.cardBorder]
+  );
+
+  const textBaseStyle: TextStyle = useMemo(
+    () => ({
+      color: textColor,
+      fontSize: FONT_SIZE_BY_SIZE[size],
+      fontWeight: '600' as const,
+      marginLeft: icon && iconPosition === 'left' ? spacing.sm : 0,
+      marginRight: icon && iconPosition === 'right' ? spacing.sm : 0,
     }),
-  };
+    [textColor, size, icon, iconPosition]
+  );
 
   return (
     <AnimatedTouchable
@@ -148,22 +132,11 @@ export const Button = memo<ButtonProps>(({
       style={[containerStyles, animatedStyle, style]}
     >
       {loading ? (
-        <ActivityIndicator color={getTextColor()} size="small" />
+        <ActivityIndicator color={textColor} size="small" />
       ) : (
         <>
           {icon && iconPosition === 'left' && icon}
-          <Text
-            style={[
-              {
-                color: getTextColor(),
-                fontSize: getFontSize(),
-                fontWeight: '600',
-                marginLeft: icon && iconPosition === 'left' ? spacing.sm : 0,
-                marginRight: icon && iconPosition === 'right' ? spacing.sm : 0,
-              },
-              textStyle,
-            ]}
-          >
+          <Text style={[textBaseStyle, textStyle]}>
             {title}
           </Text>
           {icon && iconPosition === 'right' && icon}

@@ -118,6 +118,12 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
         promise.resolve(true)
     }
 
+    @ReactMethod
+    fun setRestartOnBoot(enabled: Boolean, promise: Promise) {
+        prefs.edit().putBoolean("restart_on_boot", enabled).apply()
+        promise.resolve(true)
+    }
+
     private fun updateWidget() {
         val context = reactApplicationContext
         val intent = Intent(context, FitrackStepsWidget::class.java).apply {

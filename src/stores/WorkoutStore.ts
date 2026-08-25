@@ -19,6 +19,11 @@ export class WorkoutStore {
   error: string | null = null;
   weeklyWorkouts: Map<string, Workout> = new Map();
 
+  private saveDraftTimer: ReturnType<typeof setTimeout> | null = null;
+  private syncFirestoreTimer: ReturnType<typeof setTimeout> | null = null;
+  private workoutsUnsubscribe: (() => void) | null = null;
+  private activeFetches = new Map<string, Promise<void>>();
+
   constructor() {
     makeAutoObservable(this);
     this.selectedDay = getDayOfWeekKey(new Date());
@@ -106,29 +111,80 @@ export class WorkoutStore {
 
   async loadWorkouts(userId: string, startDate?: string, endDate?: string) {
     if (!userId) {
-      console.warn('[WorkoutStore] Skipping loadWorkouts: missing userId');
+      if (__DEV__) logger.warn('[WorkoutStore] Skipping loadWorkouts: missing userId');
       return;
     }
+    // Dedupe concurrent calls for the same user/range.
+    const fetchKey = `${userId}::${startDate || ''}::${endDate || ''}`;
+    const existing = this.activeFetches.get(fetchKey);
+    if (existing) {
+      return existing;
+    }
+
     // Run pruning in the background
     this.pruneOldWorkouts().catch((e) => logger.error('[WorkoutStore] Pruning error:', e));
 
-    try {
-      this.isLoading = true;
-      const data = await workoutsService.getWorkouts(userId, startDate, endDate);
-      runInAction(() => {
-        this.workouts.clear();
-        data.forEach((w: Workout) => {
-          this.workouts.set(w.id, this.normalizeWorkout(w));
+    const promise = (async () => {
+      try {
+        this.isLoading = true;
+        const data = await workoutsService.getWorkouts(userId, startDate, endDate);
+        runInAction(() => {
+          this.workouts.clear();
+          data.forEach((w: Workout) => {
+            this.workouts.set(w.id, this.normalizeWorkout(w));
+          });
         });
-      });
-    } catch (error: any) {
-      runInAction(() => {
-        this.error = error.message;
-      });
+      } catch (error: any) {
+        runInAction(() => {
+          this.error = error.message;
+        });
+      } finally {
+        runInAction(() => {
+          this.isLoading = false;
+        });
+      }
+    })();
+
+    this.activeFetches.set(fetchKey, promise);
+    try {
+      await promise;
     } finally {
-      runInAction(() => {
-        this.isLoading = false;
-      });
+      this.activeFetches.delete(fetchKey);
+    }
+  }
+
+  /**
+   * Subscribe to live workout updates. Replaces the one-shot loadWorkouts
+   * call when callers want a long-lived subscription (e.g. WorkoutScreen on
+   * mount). The returned function unsubscribes.
+   */
+  subscribeWorkouts(userId: string, startDate?: string, endDate?: string): () => void {
+    if (!userId) return () => {};
+    // Tear down any existing listener first so we don't double-subscribe.
+    if (this.workoutsUnsubscribe) {
+      this.workoutsUnsubscribe();
+      this.workoutsUnsubscribe = null;
+    }
+    this.workoutsUnsubscribe = workoutsService.subscribeWorkouts(
+      userId,
+      (data) => {
+        runInAction(() => {
+          this.workouts.clear();
+          data.forEach((w: Workout) => {
+            this.workouts.set(w.id, this.normalizeWorkout(w));
+          });
+        });
+      },
+      startDate,
+      endDate,
+    );
+    return this.workoutsUnsubscribe;
+  }
+
+  unsubscribeWorkouts() {
+    if (this.workoutsUnsubscribe) {
+      this.workoutsUnsubscribe();
+      this.workoutsUnsubscribe = null;
     }
   }
 
@@ -178,7 +234,7 @@ export class WorkoutStore {
     runInAction(() => {
       this.isSyncing = true;
       this.activeWorkout = workout;
-      this.saveDraft();
+      this.saveDraft(true);
     });
 
     try {
@@ -245,7 +301,7 @@ export class WorkoutStore {
 
       runInAction(() => {
         this.activeWorkout = workout;
-        this.saveDraft();
+        this.saveDraft(true);
       });
 
       try {
@@ -262,39 +318,34 @@ export class WorkoutStore {
       }
     }
 
-    const tempId = generateUUID();
-    const workoutExercise: WorkoutExercise = {
-      id: tempId,
+    if (!this.activeWorkout) return;
+    const newExercise: WorkoutExercise = {
+      id: generateUUID(),
       exerciseId,
       exercise: { name: exerciseName, muscleGroup: muscleGroup as any, equipment: equipment as any },
-      orderIndex: this.activeWorkout!.exercises.length,
+      orderIndex: this.activeWorkout.exercises.length,
       sets: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
-    const updatedExercises = [...this.activeWorkout!.exercises, workoutExercise];
-
     runInAction(() => {
+      if (!this.activeWorkout) return;
       this.activeWorkout = {
-        ...this.activeWorkout!,
-        exercises: updatedExercises,
+        ...this.activeWorkout,
+        exercises: [...this.activeWorkout.exercises, newExercise],
       };
       this.saveDraft();
     });
 
-    if (this.userId) {
-      try {
-        await workoutsService.saveWorkoutExercises(this.userId, this.activeWorkout!.id, updatedExercises);
-      } catch (err) {
-        logger.error('[WorkoutStore] addExercise DB error:', err);
-      }
-    }
+    this.debouncedSyncToFirestore(this.activeWorkout.exercises);
   }
 
   async removeExercise(workoutExerciseId: string) {
     if (!this.activeWorkout) return;
-    const updatedExercises = this.activeWorkout.exercises.filter((e) => e.id !== workoutExerciseId);
+    const updatedExercises = this.activeWorkout.exercises
+      .filter((e) => e.id !== workoutExerciseId)
+      .map((ex, idx) => ({ ...ex, orderIndex: idx }));
 
     runInAction(() => {
       if (this.activeWorkout) {
@@ -306,56 +357,55 @@ export class WorkoutStore {
       }
     });
 
-    if (this.userId) {
-      try {
-        await workoutsService.saveWorkoutExercises(this.userId, this.activeWorkout.id, updatedExercises);
-      } catch (err) {
-        logger.error('[WorkoutStore] removeExercise error:', err);
-      }
-    }
+    this.debouncedSyncToFirestore(updatedExercises);
   }
 
   reorderExercises(fromIndex: number, toIndex: number) {
     if (!this.activeWorkout) return;
-    const exercises = [...this.activeWorkout.exercises];
     if (
       fromIndex < 0 ||
-      fromIndex >= exercises.length ||
+      fromIndex >= this.activeWorkout.exercises.length ||
       toIndex < 0 ||
-      toIndex >= exercises.length ||
+      toIndex >= this.activeWorkout.exercises.length ||
       fromIndex === toIndex
     ) {
       return;
     }
 
-    const [moved] = exercises.splice(fromIndex, 1);
-    exercises.splice(toIndex, 0, moved);
-    exercises.forEach((ex, idx) => {
-      ex.orderIndex = idx;
-    });
+    // Build a brand-new array of brand-new exercise objects so that every
+    // observer along the chain (and React.memo on ExerciseCard) sees new
+    // identities and re-renders. Mutating `ex.orderIndex` in place would
+    // also work for MobX, but the memoized components downstream would
+    // bail out and the user would not see the new ordering instantly.
+    const reordered = this.activeWorkout.exercises.map((ex, idx) => {
+      if (idx === fromIndex) return this.activeWorkout!.exercises[toIndex];
+      if (idx === toIndex) return this.activeWorkout!.exercises[fromIndex];
+      return ex;
+    }).map((ex, idx) => ({ ...ex, orderIndex: idx }));
 
     runInAction(() => {
       if (this.activeWorkout) {
-        this.activeWorkout.exercises = exercises;
+        this.activeWorkout = {
+          ...this.activeWorkout,
+          exercises: reordered,
+        };
       }
     });
 
     this.saveDraft();
     this.saveRoutineTemplate();
-
-    if (this.userId) {
-      workoutsService
-        .saveWorkoutExercises(this.userId, this.activeWorkout.id, exercises)
-        .catch((err) => logger.error('[WorkoutStore] reorderExercises DB error:', err));
-    }
+    this.debouncedSyncToFirestore(reordered);
   }
 
   async addSet(workoutExerciseId: string, weight = 0, reps = 0) {
     if (!this.activeWorkout) return;
-    const exercise = this.activeWorkout.exercises.find((e) => e.id === workoutExerciseId);
-    if (!exercise) return;
+    const exerciseIndex = this.activeWorkout.exercises.findIndex(
+      (e) => e.id === workoutExerciseId,
+    );
+    if (exerciseIndex === -1) return;
 
-    const set: Set = {
+    const exercise = this.activeWorkout.exercises[exerciseIndex];
+    const newSet: Set = {
       id: generateUUID(),
       orderIndex: exercise.sets.length + 1,
       weight,
@@ -365,117 +415,141 @@ export class WorkoutStore {
       updatedAt: new Date(),
     };
 
-    exercise.sets = [...exercise.sets, set];
-    const updatedExercises = [...this.activeWorkout.exercises];
-
+    // All mutations inside runInAction, and we build a brand-new exercise
+    // object so memoized children (ExerciseCard / SetRow) re-render.
     runInAction(() => {
-      if (this.activeWorkout) {
-        this.activeWorkout = { ...this.activeWorkout, exercises: updatedExercises };
-      }
+      if (!this.activeWorkout) return;
+      const updatedExercise: WorkoutExercise = {
+        ...exercise,
+        sets: [...exercise.sets, newSet],
+      };
+      const updatedExercises = [...this.activeWorkout.exercises];
+      updatedExercises[exerciseIndex] = updatedExercise;
+      this.activeWorkout = {
+        ...this.activeWorkout,
+        exercises: updatedExercises,
+      };
       this.saveDraft();
     });
 
-    if (this.userId) {
-      try {
-        await workoutsService.saveWorkoutExercises(this.userId, this.activeWorkout.id, updatedExercises);
-      } catch (err) {
-        logger.error('[WorkoutStore] addSet DB error:', err);
-      }
-    }
+    this.debouncedSyncToFirestore(
+      this.activeWorkout
+        ? this.activeWorkout.exercises
+        : [],
+    );
   }
 
   async updateSet(workoutExerciseId: string, setId: string, updates: Partial<Set>) {
     if (!this.activeWorkout) return;
-    const exercise = this.activeWorkout.exercises.find((e) => e.id === workoutExerciseId);
-    if (!exercise) return;
+    const exerciseIndex = this.activeWorkout.exercises.findIndex(
+      (e) => e.id === workoutExerciseId,
+    );
+    if (exerciseIndex === -1) return;
 
+    const exercise = this.activeWorkout.exercises[exerciseIndex];
     const setIndex = exercise.sets.findIndex((s) => s.id === setId);
     if (setIndex === -1) return;
 
-    const set = exercise.sets[setIndex];
-    const updatedSet = { ...set, ...updates, updatedAt: new Date() };
-    exercise.sets = [
-      ...exercise.sets.slice(0, setIndex),
-      updatedSet,
-      ...exercise.sets.slice(setIndex + 1),
-    ];
-    const updatedExercises = [...this.activeWorkout.exercises];
+    const existing = exercise.sets[setIndex];
+    const updatedSet: Set = { ...existing, ...updates, updatedAt: new Date() };
 
     runInAction(() => {
-      if (this.activeWorkout) {
-        this.activeWorkout = { ...this.activeWorkout, exercises: updatedExercises };
-        this.saveDraft();
-      }
+      if (!this.activeWorkout) return;
+      const newSets = [
+        ...exercise.sets.slice(0, setIndex),
+        updatedSet,
+        ...exercise.sets.slice(setIndex + 1),
+      ];
+      const updatedExercise: WorkoutExercise = { ...exercise, sets: newSets };
+      const updatedExercises = [...this.activeWorkout.exercises];
+      updatedExercises[exerciseIndex] = updatedExercise;
+      this.activeWorkout = {
+        ...this.activeWorkout,
+        exercises: updatedExercises,
+      };
+      this.saveDraft();
     });
 
-    if (this.userId) {
-      try {
-        await workoutsService.saveWorkoutExercises(this.userId, this.activeWorkout.id, updatedExercises);
-      } catch (err) {
-        logger.error('[WorkoutStore] updateSet error:', err);
-      }
-    }
+    this.debouncedSyncToFirestore(
+      this.activeWorkout
+        ? this.activeWorkout.exercises
+        : [],
+    );
   }
 
   async toggleSetComplete(workoutExerciseId: string, setId: string) {
     if (!this.activeWorkout) return;
-    const exercise = this.activeWorkout.exercises.find((e) => e.id === workoutExerciseId);
-    if (!exercise) return;
+    const exerciseIndex = this.activeWorkout.exercises.findIndex(
+      (e) => e.id === workoutExerciseId,
+    );
+    if (exerciseIndex === -1) return;
+
+    const exercise = this.activeWorkout.exercises[exerciseIndex];
     const setIndex = exercise.sets.findIndex((s) => s.id === setId);
     if (setIndex === -1) return;
     const set = exercise.sets[setIndex];
     if (!set) return;
 
     const nextCompleted = !set.completed;
-    const updatedSet = { ...set, completed: nextCompleted, updatedAt: new Date() };
-    exercise.sets = [
-      ...exercise.sets.slice(0, setIndex),
-      updatedSet,
-      ...exercise.sets.slice(setIndex + 1),
-    ];
-    const updatedExercises = [...this.activeWorkout.exercises];
+    const updatedSet: Set = {
+      ...set,
+      completed: nextCompleted,
+      updatedAt: new Date(),
+    };
 
     runInAction(() => {
-      if (this.activeWorkout) {
-        this.activeWorkout = { ...this.activeWorkout, exercises: updatedExercises };
-      }
+      if (!this.activeWorkout) return;
+      const newSets = [
+        ...exercise.sets.slice(0, setIndex),
+        updatedSet,
+        ...exercise.sets.slice(setIndex + 1),
+      ];
+      const updatedExercise: WorkoutExercise = { ...exercise, sets: newSets };
+      const updatedExercises = [...this.activeWorkout.exercises];
+      updatedExercises[exerciseIndex] = updatedExercise;
+      this.activeWorkout = {
+        ...this.activeWorkout,
+        exercises: updatedExercises,
+      };
       this.saveDraft();
     });
 
-    if (this.userId) {
-      try {
-        await workoutsService.saveWorkoutExercises(this.userId, this.activeWorkout.id, updatedExercises);
-      } catch (err) {
-        logger.error('[WorkoutStore] toggleSetComplete error:', err);
-      }
-    }
+    this.debouncedSyncToFirestore(
+      this.activeWorkout
+        ? this.activeWorkout.exercises
+        : [],
+    );
   }
 
   async removeSet(workoutExerciseId: string, setId: string) {
     if (!this.activeWorkout) return;
-    const exercise = this.activeWorkout.exercises.find((e) => e.id === workoutExerciseId);
-    if (!exercise) return;
+    const exerciseIndex = this.activeWorkout.exercises.findIndex(
+      (e) => e.id === workoutExerciseId,
+    );
+    if (exerciseIndex === -1) return;
 
-    exercise.sets = exercise.sets.filter((s) => s.id !== setId);
-    exercise.sets.forEach((s, i) => {
-      s.orderIndex = i + 1;
-    });
-    const updatedExercises = [...this.activeWorkout.exercises];
+    const exercise = this.activeWorkout.exercises[exerciseIndex];
+    const newSets = exercise.sets
+      .filter((s) => s.id !== setId)
+      .map((s, i) => ({ ...s, orderIndex: i + 1 }));
 
     runInAction(() => {
-      if (this.activeWorkout) {
-        this.activeWorkout = { ...this.activeWorkout, exercises: updatedExercises };
-      }
+      if (!this.activeWorkout) return;
+      const updatedExercise: WorkoutExercise = { ...exercise, sets: newSets };
+      const updatedExercises = [...this.activeWorkout.exercises];
+      updatedExercises[exerciseIndex] = updatedExercise;
+      this.activeWorkout = {
+        ...this.activeWorkout,
+        exercises: updatedExercises,
+      };
       this.saveDraft();
     });
 
-    if (this.userId) {
-      try {
-        await workoutsService.saveWorkoutExercises(this.userId, this.activeWorkout.id, updatedExercises);
-      } catch (err) {
-        logger.error('[WorkoutStore] removeSet error:', err);
-      }
-    }
+    this.debouncedSyncToFirestore(
+      this.activeWorkout
+        ? this.activeWorkout.exercises
+        : [],
+    );
   }
 
   async resetWorkoutRoutine() {
@@ -521,7 +595,7 @@ export class WorkoutStore {
               ...this.activeWorkout,
               exercises: resetExercises,
             };
-            this.saveDraft();
+            this.saveDraft(true);
           }
         });
 
@@ -558,7 +632,7 @@ export class WorkoutStore {
   }
 
   async switchDay(newDay: DayOfWeek, newDate: Date) {
-    this.saveDraft();
+    this.saveDraft(true);
 
     runInAction(() => {
       this.activeWorkout = null;
@@ -594,7 +668,30 @@ export class WorkoutStore {
     storage.set(`workout.routine.${this.selectedDay}`, templateExercises);
   }
 
-  private saveDraftTimer: ReturnType<typeof setTimeout> | null = null;
+  private debouncedSyncToFirestore(exercises: WorkoutExercise[], immediate = false) {
+    if (!this.userId || !this.activeWorkout) return;
+    const userId = this.userId;
+    const workoutId = this.activeWorkout.id;
+
+    if (this.syncFirestoreTimer) {
+      clearTimeout(this.syncFirestoreTimer);
+      this.syncFirestoreTimer = null;
+    }
+
+    const performSync = async () => {
+      try {
+        await workoutsService.saveWorkoutExercises(userId, workoutId, exercises);
+      } catch (err) {
+        logger.error('[WorkoutStore] debouncedSyncToFirestore error:', err);
+      }
+    };
+
+    if (immediate) {
+      performSync();
+    } else {
+      this.syncFirestoreTimer = setTimeout(performSync, 500);
+    }
+  }
 
   private saveDraft(immediate = false) {
     if (!this.activeWorkout) return;

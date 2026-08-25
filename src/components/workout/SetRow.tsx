@@ -1,12 +1,10 @@
-import React, { memo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import React, { memo, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Pressable, TextInput } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withTiming,
-  runOnJS,
 } from 'react-native-reanimated';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
@@ -14,46 +12,17 @@ import type { Set } from '../../models';
 
 interface SetRowProps {
   set: Set;
+  setId: string;
   setNumber: number;
   weightUnit?: 'kg' | 'lbs';
-  onWeightChange: (weight: number) => void;
-  onRepsChange: (reps: number) => void;
-  onToggleComplete: () => void;
-  onDelete?: () => void;
-  onStartRest?: () => void;
+  onWeightChange: (setId: string, weight: number) => void;
+  onRepsChange: (setId: string, reps: number) => void;
+  onToggleComplete: (setId: string) => void;
+  onDelete?: (setId: string) => void;
+  onStartRest?: (setId: string) => void;
 }
 
-export const SetRow = memo<SetRowProps>(({
-  set,
-  setNumber,
-  weightUnit = 'kg',
-  onWeightChange,
-  onRepsChange,
-  onToggleComplete,
-  onDelete,
-  onStartRest,
-}) => {
-  const colors = useColors();
-  const checkScale = useSharedValue(1);
-  const [weightText, setWeightText] = useState(set.weight > 0 ? String(set.weight) : '');
-  const [repsText, setRepsText] = useState(set.reps > 0 ? String(set.reps) : '');
-
-  // Sync local state when props change (e.g. after toggling completion)
-  useEffect(() => {
-    setWeightText(set.weight > 0 ? String(set.weight) : '');
-  }, [set.weight]);
-
-  useEffect(() => {
-    setRepsText(set.reps > 0 ? String(set.reps) : '');
-  }, [set.reps]);
-
-  const handleToggleComplete = () => {
-    checkScale.value = withSpring(1.2, { damping: 10, stiffness: 400 }, () => {
-      checkScale.value = withSpring(1, { damping: 15, stiffness: 300 });
-    });
-    onToggleComplete();
-  };
-
+// Hoist pure sanitizers outside component (rerender-hoist-jsx)
 const sanitizeWeightInput = (raw: string): string => {
   let text = raw.replace(/[^0-9.]/g, '');
   const dotIndex = text.indexOf('.');
@@ -67,38 +36,74 @@ const sanitizeRepsInput = (raw: string): string => {
   return raw.replace(/[^0-9]/g, '').slice(0, 4);
 };
 
-const handleWeightChange = (text: string) => {
-  const sanitized = sanitizeWeightInput(text);
-  setWeightText(sanitized);
-};
+// Use uncontrolled TextInputs keyed off the set id + value. The `key` reset
+// pattern means React remounts the input (and re-initialises defaultValue)
+// whenever the underlying set is replaced (e.g. after a successful blur that
+// round-trips through the store). This avoids the previous
+// useEffect->setState double-render that fired on every weight/reps change.
+export const SetRow = memo<SetRowProps>(({
+  set,
+  setId,
+  setNumber,
+  weightUnit = 'kg',
+  onWeightChange,
+  onRepsChange,
+  onToggleComplete,
+  onDelete,
+  onStartRest,
+}) => {
+  const colors = useColors();
+  const checkScale = useSharedValue(1);
+  const [uncontrolledWeight, setUncontrolledWeight] = useState<string>(() =>
+    set.weight > 0 ? String(set.weight) : ''
+  );
+  const [uncontrolledReps, setUncontrolledReps] = useState<string>(() =>
+    set.reps > 0 ? String(set.reps) : ''
+  );
 
-const handleRepsChange = (text: string) => {
-  const sanitized = sanitizeRepsInput(text);
-  setRepsText(sanitized);
-};
+  const handleToggleComplete = useCallback(() => {
+    // Use .set() for React Compiler compatibility (react-compiler-reanimated-shared-values)
+    checkScale.set(
+      withSpring(1.2, { damping: 10, stiffness: 400 }, () => {
+        checkScale.set(withSpring(1, { damping: 15, stiffness: 300 }));
+      })
+    );
+    onToggleComplete(setId);
+  }, [checkScale, onToggleComplete, setId]);
 
-const handleWeightBlur = () => {
-  const val = parseFloat(weightText);
-  if (!isNaN(val) && val >= 0) {
-    onWeightChange(val);
-    setWeightText(String(val));
-  } else {
-    setWeightText(set.weight > 0 ? String(set.weight) : '');
-  }
-};
+  const handleWeightChange = useCallback((text: string) => {
+    setUncontrolledWeight(sanitizeWeightInput(text));
+  }, []);
 
-const handleRepsBlur = () => {
-  const val = parseInt(repsText);
-  if (!isNaN(val) && val >= 0) {
-    onRepsChange(val);
-    setRepsText(String(val));
-  } else {
-    setRepsText(set.reps > 0 ? String(set.reps) : '');
-  }
-};
+  const handleRepsChange = useCallback((text: string) => {
+    setUncontrolledReps(sanitizeRepsInput(text));
+  }, []);
 
+  const handleWeightBlur = useCallback(() => {
+    const val = parseFloat(uncontrolledWeight);
+    if (!isNaN(val) && val >= 0) {
+      onWeightChange(setId, val);
+    } else {
+      setUncontrolledWeight(set.weight > 0 ? String(set.weight) : '');
+    }
+  }, [uncontrolledWeight, onWeightChange, setId, set.weight]);
+
+  const handleRepsBlur = useCallback(() => {
+    const val = parseInt(uncontrolledReps);
+    if (!isNaN(val) && val >= 0) {
+      onRepsChange(setId, val);
+    } else {
+      setUncontrolledReps(set.reps > 0 ? String(set.reps) : '');
+    }
+  }, [uncontrolledReps, onRepsChange, setId, set.reps]);
+
+  const handleDelete = useCallback(() => {
+    onDelete?.(setId);
+  }, [onDelete, setId]);
+
+  // Use .get() for React Compiler compatibility (react-compiler-reanimated-shared-values)
   const checkAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: checkScale.value }],
+    transform: [{ scale: checkScale.get() }],
   }));
 
   const getCheckColor = () => {
@@ -108,8 +113,11 @@ const handleRepsBlur = () => {
 
   return (
     <View style={[styles.container, { borderBottomColor: colors.cardBorder }]}>
-      {onDelete && (
-        <TouchableOpacity onPress={onDelete} style={styles.deleteButton} activeOpacity={0.6}>
+      {onDelete ? (
+        <Pressable
+          onPress={handleDelete}
+          style={({ pressed }) => [styles.deleteButton, pressed && { opacity: 0.6 }]}
+        >
           <View style={[styles.deleteIconContainer, { backgroundColor: 'rgba(255,80,80,0.1)' }]}>
             <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={colors.error} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M3 6h18" />
@@ -117,8 +125,8 @@ const handleRepsBlur = () => {
               <Path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
             </Svg>
           </View>
-        </TouchableOpacity>
-      )}
+        </Pressable>
+      ) : null}
       <View style={styles.setNumber}>
         <Text style={[styles.setNumberText, { color: colors.textSecondary }]}>
           {setNumber}
@@ -133,12 +141,13 @@ const handleRepsBlur = () => {
         ]}
       >
         <TextInput
+          key={`w-${setId}-${set.weight}`}
           style={[styles.inputText, { color: colors.text }]}
-          value={weightText}
-  onChangeText={handleWeightChange}
-  onBlur={handleWeightBlur}
-  keyboardType="number-pad"
-  placeholder="-"
+          defaultValue={uncontrolledWeight}
+          onChangeText={handleWeightChange}
+          onBlur={handleWeightBlur}
+          keyboardType="number-pad"
+          placeholder="-"
           placeholderTextColor={colors.textMuted}
           textAlign="center"
           selectTextOnFocus
@@ -154,8 +163,9 @@ const handleRepsBlur = () => {
         ]}
       >
         <TextInput
+          key={`r-${setId}-${set.reps}`}
           style={[styles.inputText, { color: colors.text }]}
-          value={repsText}
+          defaultValue={uncontrolledReps}
           onChangeText={handleRepsChange}
           onBlur={handleRepsBlur}
           keyboardType="number-pad"
@@ -167,10 +177,9 @@ const handleRepsBlur = () => {
         />
       </View>
 
-      <TouchableOpacity
+      <Pressable
         onPress={handleToggleComplete}
-        style={styles.checkButton}
-        activeOpacity={0.7}
+        style={({ pressed }) => [styles.checkButton, pressed && { opacity: 0.7 }]}
       >
         <Animated.View style={[checkAnimatedStyle]}>
           <View
@@ -182,12 +191,12 @@ const handleRepsBlur = () => {
               },
             ]}
           >
-            {set.completed && (
+            {set.completed ? (
               <Text style={styles.checkMark}>✓</Text>
-            )}
+            ) : null}
           </View>
         </Animated.View>
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 });

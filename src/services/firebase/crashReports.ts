@@ -14,21 +14,27 @@ export interface CrashReportPayload {
 }
 
 export const crashReportsService = {
-  async submit(payload: CrashReportPayload) {
+  async submit(payload: CrashReportPayload, reportId?: string) {
     try {
-      const docRef = firestore().collection('crashReports').doc();
+      const id =
+        reportId ||
+        `crash_${payload.user.id || 'anon'}_${payload.timestamp.replace(/[:.]/g, '-')}`;
+      const docRef = firestore().collection('crashReports').doc(id);
       const cleanPayload = JSON.parse(JSON.stringify(payload));
-      await docRef.set({
-        id: docRef.id,
-        userId: payload.user.id !== 'unknown' ? payload.user.id : null,
-        reportData: cleanPayload,
-        appVersion: payload.app.version,
-        os: payload.device.os,
-        osVersion: String(payload.device.osVersion),
-        createdAt: firestore.FieldValue.serverTimestamp(),
-      });
+      await docRef.set(
+        {
+          id,
+          userId: payload.user.id !== 'unknown' ? payload.user.id : null,
+          reportData: cleanPayload,
+          appVersion: payload.app.version,
+          os: payload.device.os,
+          osVersion: String(payload.device.osVersion),
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-      return { id: docRef.id };
+      return { id };
     } catch (err) {
       logger.error('[crashReportsService] Failed to submit crash report:', err);
       return null;

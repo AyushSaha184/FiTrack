@@ -25,8 +25,9 @@ export const stepCounterService = {
             const granted = await PermissionsAndroid.request(
               perm,
               {
-                title: 'Physical Activity Permission',
-                message: 'FiTrack requires activity recognition permission to count your steps in real time as you walk.',
+                title: 'Physical Activity Tracking',
+                message:
+                  'FiTrack uses your device step sensor and physical activity data to accurately track your daily walking steps and workout progress. This data is stored locally and securely synced with your personal account.',
                 buttonPositive: 'Allow',
                 buttonNegative: 'Deny',
               },
@@ -44,8 +45,9 @@ export const stepCounterService = {
           await PermissionsAndroid.request(
             notifPerm,
             {
-              title: 'Notification Permission',
-              message: 'FiTrack requires notification permission to show background tracking status.',
+              title: 'Step Counter Notifications',
+              message:
+                'FiTrack displays an ongoing notification while background step tracking is active to keep you updated on your daily progress.',
               buttonPositive: 'Allow',
               buttonNegative: 'Deny',
             }

@@ -18,6 +18,9 @@ export class WeightStore {
     change: number | null;
   } = { highest: null, lowest: null, average: null, change: null };
 
+  private entriesUnsubscribe: (() => void) | null = null;
+  private activeFetches = new Map<string, Promise<void>>();
+
   constructor() {
     makeAutoObservable(this);
     this.restoreCachedEntries();
@@ -86,26 +89,82 @@ export class WeightStore {
 
   async loadEntries(userId: string, _days = 365) {
     if (!userId) return;
+
+    const existing = this.activeFetches.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    // Cap to 1 year of history by default.
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const startDateIso = oneYearAgo.toISOString();
+
+    const promise = (async () => {
+      try {
+        this.isLoading = true;
+        const data = await weightService.getWeightEntries(userId, startDateIso);
+        runInAction(() => {
+          this.entries = data;
+          if (data.length > 0) {
+            this.currentWeight = data[0].weight;
+          }
+          this.recalculateStats();
+          storage.set('weight_entries_cache', this.entries);
+        });
+      } catch (error: any) {
+        logger.error('[WeightStore] loadEntries error:', error);
+        runInAction(() => {
+          this.error = error.message;
+        });
+      } finally {
+        runInAction(() => {
+          this.isLoading = false;
+        });
+      }
+    })();
+
+    this.activeFetches.set(userId, promise);
     try {
-      this.isLoading = true;
-      const data = await weightService.getWeightEntries(userId);
-      runInAction(() => {
-        this.entries = data;
-        if (data.length > 0) {
-          this.currentWeight = data[0].weight;
-        }
-        this.recalculateStats();
-        storage.set('weight_entries_cache', this.entries);
-      });
-    } catch (error: any) {
-      logger.error('[WeightStore] loadEntries error:', error);
-      runInAction(() => {
-        this.error = error.message;
-      });
+      await promise;
     } finally {
-      runInAction(() => {
-        this.isLoading = false;
-      });
+      this.activeFetches.delete(userId);
+    }
+  }
+
+  /**
+   * Subscribe to live weight entry updates. Returns an unsubscribe function.
+   */
+  subscribeEntries(userId: string): () => void {
+    if (!userId) return () => {};
+    if (this.entriesUnsubscribe) {
+      this.entriesUnsubscribe();
+      this.entriesUnsubscribe = null;
+    }
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const startDateIso = oneYearAgo.toISOString();
+    this.entriesUnsubscribe = weightService.subscribeWeightEntries(
+      userId,
+      (data) => {
+        runInAction(() => {
+          this.entries = data;
+          if (data.length > 0) {
+            this.currentWeight = data[0].weight;
+          }
+          this.recalculateStats();
+          storage.set('weight_entries_cache', this.entries);
+        });
+      },
+      startDateIso,
+    );
+    return this.entriesUnsubscribe;
+  }
+
+  unsubscribeEntries() {
+    if (this.entriesUnsubscribe) {
+      this.entriesUnsubscribe();
+      this.entriesUnsubscribe = null;
     }
   }
 
@@ -123,22 +182,38 @@ export class WeightStore {
       }
 
       const entryDate = date || new Date();
-      const entry = await weightService.addWeightEntry(userId, {
+      // Optimistic local update so the UI reacts instantly. The Firestore
+      // onSnapshot subscription (when active) will eventually re-merge the
+      // server's view; both use the same UUID so the merge is idempotent.
+      const localEntry: WeightEntry = {
         id: generateUUID(),
+        userId,
+        weight,
+        date: entryDate,
+        notes: note,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      runInAction(() => {
+        if (!this.entries.some((e) => e.id === localEntry.id)) {
+          this.entries = [localEntry, ...this.entries].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+          );
+          this.currentWeight = localEntry.weight;
+          this.recalculateStats();
+          storage.set('weight_entries_cache', this.entries);
+        }
+      });
+
+      await weightService.addWeightEntry(userId, {
+        id: localEntry.id,
         weight,
         date: entryDate,
         notes: note,
       });
 
-      runInAction(() => {
-        this.entries = [entry, ...this.entries].sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-        );
-        this.currentWeight = entry.weight;
-        this.recalculateStats();
-        storage.set('weight_entries_cache', this.entries);
-      });
-      return entry;
+      return localEntry;
     } catch (error: any) {
       logger.error('[WeightStore] addEntry error:', error);
       runInAction(() => {

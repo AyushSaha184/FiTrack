@@ -15,6 +15,7 @@ export const STORAGE_KEYS = {
   LAST_SELECTED_TAB: 'nav.lastTab',
   STEP_DAILY_GOAL: 'steps.dailyGoal',
   STEP_SOURCE: 'steps.source',
+  STEP_RESTART_ON_BOOT: 'steps.restartOnBoot',
   NOTIFICATIONS: 'settings.notifications',
   WORKOUT_SETTINGS: 'settings.workout',
   FEATURE_FLAGS: 'settings.featureFlags',

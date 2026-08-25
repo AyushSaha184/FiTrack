@@ -1,4 +1,4 @@
-import React, { memo, ReactNode, useEffect } from 'react';
+import React, { memo, ReactNode, useEffect, useMemo } from 'react';
 import { ViewStyle, StyleProp } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -36,30 +36,37 @@ export const AnimatedCard = memo<AnimatedCardProps>(({
   useEffect(() => {
     if (animated) {
       const delay = index * staggerDelay.base;
-      opacity.value = withDelay(
-        delay,
-        withTiming(1, { duration: durations.slower, easing: Easing.out(Easing.cubic) }),
+      opacity.set(
+        withDelay(
+          delay,
+          withTiming(1, { duration: durations.slower, easing: Easing.out(Easing.cubic) })
+        )
       );
-      translateY.value = withDelay(
-        delay,
-        withTiming(0, { duration: durations.slower, easing: Easing.out(Easing.cubic) }),
+      translateY.set(
+        withDelay(
+          delay,
+          withTiming(0, { duration: durations.slower, easing: Easing.out(Easing.cubic) })
+        )
       );
     }
   }, [animated, index, opacity, translateY]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
+    opacity: opacity.get(),
+    transform: [{ translateY: translateY.get() }],
   }));
 
-  const cardStyles: ViewStyle = {
-    backgroundColor: colors.cardSurface,
-    borderRadius: radius[borderRadius],
-    borderWidth: 1.5,
-    borderColor: colors.cardBorder,
-    padding: spacing[padding],
-    ...(elevated && { ...shadow.md }),
-  };
+  const cardStyles: ViewStyle = useMemo(
+    () => ({
+      backgroundColor: colors.cardSurface,
+      borderRadius: radius[borderRadius],
+      borderWidth: 1.5,
+      borderColor: colors.cardBorder,
+      padding: spacing[padding],
+      ...(elevated ? { ...shadow.md } : {}),
+    }),
+    [colors.cardSurface, colors.cardBorder, borderRadius, padding, elevated]
+  );
 
   return (
     <Animated.View style={[cardStyles, animatedStyle, style]}>

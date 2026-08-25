@@ -1,110 +1,142 @@
 # FiTrack
 
-Your all-in-one fitness tracker for tracking workouts, exercises, sets, reps, weights, body weight, and daily steps.
+### A simple, fitness tracker for your everyday training.
 
-## Features
+Track your workouts, monitor your progress, and understand your training without turning your gym routine into a spreadsheet.
 
-- **Workout Tracking**: Log sets, reps, and weights with real-time tracking
-- **Exercise Library**: Predefined exercises with custom exercise creation
-- **Weight Tracker**: Track body weight and visualize progress over time
-- **Step Tracking**: Monitor daily steps with goal progress
-- **Analytics**: View workout statistics, muscle group distribution, and personal records
-- **Dark Theme**: Premium dark UI design optimized for gym use
+**FiTrack** helps you log workouts, exercises, sets, reps, weights, body weight, and daily steps, all in one clean, dark interface built for the gym.
 
-## Tech Stack
+<p align="center">
+  <img src="assets/Banner.png" alt="FiTrack banner" width="100%" />
+</p>
 
-- React Native (Expo)
-- TypeScript
-- MobX for state management
-- Firebase for backend (Auth, Firestore)
-- React Navigation
-- React Native Reanimated for animations
-- MMKV for fast local storage
+---
 
-## Getting Started
+##  Screens
 
-### Prerequisites
+<p align="center">
+  <img src="assets/screenshots/home.png" alt="FiTrack Home" width="220" />
+  <img src="assets/screenshots/weight.png" alt="FiTrack Weight Tracking" width="220" />
+  <img src="assets/screenshots/steps.png" alt="FiTrack Step Tracking" width="220" />
+</p>
 
-- Node.js 18+
-- npm or yarn
-- Expo CLI (`npm install -g expo-cli`)
-- Firebase project
+---
 
-### Installation
+##  Download FiTrack
 
-1. Clone the repository
-2. Install dependencies:
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=YOUR_PACKAGE_NAME">
+    <img
+      src="https://img.shields.io/badge/Google%20Play-Download%20FiTrack-414141?style=for-the-badge&logo=google-play&logoColor=white"
+      alt="Download FiTrack on Google Play"
+    />
+  </a>
+</p>
 
-```bash
-npm install
-```
+<p align="center">
+  <a href="https://github.com/AyushSaha184/FiTrack">
+    <img src="https://img.shields.io/badge/GitHub-View%20Source-181717?style=for-the-badge&logo=github" alt="View FiTrack on GitHub" />
+  </a>
+  <a href="https://github.com/AyushSaha184/FiTrack/issues">
+    <img src="https://img.shields.io/badge/Report%20a%20Bug-EA4335?style=for-the-badge&logo=github" alt="Report a bug" />
+  </a>
+</p>
 
-3. Set up environment variables:
+---
 
-```bash
-cp .env.example .env
-```
+## ✨ Features
 
-Edit `.env` with your Firebase and keystore credentials.
+###  Workout Tracking
 
-4. Start the development server:
+Log your training as you go.
 
+- Track exercises, sets, reps, and weight
+- Build and customize workouts
+- Mark sets as completed in real time
+- Create your own exercises
+- Keep a history of your training
 
-```bash
-npx expo start
-```
+###  Progress & Analytics
 
-## Project Structure
+Turn your workout history into useful insights.
 
-```
-Fitrack/
-├── src/
-│   ├── components/     # Reusable UI components
-│   ├── screens/         # App screens
-│   ├── navigation/      # Navigation configuration
-│   ├── stores/          # MobX stores
-│   ├── services/        # Firebase services
-│   ├── hooks/           # Custom React hooks
-│   ├── utils/            # Utility functions
-│   ├── theme/            # Theme configuration
-│   ├── models/           # TypeScript types/models
-│   └── config/           # App configuration
-└── assets/              # Images, fonts, icons
-```
+- Track personal records
+- View workout statistics
+- Analyze muscle group distribution
+- Monitor your progress over time
+- Visualize your training data
 
-## Scripts
+###  Weight Tracking
 
-- `npm start` - Start Expo development server
-- `npm run android` - Run on Android
-- `npm run ios` - Run on iOS
-- `npm run lint` - Run ESLint
-- `npm run typecheck` - Run TypeScript type checking
-- `npm run test` - Run Jest tests
-- `./scripts/build-release.sh` - Build release APK locally
+Keep an eye on your body-weight progress.
 
-## CI/CD Pipeline
+- Log weight measurements
+- View weight changes over time
+- Visualize your progress with charts
 
-Fitrack utilizes GitHub Actions for continuous integration and automated release builds.
+###  Step Tracking
 
-### Workflows
+Keep your daily activity in one place.
 
-- **CI Checks (`.github/workflows/ci.yml`)**: Runs on `push` and `pull_request` to `main`, `master`, and `develop`. Executes ESLint (`npm run lint`), TypeScript check (`npm run typecheck`), and Jest tests (`npm run test`).
-- **Build Android Release APK (`.github/workflows/android-release.yml`)**: Runs on `push` (to `main`/`master` or tag `v*`) and manual trigger (`workflow_dispatch`). Compiles the signed release APK (`Fitrack_v1.0.1_release.apk`) and uploads it as a downloadable GitHub Actions artifact (`fitrack-release-apk`).
+- Track daily steps
+- Set step goals
+- Monitor your progress toward your goals
 
-### GitHub Repository Secrets
+###  Built for the Gym
 
-Configure the following secrets in **Settings > Secrets and variables > Actions**:
+FiTrack uses a dark, minimal interface designed to stay comfortable in a gym environment.
 
-| Secret Name | Description |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | Base64 string of the release keystore file |
-| `ANDROID_KEYSTORE_PASSWORD` | Password for the release keystore |
-| `ANDROID_KEY_ALIAS` | Release key alias name |
-| `ANDROID_KEY_PASSWORD` | Password for the release key |
-| `GOOGLE_SERVICES_JSON_BASE64` | Base64 string of `google-services.json` |
-| `EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY` | 32-byte hex storage encryption key |
-| `EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID` | Firebase Web Client ID |
+No clutter. No unnecessary complexity. Just the information you need while training.
 
-## License
+---
 
-MIT
+##  Why FiTrack?
+
+Most fitness trackers try to do everything.
+
+FiTrack focuses on the things you actually need to stay consistent:
+
+**Log your workout → Track your progress → Get stronger.**
+
+The goal is simple: make recording a workout fast enough that it doesn't become another chore.
+
+---
+
+##  Roadmap
+
+FiTrack is actively being developed.
+
+- Premium features
+- Advanced workout insights
+- More detailed progress analytics
+- Workout templates and routines
+- Improved exercise statistics
+- Additional customization options
+
+---
+
+##  Contributing
+
+Contributions, ideas, and bug reports are welcome.
+
+If you find a bug or have an idea that could make FiTrack better, open an issue or submit a pull request.
+
+---
+
+##  License
+
+FiTrack is open source and available under the [MIT License](LICENSE).
+
+---
+
+##  Support the Project
+
+If FiTrack is useful to you, consider giving the repository a star on GitHub.
+
+It helps the project get discovered and motivates continued development.
+
+<p align="center">
+  <a href="https://github.com/AyushSaha184/FiTrack">
+    ⭐  FiTrack on GitHub
+  </a>
+</p>

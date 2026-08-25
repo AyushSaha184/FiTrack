@@ -24,19 +24,23 @@ export const AnimatedScreen = memo<AnimatedScreenProps>(({
   const translateY = useSharedValue(20);
 
   useEffect(() => {
-    opacity.value = withDelay(
-      delay,
-      withTiming(1, { duration: durations.pageEntrance, easing: Easing.out(Easing.cubic) }),
+    opacity.set(
+      withDelay(
+        delay,
+        withTiming(1, { duration: durations.pageEntrance, easing: Easing.out(Easing.cubic) })
+      )
     );
-    translateY.value = withDelay(
-      delay,
-      withTiming(0, { duration: durations.pageEntrance, easing: Easing.out(Easing.cubic) }),
+    translateY.set(
+      withDelay(
+        delay,
+        withTiming(0, { duration: durations.pageEntrance, easing: Easing.out(Easing.cubic) })
+      )
     );
   }, [delay, opacity, translateY]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
+    opacity: opacity.get(),
+    transform: [{ translateY: translateY.get() }],
   }));
 
   return (

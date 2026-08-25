@@ -19,6 +19,7 @@ import { spacing, typography, radius } from '../../theme';
 import { signupSchema } from '../../utils/validators';
 import type { AuthStackParamList } from '../../types/navigation';
 import { logger } from '../../utils/logger';
+import { CONFIG } from '../../config/constants';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Signup'>;
@@ -109,11 +110,11 @@ export const SignupScreen = () => {
   };
 
   const handleSignup = async () => {
-    console.log('[SignupScreen] handleSignup triggered with:', { name, email });
+    logger.info('[SignupScreen] handleSignup triggered');
     const normalizedEmail = email.trim().toLowerCase();
     const result = signupSchema.safeParse({ name, email: normalizedEmail, password });
     if (!result.success) {
-      console.log('[SignupScreen] Validation failed:', result.error.errors);
+      logger.info('[SignupScreen] Validation failed:', result.error.errors);
       const fieldErrors: Record<string, string> = {};
       result.error.errors.forEach((e) => {
         fieldErrors[e.path[0] as string] = e.message;
@@ -124,9 +125,9 @@ export const SignupScreen = () => {
 
     setErrors({});
     try {
-      console.log('[SignupScreen] Calling signup function...');
+      logger.info('[SignupScreen] Calling signup function...');
       await signup(result.data);
-      console.log('[SignupScreen] Signup completed successfully');
+      logger.info('[SignupScreen] Signup completed successfully');
       if (!isAuthenticated) {
         navigation.navigate('Login');
       }
@@ -306,6 +307,13 @@ export const SignupScreen = () => {
                 </>
               )}
             </TouchableOpacity>
+
+            {/* Legal consent note */}
+            <View style={styles.termsContainer}>
+              <Text style={styles.termsText}>
+                By signing up, you agree that you are at least 13 years old and accept responsibility for the data you enter into the app.
+              </Text>
+            </View>
           </View>
 
           {/* Bottom Footer navigation */}
@@ -445,6 +453,21 @@ const styles = StyleSheet.create({
   googleButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  termsContainer: {
+    paddingHorizontal: 8,
+    marginBottom: 16,
+  },
+  termsText: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    color: 'rgba(255,255,255,0.45)',
+  },
+  termsLink: {
+    color: '#FFFFFF',
+    textDecorationLine: 'underline',
+    fontWeight: '500',
   },
   footer: {
     flexDirection: 'row',

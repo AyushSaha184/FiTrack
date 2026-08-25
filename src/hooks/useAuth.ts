@@ -79,6 +79,10 @@ export const useAuth = () => {
     store.clearError();
   }, [store]);
 
+  const deleteAccount = useCallback(async () => {
+    await store.deleteAccount();
+  }, [store]);
+
   return {
     user: store.user,
     isLoading: store.isLoading,
@@ -91,6 +95,7 @@ export const useAuth = () => {
     signup,
     socialLogin,
     logout,
+    deleteAccount,
     resetPassword,
     completeOnboarding,
     updateProfile,

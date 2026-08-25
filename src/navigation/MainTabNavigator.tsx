@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions } from 'react-native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { View, Text, StyleSheet, Pressable, Platform, useWindowDimensions } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
@@ -19,26 +18,27 @@ import { useColors } from '../hooks';
 import { spacing, radius } from '../theme';
 import type { MainTabParamList } from '../types/navigation';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TAB_ORDER: (keyof MainTabParamList)[] = ['WeightTab', 'HomeTab', 'StepsTab'];
 
 // SVG Icons
-const WeightIcon = ({ color }: { color: string }) => (
+const WeightIcon = memo(({ color }: { color: string }) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
     <Path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
     <Path d="M8 7h8a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" />
     <Path d="M12 11v-3" strokeWidth={2} />
   </Svg>
-);
+));
+WeightIcon.displayName = 'WeightIcon';
 
-const HomeIcon = ({ color }: { color: string }) => (
+const HomeIcon = memo(({ color }: { color: string }) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
     <Polyline points="9 22 9 12 15 12 15 22" />
   </Svg>
-);
+));
+HomeIcon.displayName = 'HomeIcon';
 
-const FootprintsIcon = ({ color }: { color: string }) => (
+const FootprintsIcon = memo(({ color }: { color: string }) => (
   <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <Path d="M8 12.5C8 10 9 8 10 5a1 1 0 0 0-1-1.25C7.25 4 6 5.5 5.5 8c-.3 1.5-.5 3-.5 5 0 2.5 1 4 2.5 4.5.8.3 1.7-.2 1.7-1v-4Z" />
     <Circle cx="8" cy="2" r="1" fill={color} />
@@ -47,7 +47,8 @@ const FootprintsIcon = ({ color }: { color: string }) => (
     <Circle cx="16" cy="5" r="1" fill={color} />
     <Circle cx="14" cy="5.5" r="0.8" fill={color} />
   </Svg>
-);
+));
+FootprintsIcon.displayName = 'FootprintsIcon';
 
 // Custom tab icon with animated pill indicator
 interface TabItemProps {
@@ -56,31 +57,31 @@ interface TabItemProps {
   renderIcon: (color: string) => React.ReactNode;
 }
 
-const TabItem = ({ focused, label, renderIcon }: TabItemProps) => {
+const TabItem = memo(({ focused, label, renderIcon }: TabItemProps) => {
   const colors = useColors();
   const scale = useSharedValue(focused ? 1 : 0.92);
   const pillWidth = useSharedValue(focused ? 1 : 0);
 
   useEffect(() => {
-    scale.value = withSpring(focused ? 1 : 0.92, {
+    scale.set(withSpring(focused ? 1 : 0.92, {
       damping: 18,
       stiffness: 280,
       mass: 0.7,
-    });
-    pillWidth.value = withSpring(focused ? 1 : 0, {
+    }));
+    pillWidth.set(withSpring(focused ? 1 : 0, {
       damping: 18,
       stiffness: 280,
       mass: 0.7,
-    });
-  }, [focused]);
+    }));
+  }, [focused, scale, pillWidth]);
 
   const animatedContainerStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    transform: [{ scale: scale.get() }],
   }));
 
   const animatedPillStyle = useAnimatedStyle(() => ({
-    opacity: pillWidth.value,
-    transform: [{ scaleX: pillWidth.value }],
+    opacity: pillWidth.get(),
+    transform: [{ scaleX: pillWidth.get() }],
   }));
 
   const iconColor = focused ? colors.text : colors.textMuted;
@@ -114,74 +115,88 @@ const TabItem = ({ focused, label, renderIcon }: TabItemProps) => {
       </View>
     </Animated.View>
   );
-};
+});
+TabItem.displayName = 'TabItem';
 
 export const MainTabNavigator = () => {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState<number>(1); // HomeTab default
-  const activeIndexRef = useRef<number>(1);
-  activeIndexRef.current = activeIndex;
 
-  const translateX = useSharedValue(-SCREEN_WIDTH);
-  const startX = useSharedValue(-SCREEN_WIDTH);
+  const translateX = useSharedValue(-screenWidth);
+  const startX = useSharedValue(-screenWidth);
   const touchAbsoluteY = useSharedValue(0);
 
-  const goToTab = (index: number) => {
+  // Sync translateX if screen dimensions change
+  useEffect(() => {
+    translateX.set(-activeIndex * screenWidth);
+    startX.set(-activeIndex * screenWidth);
+  }, [screenWidth, activeIndex, translateX, startX]);
+
+  const goToTab = useCallback((index: number) => {
     const clampedIndex = Math.max(0, Math.min(TAB_ORDER.length - 1, index));
     setActiveIndex(clampedIndex);
-    translateX.value = withTiming(-clampedIndex * SCREEN_WIDTH, {
+    translateX.set(withTiming(-clampedIndex * screenWidth, {
       duration: 250,
       easing: Easing.out(Easing.cubic),
-    });
-  };
+    }));
+  }, [screenWidth, translateX]);
+
+  const handleTab0 = useCallback(() => goToTab(0), [goToTab]);
+  const handleTab1 = useCallback(() => goToTab(1), [goToTab]);
+  const handleTab2 = useCallback(() => goToTab(2), [goToTab]);
+
+  const renderWeightIcon = useCallback((color: string) => <WeightIcon color={color} />, []);
+  const renderHomeIcon = useCallback((color: string) => <HomeIcon color={color} />, []);
+  const renderStepsIcon = useCallback((color: string) => <FootprintsIcon color={color} />, []);
 
   const panGesture = Gesture.Pan()
     .activeOffsetX([-15, 15])
     .failOffsetY([-15, 15])
     .onStart((e) => {
       'worklet';
-      startX.value = translateX.value;
-      touchAbsoluteY.value = e.absoluteY;
+      startX.set(translateX.get());
+      touchAbsoluteY.set(e.absoluteY);
     })
     .onUpdate((e) => {
       'worklet';
       const topBoundary = insets.top + 55;
-      const bottomBoundary = SCREEN_HEIGHT - (80 + insets.bottom);
+      const bottomBoundary = screenHeight - (80 + insets.bottom);
 
-      if (touchAbsoluteY.value < topBoundary || touchAbsoluteY.value > bottomBoundary) {
+      if (touchAbsoluteY.get() < topBoundary || touchAbsoluteY.get() > bottomBoundary) {
         return;
       }
 
       // 1:1 continuous finger movement across screens
-      const rawX = startX.value + e.translationX;
+      const rawX = startX.get() + e.translationX;
       // Clamp edge bounds with slight resistance
       const maxLeft = 0;
-      const maxRight = -(TAB_ORDER.length - 1) * SCREEN_WIDTH;
+      const maxRight = -(TAB_ORDER.length - 1) * screenWidth;
 
       if (rawX > maxLeft) {
-        translateX.value = maxLeft + (rawX - maxLeft) * 0.2;
+        translateX.set(maxLeft + (rawX - maxLeft) * 0.2);
       } else if (rawX < maxRight) {
-        translateX.value = maxRight + (rawX - maxRight) * 0.2;
+        translateX.set(maxRight + (rawX - maxRight) * 0.2);
       } else {
-        translateX.value = rawX;
+        translateX.set(rawX);
       }
     })
     .onEnd((e) => {
       'worklet';
       const topBoundary = insets.top + 55;
-      const bottomBoundary = SCREEN_HEIGHT - (80 + insets.bottom);
+      const bottomBoundary = screenHeight - (80 + insets.bottom);
 
       const currentIdx = Math.max(
         0,
-        Math.min(TAB_ORDER.length - 1, Math.round(-startX.value / SCREEN_WIDTH))
+        Math.min(TAB_ORDER.length - 1, Math.round(-startX.get() / screenWidth))
       );
 
-      if (touchAbsoluteY.value < topBoundary || touchAbsoluteY.value > bottomBoundary) {
-        translateX.value = withTiming(-currentIdx * SCREEN_WIDTH, {
+      if (touchAbsoluteY.get() < topBoundary || touchAbsoluteY.get() > bottomBoundary) {
+        translateX.set(withTiming(-currentIdx * screenWidth, {
           duration: 200,
           easing: Easing.out(Easing.cubic),
-        });
+        }));
         return;
       }
 
@@ -189,9 +204,9 @@ export const MainTabNavigator = () => {
       const velocity = e.velocityX;
 
       let newIndex = currentIdx;
-      if (draggedDist < -SCREEN_WIDTH * 0.15 || velocity < -300) {
+      if (draggedDist < -screenWidth * 0.15 || velocity < -300) {
         newIndex = Math.min(TAB_ORDER.length - 1, currentIdx + 1);
-      } else if (draggedDist > SCREEN_WIDTH * 0.15 || velocity > 300) {
+      } else if (draggedDist > screenWidth * 0.15 || velocity > 300) {
         newIndex = Math.max(0, currentIdx - 1);
       }
 
@@ -199,29 +214,29 @@ export const MainTabNavigator = () => {
     });
 
   const animatedPagerStyle = useAnimatedStyle(() => ({
-    width: SCREEN_WIDTH * TAB_ORDER.length,
+    width: screenWidth * TAB_ORDER.length,
     flex: 1,
     flexDirection: 'row',
-    transform: [{ translateX: translateX.value }],
+    transform: [{ translateX: translateX.get() }],
   }));
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <GestureDetector gesture={panGesture}>
         <Animated.View style={animatedPagerStyle}>
-          <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+          <View style={{ width: screenWidth, flex: 1 }}>
             <WeightTrackerScreen />
           </View>
-          <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+          <View style={{ width: screenWidth, flex: 1 }}>
             <WorkoutScreen />
           </View>
-          <View style={{ width: SCREEN_WIDTH, flex: 1 }}>
+          <View style={{ width: screenWidth, flex: 1 }}>
             <StepsTrackerScreen isActive={activeIndex === 2} />
           </View>
         </Animated.View>
       </GestureDetector>
 
-      {/* Custom Bottom Tab Bar */}
+      {/* Custom Bottom Tab Bar (Pressable for tab items) */}
       <View
         style={[
           styles.tabBar,
@@ -234,41 +249,38 @@ export const MainTabNavigator = () => {
           },
         ]}
       >
-        <TouchableOpacity
+        <Pressable
           style={styles.tabButton}
-          onPress={() => goToTab(0)}
-          activeOpacity={0.7}
+          onPress={handleTab0}
         >
           <TabItem
             focused={activeIndex === 0}
             label="Weight"
-            renderIcon={(color) => <WeightIcon color={color} />}
+            renderIcon={renderWeightIcon}
           />
-        </TouchableOpacity>
+        </Pressable>
 
-        <TouchableOpacity
+        <Pressable
           style={styles.tabButton}
-          onPress={() => goToTab(1)}
-          activeOpacity={0.7}
+          onPress={handleTab1}
         >
           <TabItem
             focused={activeIndex === 1}
             label="Home"
-            renderIcon={(color) => <HomeIcon color={color} />}
+            renderIcon={renderHomeIcon}
           />
-        </TouchableOpacity>
+        </Pressable>
 
-        <TouchableOpacity
+        <Pressable
           style={styles.tabButton}
-          onPress={() => goToTab(2)}
-          activeOpacity={0.7}
+          onPress={handleTab2}
         >
           <TabItem
             focused={activeIndex === 2}
             label="Steps"
-            renderIcon={(color) => <FootprintsIcon color={color} />}
+            renderIcon={renderStepsIcon}
           />
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );

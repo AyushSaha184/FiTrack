@@ -20,4 +20,5 @@ export const collections = {
   stepLogs: (userId: string) => db.collection('users').doc(userId).collection('stepLogs'),
   stepDoc: (userId: string, logId: string) =>
     db.collection('users').doc(userId).collection('stepLogs').doc(logId),
+  aiContentReports: db.collection('aiContentReports'),
 };

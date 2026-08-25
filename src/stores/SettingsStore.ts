@@ -1,4 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
+import { NativeModules } from 'react-native';
 import type { Units, UserPreferences, NotificationSettings, WorkoutSettings } from '../models';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS } from '../utils/constants';
@@ -22,7 +23,8 @@ export class SettingsStore {
     autoSave: true,
     defaultUnits: { weight: 'kg', height: 'cm', temperature: 'celsius' },
   };
-  recordBugReports = true;
+  recordBugReports = false;
+  restartOnBoot = true;
   isLoaded = false;
 
   constructor() {
@@ -36,6 +38,7 @@ export class SettingsStore {
     const savedNotifications = storage.get<NotificationSettings>(STORAGE_KEYS.NOTIFICATIONS);
     const savedWorkout = storage.get<WorkoutSettings>(STORAGE_KEYS.WORKOUT_SETTINGS);
     const savedBugReports = storage.get<boolean>(STORAGE_KEYS.RECORD_BUG_REPORTS);
+    const savedRestartOnBoot = storage.get<boolean>(STORAGE_KEYS.STEP_RESTART_ON_BOOT);
 
     runInAction(() => {
       if (savedTheme) this.theme = savedTheme;
@@ -44,6 +47,9 @@ export class SettingsStore {
       if (savedWorkout) this.workout = savedWorkout;
       if (savedBugReports !== undefined && savedBugReports !== null) {
         this.recordBugReports = savedBugReports;
+      }
+      if (savedRestartOnBoot !== undefined && savedRestartOnBoot !== null) {
+        this.restartOnBoot = savedRestartOnBoot;
       }
       this.isLoaded = true;
     });
@@ -113,6 +119,18 @@ export class SettingsStore {
       this.recordBugReports = enabled;
       storage.set(STORAGE_KEYS.RECORD_BUG_REPORTS, enabled);
     });
+  }
+
+  setRestartOnBoot(enabled: boolean) {
+    runInAction(() => {
+      this.restartOnBoot = enabled;
+      storage.set(STORAGE_KEYS.STEP_RESTART_ON_BOOT, enabled);
+    });
+    // Best-effort sync to native SharedPreferences so BootReceiver honours it.
+    try {
+      const m = NativeModules?.StepCounterModule;
+      m?.setRestartOnBoot?.(enabled);
+    } catch (_) {}
   }
 
   getWeightUnit() {

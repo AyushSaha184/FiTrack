@@ -1,21 +1,29 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  Alert,
-  Linking,
+  TouchableOpacity,
+  Pressable,
+  Platform,
 } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-import { Modal } from './Modal';
-import { ProgressBar } from './ProgressBar';
-import { Button } from './Button';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
+import Svg, { Path, Polyline, Line, Circle as SvgCircle } from 'react-native-svg';
 import { useColors } from '../../hooks';
-import { spacing, radius, typography } from '../../theme';
-import { updateService, type UpdateInfo } from '../../services/update/updateService';
-import { formatDate } from '../../utils/helpers';
+import { typography } from '../../theme';
+import { logger } from '../../utils/logger';
+import {
+  updateService,
+  type UpdateInfo,
+  type DownloadProgress,
+} from '../../services/update/updateService';
 
 interface UpdateModalProps {
   visible: boolean;
@@ -23,7 +31,23 @@ interface UpdateModalProps {
   onClose: () => void;
 }
 
-type UpdateState = 'idle' | 'downloading' | 'ready' | 'error';
+type Phase = 'idle' | 'downloading' | 'installing' | 'error';
+
+const parseReleaseNotes = (raw: string): string[] => {
+  if (!raw) return [];
+  const cleaned = raw.replace(/\[!\s*mandatory\]/gi, '').trim();
+  return cleaned
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^[\s>*\-•·]+/, '').trim())
+    .filter((l) => l.length > 0);
+};
+
+const formatBytes = (b: number): string => {
+  if (!b || b <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(b) / Math.log(1024)));
+  return `${(b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+};
 
 export const UpdateModal = memo<UpdateModalProps>(({
   visible,
@@ -31,301 +55,399 @@ export const UpdateModal = memo<UpdateModalProps>(({
   onClose,
 }) => {
   const colors = useColors();
-  const [state, setState] = useState<UpdateState>('idle');
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadedSize, setDownloadedSize] = useState('0 MB');
-  const [totalSizeStr, setTotalSizeStr] = useState('');
-  const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0.92);
+  const translateY = useSharedValue(24);
 
-  if (!updateInfo) return null;
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [progress, setProgress] = useState<DownloadProgress>({
+    bytesWritten: 0,
+    contentLength: 0,
+    fraction: 0,
+  });
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Track the downloaded file path so we can clean it up after install.
+  const downloadedPathRef = useRef<string | null>(null);
 
-  const formatMB = (bytes: number): string => {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  useEffect(() => {
+    if (visible) {
+      opacity.set(withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) }));
+      scale.set(withSpring(1, { damping: 18, stiffness: 220 }));
+      translateY.set(withSpring(0, { damping: 18, stiffness: 220 }));
+    } else {
+      opacity.set(withTiming(0, { duration: 160 }));
+      scale.set(withTiming(0.95, { duration: 160 }));
+      translateY.set(withTiming(12, { duration: 160 }));
+    }
+  }, [visible, opacity, scale, translateY]);
 
-  const handleStartDownload = async () => {
-    setState('downloading');
-    setDownloadProgress(0);
-    setErrorMessage('');
+  // Reset phase whenever the modal is closed or the update info changes.
+  useEffect(() => {
+    if (!visible) {
+      setPhase('idle');
+      setProgress({ bytesWritten: 0, contentLength: 0, fraction: 0 });
+      setErrorMessage(null);
+      downloadedPathRef.current = null;
+    }
+  }, [visible, updateInfo?.version]);
 
+  const overlayStyle = useAnimatedStyle(() => ({
+    opacity: opacity.get(),
+  }));
+
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: opacity.get(),
+    transform: [
+      { scale: scale.get() },
+      { translateY: translateY.get() },
+    ],
+  }));
+
+  if (!visible || !updateInfo) return null;
+
+  const notes = parseReleaseNotes(updateInfo.releaseNotes);
+  const isMandatory = !!updateInfo.mandatory;
+  const canDirectDownload = Platform.OS === 'android' && !!updateInfo.downloadUrl;
+  const inProgress = phase === 'downloading' || phase === 'installing';
+  const progressPct = Math.max(0, Math.min(1, progress.fraction)) * 100;
+
+  const handleDownload = async () => {
+    if (!canDirectDownload) {
+      // No APK asset on the release -> go straight to the GitHub page.
+      updateService.openReleasePage(updateInfo);
+      return;
+    }
+    setPhase('downloading');
+    setErrorMessage(null);
+    setProgress({ bytesWritten: 0, contentLength: 0, fraction: 0 });
     try {
-      const path = await updateService.downloadUpdate(
-        updateInfo.downloadUrl,
-        updateInfo.fileName,
-        (received, total) => {
-          const effectiveTotal = total > 0 ? total : (updateInfo.assetSize || 0);
-          if (effectiveTotal > 0) {
-            const pct = Math.min(100, Math.max(0, (received / effectiveTotal) * 100));
-            setDownloadProgress(pct);
-            setDownloadedSize(formatMB(received));
-            setTotalSizeStr(formatMB(effectiveTotal));
-          } else {
-            setDownloadedSize(formatMB(received));
-            setTotalSizeStr('Unknown');
-          }
-        }
-      );
-
-      setDownloadedFilePath(path);
-      setState('ready');
-      // Automatically prompt to install once download finishes
-      await updateService.installUpdate(path);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to download update.');
-      setState('error');
+      const filePath = await updateService.downloadApk(updateInfo, (p) => {
+        setProgress(p);
+      });
+      downloadedPathRef.current = filePath;
+      setPhase('installing');
+      try {
+        await updateService.installApk(filePath);
+        // Best-effort cleanup; the file may already be consumed by the installer
+        // but typically the cache copy remains until we delete it.
+        await updateService.cleanupApk(filePath);
+        downloadedPathRef.current = null;
+        onClose();
+      } catch (installErr: any) {
+        // Install intent failed -> surface the error and let the user choose
+        // to open the release page themselves.
+        await updateService.cleanupApk(filePath);
+        downloadedPathRef.current = null;
+        setErrorMessage('Could not start the installer. You can download it from GitHub instead.');
+        setPhase('error');
+      }
+    } catch (e: any) {
+      logger.error('[UpdateModal] download failed', e);
+      setErrorMessage(e?.message || 'Could not download the update. You can download it from GitHub instead.');
+      setPhase('error');
     }
   };
 
-  const handleInstallNow = async () => {
-    if (!downloadedFilePath) return;
-    try {
-      await updateService.installUpdate(downloadedFilePath);
-    } catch (err: any) {
-      Alert.alert('Installation Error', err.message);
-    }
-  };
-
-  const handleDismiss = () => {
-    updateService.dismissUpdate(updateInfo.version);
+  const handleLater = () => {
+    if (isMandatory || inProgress) return;
+    updateService.deferForSession(updateInfo.version);
     onClose();
   };
 
-  const formattedDate = updateInfo.publishedAt
-    ? formatDate(new Date(updateInfo.publishedAt), 'short')
-    : '';
+  const handleOpenReleasePage = () => {
+    updateService.openReleasePage(updateInfo);
+  };
 
-  const totalMbText = updateInfo.assetSize ? formatMB(updateInfo.assetSize) : '';
-
-  return (
-    <Modal
-      visible={visible}
-      onClose={state === 'downloading' ? () => {} : onClose}
-      title="New Update Available"
-      sheet
-    >
-      <View style={styles.container}>
-        {/* Header Info */}
-        <View style={styles.headerInfo}>
-          <View style={styles.titleBadgeRow}>
-            <View style={[styles.badge, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.badgeText, { color: colors.text }]}>
-                v{updateInfo.version}
-              </Text>
-            </View>
-            {formattedDate ? (
-              <Text style={[styles.dateText, { color: colors.textMuted }]}>
-                Released {formattedDate}
-              </Text>
-            ) : null}
-            {totalMbText ? (
-              <Text style={[styles.sizeText, { color: colors.textMuted }]}>
-                • {totalMbText}
-              </Text>
-            ) : null}
+  // Render the action row depending on the current phase.
+  const renderActions = () => {
+    if (phase === 'downloading') {
+      return (
+        <View style={[styles.progressBlock]}>
+          <View style={[styles.progressBarBg, { backgroundColor: colors.cardSurface }]}>
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: `${progressPct}%`,
+                  backgroundColor: colors.primary,
+                },
+              ]}
+            />
           </View>
-          <Text style={[styles.releaseTitle, { color: colors.text }]}>
-            {updateInfo.releaseName}
+          <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+            Downloading… {progressPct.toFixed(0)}%
+            {progress.contentLength > 0
+              ? `  •  ${formatBytes(progress.bytesWritten)} / ${formatBytes(progress.contentLength)}`
+              : ''}
           </Text>
         </View>
-
-        {/* Release Notes */}
-        <View style={[styles.notesContainer, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
-          <Text style={[styles.notesHeader, { color: colors.textMuted }]}>WHAT'S NEW</Text>
-          <ScrollView style={styles.notesScroll} showsVerticalScrollIndicator={false}>
-            <Text style={[styles.notesBody, { color: colors.textSecondary }]}>
-              {updateInfo.releaseNotes}
+      );
+    }
+    if (phase === 'installing') {
+      return (
+        <View style={styles.progressBlock}>
+          <View style={styles.installingRow}>
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.primary} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <Polyline points="20 6 9 17 4 12" />
+            </Svg>
+            <Text style={[styles.progressText, { color: colors.text }]}>
+              Download complete — opening installer…
             </Text>
-          </ScrollView>
+          </View>
         </View>
-
-        {/* Status / Progress Section */}
-        {state === 'downloading' && (
-          <View style={styles.progressSection}>
-            <View style={styles.progressLabelRow}>
-              <Text style={[styles.progressStatusText, { color: colors.text }]}>
-                Downloading update...
-              </Text>
-              <Text style={[styles.progressPctText, { color: colors.textMuted }]}>
-                {downloadedSize} / {totalSizeStr}
-              </Text>
-            </View>
-            <ProgressBar progress={downloadProgress} height={8} animated={false} />
-          </View>
-        )}
-
-        {state === 'ready' && (
-          <View style={[styles.statusBox, { backgroundColor: colors.text === '#FFFFFF' ? 'rgba(48, 209, 88, 0.1)' : 'rgba(52, 199, 89, 0.1)', borderColor: colors.success }]}>
-            <Text style={[styles.statusBoxText, { color: colors.success }]}>
-              ✓ APK downloaded and ready to install!
-            </Text>
-          </View>
-        )}
-
-        {state === 'error' && (
-          <View style={[styles.statusBox, { backgroundColor: colors.text === '#FFFFFF' ? 'rgba(255, 69, 58, 0.1)' : 'rgba(255, 59, 48, 0.1)', borderColor: colors.error }]}>
-            <Text style={[styles.statusBoxText, { color: colors.error }]}>
-              {errorMessage || 'Download failed. Please check internet connection.'}
-            </Text>
-          </View>
-        )}
-
-        {/* Actions */}
-        <View style={styles.actionButtons}>
-          {state === 'idle' && (
-            <>
-              <Button
-                title="Download & Install"
-                onPress={handleStartDownload}
-                fullWidth
-                style={styles.primaryBtn}
-              />
-              <Button
-                title="Later"
-                onPress={handleDismiss}
-                variant="secondary"
-                fullWidth
-              />
-            </>
-          )}
-
-          {state === 'downloading' && (
-            <Text style={[styles.downloadingNote, { color: colors.textMuted }]}>
-              Please wait while the update is downloading...
-            </Text>
-          )}
-
-          {state === 'ready' && (
-            <Button
-              title="Install Now"
-              onPress={handleInstallNow}
-              fullWidth
-              style={styles.primaryBtn}
-            />
-          )}
-
-          {state === 'error' && (
-            <>
-              <Button
-                title="Retry Download"
-                onPress={handleStartDownload}
-                fullWidth
-                style={styles.primaryBtn}
-              />
-              <Button
-                title="Open Download Link in Browser"
-                onPress={() => {
-                  if (updateInfo.downloadUrl) {
-                    Linking.openURL(updateInfo.downloadUrl);
-                  }
-                }}
-                variant="secondary"
-                fullWidth
-              />
-              <Button
-                title="Close"
-                onPress={onClose}
-                variant="ghost"
-                fullWidth
-              />
-            </>
-          )}
+      );
+    }
+    if (phase === 'error') {
+      return (
+        <View style={styles.actions}>
+          {!isMandatory ? (
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}
+              onPress={handleLater}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.secondaryBtnText, { color: colors.text }]}>Later</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+            onPress={handleOpenReleasePage}
+            activeOpacity={0.8}
+          >
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}>
+              <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <Polyline points="7 10 12 15 17 10" />
+              <Line x1="12" y1="15" x2="12" y2="3" />
+            </Svg>
+            <Text style={styles.primaryBtnText}>Download from GitHub</Text>
+          </TouchableOpacity>
         </View>
+      );
+    }
+    // idle
+    return (
+      <View style={styles.actions}>
+        {!isMandatory ? (
+          <TouchableOpacity
+            style={[styles.secondaryBtn, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}
+            onPress={handleLater}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.secondaryBtnText, { color: colors.text }]}>Later</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+          onPress={handleDownload}
+          activeOpacity={0.8}
+        >
+          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}>
+            <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <Polyline points="7 10 12 15 17 10" />
+            <Line x1="12" y1="15" x2="12" y2="3" />
+          </Svg>
+          <Text style={styles.primaryBtnText}>
+            {canDirectDownload
+              ? isMandatory
+                ? 'Update Now'
+                : 'Download'
+              : 'View on GitHub'}
+          </Text>
+        </TouchableOpacity>
       </View>
-    </Modal>
+    );
+  };
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="auto">
+      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, overlayStyle]}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={inProgress || isMandatory ? undefined : handleLater}
+        />
+      </Animated.View>
+
+      <View style={styles.center} pointerEvents="box-none">
+        <Animated.View
+          style={[
+            styles.card,
+            { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            cardStyle,
+          ]}
+        >
+          <View style={styles.iconWrap}>
+            <Text style={[styles.title, { color: colors.text }]}>
+              Update Available
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              FiTrack v{updateInfo.version} is now available
+            </Text>
+          </View>
+
+          {notes.length > 0 ? (
+            <View style={[styles.notesBox, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.notesLabel, { color: colors.textMuted }]}>WHAT'S NEW</Text>
+              <ScrollView
+                style={styles.notesScroll}
+                contentContainerStyle={styles.notesContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {notes.map((line, idx) => (
+                  <View key={`${idx}-${line.slice(0, 12)}`} style={styles.noteRow}>
+                    <View style={[styles.bullet, { backgroundColor: colors.primary }]} />
+                    <Text style={[styles.noteText, { color: colors.textSecondary }]}>
+                      {line}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {errorMessage ? (
+            <Text style={[styles.errorText, { color: colors.textSecondary }]}>{errorMessage}</Text>
+          ) : null}
+
+          {renderActions()}
+        </Animated.View>
+      </View>
+    </View>
   );
 });
 
 UpdateModal.displayName = 'UpdateModal';
 
+// Reference SvgCircle to avoid unused-import lint errors if the icon set changes.
+void SvgCircle;
+
 const styles = StyleSheet.create({
-  container: {
-    paddingBottom: spacing.base,
+  backdrop: {
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
-  headerInfo: {
-    marginBottom: spacing.base,
-  },
-  titleBadgeRow: {
-    flexDirection: 'row',
+  center: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
+    paddingHorizontal: 24,
   },
-  badge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
-    borderRadius: radius.pill,
+  card: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 20,
     borderWidth: 1,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 18,
   },
-  badgeText: {
-    fontSize: 12,
+  iconWrap: {
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  title: {
+    ...typography.h2,
+    fontSize: 22,
     fontWeight: '700',
+    textAlign: 'center',
   },
-  dateText: {
-    fontSize: 13,
+  subtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 6,
   },
-  sizeText: {
-    fontSize: 13,
-  },
-  releaseTitle: {
-    fontSize: typography.h3.fontSize,
-    fontWeight: '700',
-    marginTop: spacing.xxs,
-  },
-  notesContainer: {
-    borderRadius: radius.md,
+  notesBox: {
+    marginTop: 18,
+    borderRadius: 12,
     borderWidth: 1,
-    padding: spacing.md,
-    maxHeight: 180,
-    marginBottom: spacing.base,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 4,
+    maxHeight: 200,
   },
-  notesHeader: {
-    fontSize: 11,
+  notesLabel: {
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.8,
-    marginBottom: spacing.xs,
+    letterSpacing: 0.6,
+    marginBottom: 8,
   },
   notesScroll: {
-    maxHeight: 140,
+    maxHeight: 170,
   },
-  notesBody: {
-    fontSize: 14,
-    lineHeight: 20,
+  notesContent: {
+    paddingBottom: 10,
   },
-  progressSection: {
-    marginBottom: spacing.base,
-  },
-  progressLabelRow: {
+  noteRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
-  progressStatusText: {
+  bullet: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    marginTop: 8,
+    marginRight: 10,
+  },
+  noteText: {
+    flex: 1,
     fontSize: 13,
+    lineHeight: 19,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  secondaryBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryBtnText: {
+    fontSize: 15,
     fontWeight: '600',
   },
-  progressPctText: {
-    fontSize: 12,
-  },
-  statusBox: {
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginBottom: spacing.base,
-  },
-  statusBoxText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  actionButtons: {
-    gap: spacing.sm,
-  },
   primaryBtn: {
-    borderRadius: radius.md,
+    flex: 1.4,
+    paddingVertical: 13,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  downloadingNote: {
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  progressBlock: {
+    marginTop: 18,
+  },
+  progressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 12,
+    marginTop: 8,
     textAlign: 'center',
-    fontSize: 13,
-    paddingVertical: spacing.sm,
+  },
+  installingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  errorText: {
+    fontSize: 12,
+    marginTop: 14,
+    textAlign: 'center',
   },
 });

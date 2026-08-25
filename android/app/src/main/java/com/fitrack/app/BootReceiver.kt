@@ -10,7 +10,8 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             val prefs = context.getSharedPreferences("StepCounterPrefs", Context.MODE_PRIVATE)
             val trackingActive = prefs.getBoolean("tracking_active", false)
-            if (trackingActive) {
+            val restartOnBoot = prefs.getBoolean("restart_on_boot", true)
+            if (trackingActive && restartOnBoot) {
                 val serviceIntent = Intent(context, StepCounterForegroundService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(serviceIntent)

@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -37,32 +37,43 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [inlineCustomName, setInlineCustomName] = useState('');
 
-  const categories = getExerciseCategories().map(cat => ({
-    ...cat,
-    exercises: [...cat.exercises].sort((a, b) => a.name.localeCompare(b.name))
-  }));
-  const searchResults = searchQuery.length > 0
-    ? [...searchExercises(searchQuery)].sort((a, b) => a.name.localeCompare(b.name))
-    : [];
+  // Memoize static category list (js-combine-iterations, rerender-memo)
+  const categories = useMemo(() => {
+    if (!visible) return [];
+    return getExerciseCategories().map((cat) => ({
+      ...cat,
+      exercises: [...cat.exercises].sort((a, b) => a.name.localeCompare(b.name)),
+    }));
+  }, [visible]);
 
-  const handleSelect = (exercise: ExerciseItem) => {
-    onSelectExercise(exercise);
-    resetForm();
-    onClose();
-  };
+  // Memoize search query results (rerender-use-deferred-value / useMemo)
+  const searchResults = useMemo(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length === 0) return [];
+    return [...searchExercises(trimmed)].sort((a, b) => a.name.localeCompare(b.name));
+  }, [searchQuery]);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setSearchQuery('');
     setSelectedCategory(null);
     setInlineCustomName('');
-  };
+  }, []);
 
-  const handleClose = () => {
+  const handleSelect = useCallback(
+    (exercise: ExerciseItem) => {
+      onSelectExercise(exercise);
+      resetForm();
+      onClose();
+    },
+    [onSelectExercise, resetForm, onClose]
+  );
+
+  const handleClose = useCallback(() => {
     resetForm();
     onClose();
-  };
+  }, [resetForm, onClose]);
 
-  const handleAddInlineCustom = () => {
+  const handleAddInlineCustom = useCallback(() => {
     const trimmed = inlineCustomName.trim();
     if (!trimmed) return;
     const created = saveCustomExercise({
@@ -72,7 +83,11 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
     });
     setInlineCustomName('');
     handleSelect(created);
-  };
+  }, [inlineCustomName, handleSelect]);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+  }, []);
 
   const renderExerciseItem = (
     exercise: ExerciseItem,
@@ -84,16 +99,13 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
         key={exercise.id}
         style={[
           styles.exerciseItem,
-          !isLastInBox && {
-            borderBottomWidth: 1,
-            borderBottomColor: 'rgba(255, 255, 255, 0.07)',
-          },
+          !isLastInBox && styles.exerciseItemBorder,
         ]}
         onPress={() => handleSelect(exercise)}
         activeOpacity={0.7}
       >
         <View style={styles.exerciseInfo}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={styles.exerciseTitleRow}>
             <Text style={[styles.exerciseName, { color: colors.text }]}>
               {exercise.name}
             </Text>
@@ -103,9 +115,6 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
               </View>
             )}
           </View>
-          <Text style={[styles.exerciseMeta, { color: colors.textMuted }]}>
-            {exercise.equipment.charAt(0).toUpperCase() + exercise.equipment.slice(1).replace('_', ' ')}
-          </Text>
         </View>
         <Text style={[styles.addIcon, { color: colors.textMuted }]}>+</Text>
       </TouchableOpacity>
@@ -149,21 +158,15 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
               <View
                 style={[
                   styles.exerciseItem,
-                  {
-                    borderBottomWidth: 1,
-                    borderBottomColor: 'rgba(255, 255, 255, 0.07)',
-                  },
+                  styles.exerciseItemBorder,
                 ]}
               >
                 <View style={styles.exerciseInfo}>
                   <TextInput
                     style={[
                       styles.exerciseName,
-                      {
-                        color: colors.text,
-                        padding: 0,
-                        margin: 0,
-                      },
+                      styles.inlineCustomInput,
+                      { color: colors.text },
                     ]}
                     placeholder="Type exercise name..."
                     placeholderTextColor={colors.textMuted}
@@ -176,7 +179,7 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
                 <TouchableOpacity
                   onPress={handleAddInlineCustom}
                   activeOpacity={0.7}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  hitSlop={10}
                 >
                   <Text style={[styles.addIcon, { color: colors.textMuted }]}>+</Text>
                 </TouchableOpacity>
@@ -203,9 +206,9 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
       title="Add Exercise"
       sheet
       noPadding
-      bodyStyle={{ backgroundColor: '#09090B' }}
+      bodyStyle={styles.modalBody}
     >
-      <View style={{ height: 550, paddingBottom: insets.bottom, backgroundColor: '#09090B' }}>
+      <View style={[styles.container, { paddingBottom: insets.bottom }]}>
         {/* Search Bar */}
         <View
           style={[
@@ -213,7 +216,6 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
             {
               backgroundColor: 'rgba(255, 255, 255, 0.05)',
               borderColor: 'rgba(255, 255, 255, 0.1)',
-              marginTop: spacing.base,
             },
           ]}
         >
@@ -240,13 +242,13 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
             autoCapitalize="none"
             autoCorrect={false}
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+          {searchQuery.length > 0 ? (
+            <TouchableOpacity onPress={handleClearSearch}>
               <Text style={[styles.clearSearch, { color: colors.textMuted }]}>
                 ✕
               </Text>
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
 
         {/* Categories / Search Results Content */}
@@ -286,10 +288,18 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
 ExercisePicker.displayName = 'ExercisePicker';
 
 const styles = StyleSheet.create({
+  modalBody: {
+    backgroundColor: '#09090B',
+  },
+  container: {
+    height: 550,
+    backgroundColor: '#09090B',
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: spacing.xl,
+    marginTop: spacing.base,
     marginBottom: spacing.base,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -372,8 +382,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xs,
   },
+  exerciseItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.07)',
+  },
   exerciseInfo: {
     flex: 1,
+  },
+  exerciseTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   exerciseName: {
     fontSize: typography.body.fontSize,
@@ -382,6 +401,10 @@ const styles = StyleSheet.create({
   exerciseMeta: {
     fontSize: typography.small.fontSize,
     marginTop: 2,
+  },
+  inlineCustomInput: {
+    padding: 0,
+    margin: 0,
   },
   customBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.12)',

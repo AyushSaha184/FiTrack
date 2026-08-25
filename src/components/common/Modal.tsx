@@ -1,4 +1,4 @@
-import React, { memo, ReactNode, useEffect, useState } from 'react';
+import React, { memo, ReactNode, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Modal as RNModal,
@@ -46,7 +46,7 @@ export const Modal = memo<ModalProps>(({
   bodyStyle,
 }) => {
   const colors = useColors();
-  
+
   // Local state to keep the RNModal mounted during exit animations
   const [mounted, setMounted] = useState(visible);
 
@@ -55,147 +55,158 @@ export const Modal = memo<ModalProps>(({
   const translateY = useSharedValue(20);
   const dragY = useSharedValue(0);
 
+  const handleUnmount = useCallback(() => {
+    setMounted(false);
+  }, []);
+
+  const handleCloseAndUnmount = useCallback(() => {
+    onClose();
+    setMounted(false);
+  }, [onClose]);
+
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      dragY.value = 0;
-      opacity.value = withTiming(1, { duration: 200 });
+      dragY.set(0);
+      opacity.set(withTiming(1, { duration: 200 }));
       if (sheet) {
-        scale.value = 1;
-        translateY.value = 600; // Slide from bottom
-        translateY.value = withSpring(0, { damping: 20, stiffness: 220 });
+        scale.set(1);
+        translateY.set(600); // Slide from bottom
+        translateY.set(withSpring(0, { damping: 20, stiffness: 220 }));
       } else {
-        scale.value = 0.95;
-        scale.value = withSpring(1, { damping: 20, stiffness: 250 });
-        translateY.value = 50;
-        translateY.value = withSpring(0, { damping: 20, stiffness: 250 });
+        scale.set(0.95);
+        scale.set(withSpring(1, { damping: 20, stiffness: 250 }));
+        translateY.set(50);
+        translateY.set(withSpring(0, { damping: 20, stiffness: 250 }));
       }
-    } else {
-      opacity.value = withTiming(0, { duration: 200 });
+    } else if (mounted) {
+      opacity.set(withTiming(0, { duration: 200 }));
       if (sheet) {
-        translateY.value = withTiming(600, { duration: 250 }, (finished) => {
+        translateY.set(withTiming(600, { duration: 250 }, (finished) => {
           if (finished) {
-            runOnJS(setMounted)(false);
+            runOnJS(handleUnmount)();
           }
-        });
+        }));
       } else {
-        scale.value = withTiming(0.95, { duration: 200 });
-        translateY.value = withTiming(50, { duration: 200 }, (finished) => {
+        scale.set(withTiming(0.95, { duration: 200 }));
+        translateY.set(withTiming(50, { duration: 200 }, (finished) => {
           if (finished) {
-            runOnJS(setMounted)(false);
+            runOnJS(handleUnmount)();
           }
-        });
+        }));
       }
     }
-  }, [visible, sheet]);
+  }, [visible, mounted, sheet, dragY, opacity, scale, translateY, handleUnmount]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
     .onStart(() => {
       'worklet';
       // Touch feedback: slightly shrink the sheet springily to interact
-      scale.value = withSpring(0.985, { damping: 15, stiffness: 150 });
+      scale.set(withSpring(0.985, { damping: 15, stiffness: 150 }));
     })
     .onUpdate((event) => {
       'worklet';
       if (event.translationY < 0) {
         // Dragging above normal size -> make it resistive/springy
-        dragY.value = event.translationY * 0.25;
+        dragY.set(event.translationY * 0.25);
       } else {
         // Dragging down -> moves directly with finger
-        dragY.value = event.translationY;
+        dragY.set(event.translationY);
       }
     })
     .onEnd((event) => {
       'worklet';
       // Reset scale feedback
-      scale.value = withSpring(1, { damping: 15, stiffness: 150 });
+      scale.set(withSpring(1, { damping: 15, stiffness: 150 }));
 
       // If dragged down enough (e.g. 150px) or flicked down rapidly (velocityY > 600)
       const shouldClose = event.translationY > 150 || event.velocityY > 600;
       if (shouldClose) {
-        opacity.value = withTiming(0, { duration: 200 });
-        dragY.value = withTiming(600, { duration: 250 }, (finished) => {
+        opacity.set(withTiming(0, { duration: 200 }));
+        dragY.set(withTiming(600, { duration: 250 }, (finished) => {
           if (finished) {
-            runOnJS(onClose)();
-            runOnJS(setMounted)(false);
+            runOnJS(handleCloseAndUnmount)();
           }
-        });
+        }));
       } else {
         // Spring back to normal size
-        dragY.value = withSpring(0, { damping: 20, stiffness: 250 });
+        dragY.set(withSpring(0, { damping: 20, stiffness: 250 }));
       }
     });
 
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+    opacity: opacity.get(),
   }));
 
   const contentStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+    opacity: opacity.get(),
     transform: [
-      { scale: scale.value },
-      { translateY: translateY.value + dragY.value },
+      { scale: scale.get() },
+      { translateY: translateY.get() + dragY.get() },
     ],
   }));
 
-  const animatedContent = (
-    <Animated.View
-      style={[
-        styles.content,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.cardBorder,
-        },
-        fullScreen && styles.fullScreen,
-        sheet && styles.sheet,
-        contentStyle,
-      ]}
-    >
-      {sheet ? (
-        <GestureDetector gesture={panGesture}>
-          <View style={{ backgroundColor: 'transparent' }}>
-            <View style={styles.handleContainer}>
-              <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
-            </View>
-            {(title || showCloseButton) && (
-              <View style={styles.header}>
-                {title && (
-                  <Text style={[styles.title, { color: colors.text }]}>
-                    {title}
-                  </Text>
-                )}
-                {showCloseButton && (
-                  <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                    <Text style={[styles.closeText, { color: colors.textSecondary }]}>
-                      ✕
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
-        </GestureDetector>
-      ) : (
-        (title || showCloseButton) && (
+  // Memoize the static portions of the modal body so we don't re-create
+  // styles / JSX on every parent render. The animated style and the
+  // children / title still need to be in the live tree.
+  const contentBaseStyle = useMemo<ViewStyle[]>(
+    () => [
+      styles.content,
+      { backgroundColor: colors.card, borderColor: colors.cardBorder },
+      ...(fullScreen ? [styles.fullScreen] : []),
+      ...(sheet ? [styles.sheet] : []),
+    ],
+    [colors.card, colors.cardBorder, fullScreen, sheet]
+  );
+
+  const handleContainer = useMemo(
+    () => (
+      <View style={styles.sheetHeaderWrapper}>
+        <View style={styles.handleContainer}>
+          <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
+        </View>
+        {(title || showCloseButton) && (
           <View style={styles.header}>
-            {title && (
+            {title ? (
               <Text style={[styles.title, { color: colors.text }]}>
                 {title}
               </Text>
-            )}
-            {showCloseButton && (
+            ) : null}
+            {showCloseButton ? (
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <Text style={[styles.closeText, { color: colors.textSecondary }]}>
                   ✕
                 </Text>
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
-        )
-      )}
-      <View style={[styles.body, noPadding && { padding: 0 }, bodyStyle]}>{children}</View>
-    </Animated.View>
+        )}
+      </View>
+    ),
+    [title, showCloseButton, onClose, colors.text, colors.textSecondary, colors.textMuted]
+  );
+
+  const defaultHeader = useMemo(
+    () => (
+      (title || showCloseButton) && (
+        <View style={styles.header}>
+          {title ? (
+            <Text style={[styles.title, { color: colors.text }]}>
+              {title}
+            </Text>
+          ) : null}
+          {showCloseButton ? (
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Text style={[styles.closeText, { color: colors.textSecondary }]}>
+                ✕
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )
+    ),
+    [title, showCloseButton, onClose, colors.text, colors.textSecondary]
   );
 
   return (
@@ -206,7 +217,7 @@ export const Modal = memo<ModalProps>(({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <GestureHandlerRootView style={{ flex: 1, width: '100%', height: '100%' }}>
+      <GestureHandlerRootView style={styles.gestureRoot}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.keyboardView}
@@ -215,7 +226,16 @@ export const Modal = memo<ModalProps>(({
             <Pressable style={styles.backdropPress} onPress={onClose} />
           </Animated.View>
 
-          {animatedContent}
+          <Animated.View style={[contentBaseStyle, contentStyle]}>
+            {sheet ? (
+              <GestureDetector gesture={panGesture}>
+                {handleContainer}
+              </GestureDetector>
+            ) : (
+              defaultHeader
+            )}
+            <View style={[styles.body, noPadding && styles.bodyNoPadding, bodyStyle]}>{children}</View>
+          </Animated.View>
         </KeyboardAvoidingView>
       </GestureHandlerRootView>
     </RNModal>
@@ -225,6 +245,11 @@ export const Modal = memo<ModalProps>(({
 Modal.displayName = 'Modal';
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
   keyboardView: {
     flex: 1,
     justifyContent: 'center',
@@ -262,6 +287,9 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 0,
     borderWidth: 0,
   },
+  sheetHeaderWrapper: {
+    backgroundColor: 'transparent',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -289,6 +317,9 @@ const styles = StyleSheet.create({
   },
   body: {
     padding: spacing.xl,
+  },
+  bodyNoPadding: {
+    padding: 0,
   },
   handleContainer: {
     alignItems: 'center',

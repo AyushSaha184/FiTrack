@@ -11,9 +11,52 @@ export interface SavedKey {
 export interface AIReportResult {
   coachNotes: string[];
   exerciseRecap: string[];
+  provider?: AIProvider;
+  model?: string;
 }
 
 const STORAGE_KEY = 'fitrack_api_keys_list';
+
+/**
+ * In-memory response cache so that re-running an AI report with the same input
+ * (e.g. user re-opens the report screen, or hits "regenerate" with identical
+ * data) does not burn another API call. Keyed by a hash of (workoutHistory,
+ * provider key prefix) so that swapping providers still hits the network.
+ */
+interface CacheEntry {
+  expires: number;
+  result: AIReportResult;
+}
+const responseCache: Map<string, CacheEntry> = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function hashPrompt(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input.charCodeAt(i);
+    hash = ((hash << 5) - hash + ch) | 0;
+  }
+  return String(hash);
+}
+
+function getCachedResult(key: string): AIReportResult | null {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expires) {
+    responseCache.delete(key);
+    return null;
+  }
+  return entry.result;
+}
+
+function setCachedResult(key: string, result: AIReportResult) {
+  responseCache.set(key, { expires: Date.now() + CACHE_TTL_MS, result });
+  // Cap the cache to the last 20 entries to bound memory.
+  if (responseCache.size > 20) {
+    const firstKey = responseCache.keys().next().value;
+    if (firstKey) responseCache.delete(firstKey);
+  }
+}
 
 export const aiService = {
   // Key Storage helpers
@@ -71,6 +114,16 @@ export const aiService = {
     const systemPrompt = this.buildSystemPrompt();
     const userPrompt = this.buildUserPrompt(workoutHistoryJSON);
 
+    // Check the in-memory response cache using a hash of the input. We include
+    // the active provider order so that a different provider config doesn't
+    // accidentally return a stale result.
+    const cacheKey = `${savedKeys.map((k) => k.provider).join('|')}::${hashPrompt(systemPrompt + userPrompt)}`;
+    const cached = getCachedResult(cacheKey);
+    if (cached) {
+      logger.info('[aiService] Returning cached report for input hash');
+      return cached;
+    }
+
     let lastError: Error | null = null;
 
     // Run the key queue fallback loop
@@ -79,9 +132,11 @@ export const aiService = {
       logger.info(`[aiService] Attempting generation using provider: ${keyObj.provider}...`);
 
       try {
-        const textResult = await this.callProviderAPI(keyObj.provider, keyObj.key, systemPrompt, userPrompt);
-        const parsed = this.cleanAndParseJSON(textResult);
-        return parsed;
+        const { text, model } = await this.callProviderAPI(keyObj.provider, keyObj.key, systemPrompt, userPrompt);
+        const parsed = this.cleanAndParseJSON(text);
+        const result: AIReportResult = { ...parsed, provider: keyObj.provider, model };
+        setCachedResult(cacheKey, result);
+        return result;
       } catch (err: any) {
         logger.error(`[aiService] Provider ${keyObj.provider} failed:`, err);
         lastError = new Error(`${keyObj.provider.toUpperCase()} failed: ${err.message || 'Unknown error'}`);
@@ -91,15 +146,16 @@ export const aiService = {
     throw lastError || new Error('Generation failed across all available keys.');
   },
 
-  async callProviderAPI(provider: AIProvider, key: string, systemPrompt: string, userPrompt: string): Promise<string> {
+  async callProviderAPI(provider: AIProvider, key: string, systemPrompt: string, userPrompt: string): Promise<{ text: string; model: string }> {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Request timed out after 12 seconds')), 12000)
     );
 
     const apiCallPromise = (async () => {
       if (provider === 'gemini') {
+        const model = 'gemini-2.5-flash';
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -120,10 +176,11 @@ export const aiService = {
         const data = await response.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!text) throw new Error('Empty response from Gemini API');
-        return text;
+        return { text, model };
       }
 
       if (provider === 'groq') {
+        const model = 'llama-3.3-70b-versatile';
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -131,7 +188,7 @@ export const aiService = {
             Authorization: `Bearer ${key}`,
           },
           body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
+            model,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -149,10 +206,11 @@ export const aiService = {
         const data = await response.json();
         const text = data?.choices?.[0]?.message?.content;
         if (!text) throw new Error('Empty response from Groq API');
-        return text;
+        return { text, model };
       }
 
       if (provider === 'openrouter') {
+        const model = 'google/gemini-2.5-flash';
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -160,7 +218,7 @@ export const aiService = {
             Authorization: `Bearer ${key}`,
           },
           body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
+            model,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -178,10 +236,11 @@ export const aiService = {
         const data = await response.json();
         const text = data?.choices?.[0]?.message?.content;
         if (!text) throw new Error('Empty response from OpenRouter API');
-        return text;
+        return { text, model };
       }
 
       if (provider === 'openai') {
+        const model = 'gpt-4o-mini';
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -189,7 +248,7 @@ export const aiService = {
             Authorization: `Bearer ${key}`,
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -207,10 +266,11 @@ export const aiService = {
         const data = await response.json();
         const text = data?.choices?.[0]?.message?.content;
         if (!text) throw new Error('Empty response from OpenAI API');
-        return text;
+        return { text, model };
       }
 
       if (provider === 'anthropic') {
+        const model = 'claude-3-5-haiku-latest';
         const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -219,7 +279,7 @@ export const aiService = {
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-3-5-haiku-latest',
+            model,
             max_tokens: 1024,
             system: systemPrompt,
             messages: [
@@ -236,10 +296,11 @@ export const aiService = {
         const data = await response.json();
         const text = data?.content?.[0]?.text;
         if (!text) throw new Error('Empty response from Anthropic API');
-        return text;
+        return { text, model };
       }
 
       if (provider === 'deepseek') {
+        const model = 'deepseek-chat';
         const response = await fetch('https://api.deepseek.com/chat/completions', {
           method: 'POST',
           headers: {
@@ -247,7 +308,7 @@ export const aiService = {
             Authorization: `Bearer ${key}`,
           },
           body: JSON.stringify({
-            model: 'deepseek-chat',
+            model,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt }
@@ -265,10 +326,11 @@ export const aiService = {
         const data = await response.json();
         const text = data?.choices?.[0]?.message?.content;
         if (!text) throw new Error('Empty response from DeepSeek API');
-        return text;
+        return { text, model };
       }
 
       if (provider === 'cohere') {
+        const model = 'command-r-plus';
         const response = await fetch('https://api.cohere.com/v2/chat/completions', {
           method: 'POST',
           headers: {
@@ -276,7 +338,7 @@ export const aiService = {
             Authorization: `Bearer ${key}`,
           },
           body: JSON.stringify({
-            model: 'command-r-plus',
+            model,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt }
@@ -293,7 +355,7 @@ export const aiService = {
         const data = await response.json();
         const text = data?.choices?.[0]?.message?.content;
         if (!text) throw new Error('Empty response from Cohere API');
-        return text;
+        return { text, model };
       }
 
       throw new Error('Unsupported provider type');

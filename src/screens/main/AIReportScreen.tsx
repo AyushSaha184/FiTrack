@@ -1,17 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { observer } from 'mobx-react-lite';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
-import { useColors, useSpacing, useTypography } from '../../hooks';
+import { useColors, useSpacing, useTypography, useAuth } from '../../hooks';
 import type { AIReportResult } from '../../services/ai/aiService';
+import { aiContentReportsService } from '../../services/ai/aiContentReportsService';
+import { CustomAlert } from '../../components/common/CustomAlert';
+import { CONFIG } from '../../config/constants';
+import { logger } from '../../utils/logger';
 
 type AIReportScreenRouteProp = RouteProp<
   {
@@ -22,13 +28,69 @@ type AIReportScreenRouteProp = RouteProp<
   'AIReport'
 >;
 
+const REPORT_CATEGORIES = [
+  { id: 'inaccurate', label: 'Inaccurate fitness advice' },
+  { id: 'harmful', label: 'Potentially harmful or unsafe' },
+  { id: 'inappropriate', label: 'Inappropriate or offensive' },
+  { id: 'unhelpful', label: 'Low quality / not useful' },
+  { id: 'other', label: 'Other' },
+] as const;
+
 export const AIReportScreen = observer(() => {
   const colors = useColors();
   const spacing = useSpacing();
   const typography = useTypography();
   const navigation = useNavigation();
   const route = useRoute<AIReportScreenRouteProp>();
+  const { user } = useAuth();
   const { report } = route.params;
+
+  const [showReportConfirm, setShowReportConfirm] = useState(false);
+  const [showReportSuccess, setShowReportSuccess] = useState(false);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<typeof REPORT_CATEGORIES[number]['id'] | null>(null);
+
+  const submitReportToBackend = async (category: typeof REPORT_CATEGORIES[number]['id']) => {
+    try {
+      await aiContentReportsService.submit({
+        userId: user?.id || null,
+        userEmail: user?.email || null,
+        category,
+        provider: report.provider || null,
+        model: report.model || null,
+        coachNotes: report.coachNotes || [],
+        exerciseRecap: report.exerciseRecap || [],
+        appVersion: CONFIG.APP_VERSION,
+        platform: Platform.OS,
+      });
+    } catch (e: any) {
+      logger.error('[AIReportScreen] Failed to record AI content report:', e);
+    }
+  };
+
+  const handleSendReport = async () => {
+    setShowReportConfirm(false);
+    if (!selectedCategory) {
+      setShowCategoryPicker(true);
+      return;
+    }
+    setIsSubmittingReport(true);
+    await submitReportToBackend(selectedCategory);
+    setIsSubmittingReport(false);
+    setShowReportSuccess(true);
+
+    const subject = encodeURIComponent('FiTrack AI Coach Report - Inappropriate or Inaccurate Content');
+    const body = encodeURIComponent(
+      `I would like to report inappropriate or inaccurate AI content.\n\nCategory: ${selectedCategory}\n\nCoach Notes:\n${report.coachNotes?.join('\n') || ''}\n\nExercise Recap:\n${report.exerciseRecap?.join('\n') || ''}\n\nAdditional feedback:`
+    );
+    const mailtoUrl = `mailto:${CONFIG.SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+    try {
+      await Linking.openURL(mailtoUrl);
+    } catch {
+      // Email app unavailable; backend record is enough.
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -94,7 +156,64 @@ export const AIReportScreen = observer(() => {
             </View>
           </View>
         )}
+
+        {/* Report AI Output Option */}
+        <TouchableOpacity
+          style={styles.flagButton}
+          onPress={() => setShowReportConfirm(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.flagButtonText, { color: colors.textMuted }]}>
+            🚩 Report or Flag AI Content
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      <CustomAlert
+        visible={showCategoryPicker}
+        onClose={() => setShowCategoryPicker(false)}
+        title="Choose a reason"
+        message="What is wrong with this AI-generated report?"
+        actions={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowCategoryPicker(false) },
+          ...REPORT_CATEGORIES.map((c) => ({
+            text: c.label,
+            onPress: async () => {
+              setSelectedCategory(c.id);
+              setShowCategoryPicker(false);
+              setIsSubmittingReport(true);
+              await submitReportToBackend(c.id);
+              setIsSubmittingReport(false);
+              setShowReportSuccess(true);
+            },
+          })),
+        ]}
+      />
+
+      <CustomAlert
+        visible={showReportConfirm}
+        onClose={() => setShowReportConfirm(false)}
+        title="Report AI Content"
+        message="Would you like to flag this AI-generated workout report as inappropriate, harmful, or inaccurate?"
+        actions={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowReportConfirm(false) },
+          {
+            text: isSubmittingReport ? 'Submitting...' : 'Continue',
+            style: 'destructive',
+            onPress: handleSendReport,
+          },
+        ]}
+      />
+
+      <CustomAlert
+        visible={showReportSuccess}
+        onClose={() => setShowReportSuccess(false)}
+        title="Report Received"
+        message="Thank you. Your feedback has been recorded to help us improve AI safety and accuracy."
+        actions={[
+          { text: 'OK', onPress: () => setShowReportSuccess(false) },
+        ]}
+      />
     </SafeAreaView>
   );
 });
@@ -196,5 +315,16 @@ const styles = StyleSheet.create({
   infoValue: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  flagButton: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  flagButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

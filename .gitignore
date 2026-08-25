@@ -22,7 +22,6 @@ yarn-error.log*
 # Firebase / service config (project-specific secrets)
 # Keep one in the repo per environment via secret manager, otherwise each dev regenerates.
 google-services.json
-GoogleService-Info.plist
 android/app/google-services.json
 android/app/release.keystore
 
@@ -50,22 +49,6 @@ android/app/src/main/assets/index.android.bundle
 android/captures/
 android/local.properties
 android/app/src/main/res/drawable-*/
-
-# ============================================================
-# iOS — build artifacts & local config
-# ============================================================
-ios/Pods/
-ios/Podfile.lock
-ios/build/
-ios/DerivedData/
-ios/*.xcworkspace
-ios/.xcode.env
-ios/GoogleService-Info.plist
-ios/FitTrack/GoogleService-Info.plist
-*.ipa
-*.dSYM.zip
-*.dSYM
-
 # ============================================================
 # Tests / coverage
 # ============================================================
@@ -103,4 +86,3 @@ scripts/output/
 *.apk
 *.aab
 !android/app/debug.keystore
-context.md

@@ -15,7 +15,7 @@ import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { useColors, useAuth, useWeightStore, useSettingsStore } from '../../hooks';
-import { spacing, typography, radius } from '../../theme';
+import { spacing, typography, radius, responsive } from '../../theme';
 import { formatDate, formatCalories, calculateMaintenanceCalories } from '../../utils/helpers';
 
 const timeRangeOptions = [
@@ -555,7 +555,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   addButtonText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '600',
   },
   chartCard: {
@@ -627,7 +627,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   maintenanceLabel: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     fontWeight: '600',
     letterSpacing: 0.5,
     textTransform: 'uppercase',

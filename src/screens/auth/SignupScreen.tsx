@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button } from '../../components/common/Button';
 import { useAuth, useColors } from '../../hooks';
-import { spacing, typography, radius } from '../../theme';
+import { spacing, typography, radius, responsive } from '../../theme';
 import { signupSchema } from '../../utils/validators';
 import type { AuthStackParamList } from '../../types/navigation';
 import { logger } from '../../utils/logger';
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   errorText: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     marginTop: 4,
     marginLeft: 8,
   },
@@ -411,12 +411,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.base,
   },
   generalErrorText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     textAlign: 'center',
     fontWeight: '500',
   },
   instructionText: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     lineHeight: 18,
     color: 'rgba(255,255,255,0.4)',
     marginTop: 12,
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     marginHorizontal: 16,
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '600',
   },
   googleButton: {
@@ -476,10 +476,10 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   footerText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
   },
   footerLink: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '700',
   },
 });

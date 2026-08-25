@@ -2,7 +2,7 @@ import React, { memo, useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Svg, { Path, Polyline, Line } from 'react-native-svg';
 import { useColors } from '../../hooks';
-import { spacing, radius, typography } from '../../theme';
+import { spacing, typography } from '../../theme';
 import { storage } from '../../utils/storage';
 import { Card } from '../common/Card';
 import { SetRow } from './SetRow';

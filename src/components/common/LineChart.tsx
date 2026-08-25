@@ -15,7 +15,8 @@ interface LineChartProps {
   data: ChartDataPoint[];
   width: number;
   height: number;
-  yAxisLabel?: string;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  _yAxisLabel?: string;
   showTooltip?: boolean;
   tooltipValue?: string;
   areaFill?: boolean;
@@ -89,7 +90,7 @@ export const LineChart = memo<LineChartProps>(({
   data,
   width,
   height,
-  yAxisLabel,
+  _yAxisLabel,
   showTooltip = true,
   tooltipValue,
   areaFill = true,

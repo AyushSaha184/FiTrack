@@ -27,7 +27,7 @@ import { CustomAlert } from '../../components/common/CustomAlert';
 import { Logo } from '../../components/common/Logo';
 import { observer } from 'mobx-react-lite';
 import { useAuth, useColors, useSettingsStore } from '../../hooks';
-import { spacing, typography, radius } from '../../theme';
+import { spacing, typography, radius, responsive } from '../../theme';
 import { getErrorLogs, logger } from '../../utils/logger';
 import { CONFIG } from '../../config/constants';
 import { crashReportsService } from '../../services/firebase/crashReports';
@@ -770,7 +770,7 @@ export const SettingsScreen = observer(() => {
           autoCorrect={false}
         />
         {reauthError ? (
-          <Text style={{ color: '#FF453A', fontSize: 13, marginTop: spacing.sm }}>{reauthError}</Text>
+          <Text style={[styles.reauthErrorText, { color: '#FF453A' }]}>{reauthError}</Text>
         ) : null}
         <Button
           title={isDeletingAccount ? 'Verifying...' : 'Verify and Delete'}
@@ -1016,7 +1016,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   sectionLabel: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '500',
     letterSpacing: 0.8,
   },
@@ -1028,8 +1028,8 @@ const styles = StyleSheet.create({
   logoutPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.base,
+    paddingVertical: responsive.sizeNoFont(spacing.sm),
+    paddingHorizontal: responsive.sizeNoFont(spacing.base),
     borderRadius: radius.pill,
     borderWidth: 1,
     gap: spacing.xs,
@@ -1037,14 +1037,14 @@ const styles = StyleSheet.create({
   deleteAccountPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.base,
+    paddingVertical: responsive.sizeNoFont(spacing.sm),
+    paddingHorizontal: responsive.sizeNoFont(spacing.base),
     borderRadius: radius.pill,
     borderWidth: 1,
     gap: spacing.xs,
   },
   deleteAccountText: {
-    fontSize: 14,
+    fontSize: responsive.font(typography.captionMedium.fontSize ?? 14),
     fontWeight: '500',
   },
   editNamePill: {
@@ -1057,7 +1057,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   editNamePillText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '500',
   },
   legalRow: {
@@ -1067,14 +1067,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   legalText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '500',
   },
   logoutIcon: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
   },
   logoutText: {
-    fontSize: 14,
+    fontSize: responsive.font(typography.captionMedium.fontSize ?? 14),
     fontWeight: '500',
   },
   profileInfo: {
@@ -1139,7 +1139,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   settingDesc: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     lineHeight: 20,
   },
   navRow: {
@@ -1171,7 +1171,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   helpText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     lineHeight: 22,
     marginBottom: spacing.xl,
   },
@@ -1194,11 +1194,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepNumberText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '600',
   },
   stepText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     lineHeight: 20,
     flex: 1,
     paddingTop: 6,
@@ -1209,7 +1209,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   version: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
   },
   providerGridItem: {
     width: '48.5%',
@@ -1228,7 +1228,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   providerNameText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -1247,7 +1247,7 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   modalDescText: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     lineHeight: 18,
   },
   modalProviderGridItem: {
@@ -1263,7 +1263,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   modalProviderText: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -1327,7 +1327,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   genderText: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     fontWeight: '600',
   },
   heightInputContainer: {
@@ -1349,7 +1349,11 @@ const styles = StyleSheet.create({
     minWidth: 36,
   },
   heightUnitLabel: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     fontWeight: '600',
+  },
+  reauthErrorText: {
+    fontSize: responsive.font(13),
+    marginTop: spacing.sm,
   },
 });

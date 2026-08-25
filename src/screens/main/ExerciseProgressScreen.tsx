@@ -16,7 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { observer } from 'mobx-react-lite';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { useColors, useSpacing, useTypography, useWorkoutStore } from '../../hooks';
-import { spacing, radius, typography } from '../../theme';
+import { spacing, radius, typography, responsive } from '../../theme';
 import { aiService } from '../../services/ai/aiService';
 import { storage } from '../../utils/storage';
 import { dateKey } from '../../utils/helpers';
@@ -623,7 +623,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   weekLabel: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     fontWeight: '700',
   },
   weekDateSub: {

@@ -139,8 +139,10 @@ export const CustomAlert = memo<CustomAlertProps>(({
                     styles.actionText,
                     {
                       color: getActionColor(action.style),
-                      fontWeight: action.style === 'cancel' ? '400' : '600',
                     },
+                    action.style === 'cancel'
+                      ? styles.actionTextCancel
+                      : styles.actionTextDefault,
                   ]}
                 >
                   {action.text}
@@ -202,5 +204,11 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: typography.body.fontSize,
+  },
+  actionTextCancel: {
+    fontWeight: '400',
+  },
+  actionTextDefault: {
+    fontWeight: '600',
   },
 });

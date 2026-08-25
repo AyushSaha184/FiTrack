@@ -21,7 +21,7 @@ import Animated, {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useColors } from '../../hooks';
 import { Logo } from '../../components/common/Logo';
-import { spacing, typography, radius } from '../../theme';
+import { spacing, typography, radius, responsive } from '../../theme';
 import type { AuthStackParamList } from '../../types/navigation';
 import Svg, { Path, Circle, Polyline } from 'react-native-svg';
 
@@ -685,7 +685,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
   },
   mockTitle: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '800',
     marginBottom: 8,
   },

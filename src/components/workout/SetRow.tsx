@@ -7,7 +7,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { useColors } from '../../hooks';
-import { spacing, radius, typography } from '../../theme';
+import { spacing, radius, typography, responsive } from '../../theme';
 import type { Set } from '../../models';
 
 interface SetRowProps {
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   },
   checkMark: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '700',
   },
 });

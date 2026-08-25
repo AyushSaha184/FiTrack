@@ -6,7 +6,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useColors } from '../../hooks';
-import { spacing, radius, typography } from '../../theme';
+import { spacing, typography } from '../../theme';
 
 interface ProgressBarProps {
   progress: number;
@@ -38,7 +38,7 @@ export const ProgressBar = memo<ProgressBarProps>(({
     } else {
       progressValue.value = Math.min(100, Math.max(0, progress));
     }
-  }, [progress, animated]);
+  }, [progress, animated, progressValue]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     width: `${progressValue.value}%`,

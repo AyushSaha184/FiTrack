@@ -4,3 +4,4 @@ export { spacing, radius, shadow } from './spacing';
 export type { Spacing, Radius } from './spacing';
 export { durations, staggerDelay } from './animations';
 export type { AnimationDuration } from './animations';
+export { responsive } from './responsive';

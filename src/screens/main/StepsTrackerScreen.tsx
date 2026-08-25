@@ -21,7 +21,7 @@ import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { useColors, useAuth, useStepsStore, useWeightStore } from '../../hooks';
-import { spacing, typography, durations } from '../../theme';
+import { spacing, typography, durations, responsive } from '../../theme';
 import { formatDate, formatStepsWithCommas } from '../../utils/helpers';
 import { stepsToCalories } from '../../utils/calculations';
 import type { StepEntry } from '../../models';
@@ -648,7 +648,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   statUnit: {
-    fontSize: typography.caption.fontSize,
+    fontSize: responsive.font(typography.caption.fontSize ?? 14),
   },
   statDivider: {
     width: 1,

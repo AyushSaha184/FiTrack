@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useEffect, useRef } from 'react';
+import React, { memo, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,11 @@ import {
   TouchableOpacity,
   Modal as RNModal,
   Pressable,
-  FlatList,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  withSpring,
 } from 'react-native-reanimated';
 import { useColors } from '../../hooks';
 import { spacing, radius, typography } from '../../theme';
@@ -125,13 +123,11 @@ export const DropdownPicker = memo<DropdownPickerProps>(({
                 key={option.value}
                 style={[
                   styles.option,
-                  index < options.length - 1 && {
-                    borderBottomWidth: 1,
-                    borderBottomColor: colors.cardBorder,
-                  },
-                  option.value === selectedValue && {
-                    backgroundColor: 'rgba(255,255,255,0.05)',
-                  },
+                  index < options.length - 1 && [
+                    styles.optionDivider,
+                    { borderBottomColor: colors.cardBorder },
+                  ],
+                  option.value === selectedValue && styles.optionSelected,
                 ]}
                 onPress={() => handleSelect(option.value)}
                 activeOpacity={0.7}
@@ -144,9 +140,10 @@ export const DropdownPicker = memo<DropdownPickerProps>(({
                         option.value === selectedValue
                           ? colors.text
                           : colors.textSecondary,
-                      fontWeight:
-                        option.value === selectedValue ? '600' : '400',
                     },
+                    option.value === selectedValue
+                      ? styles.optionTextSelected
+                      : styles.optionTextUnselected,
                   ]}
                 >
                   {option.label}
@@ -209,8 +206,20 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.base,
     paddingHorizontal: spacing.xl,
   },
+  optionDivider: {
+    borderBottomWidth: 1,
+  },
+  optionSelected: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
   optionText: {
     fontSize: typography.body.fontSize,
+  },
+  optionTextSelected: {
+    fontWeight: '600',
+  },
+  optionTextUnselected: {
+    fontWeight: '400',
   },
   checkMark: {
     fontSize: 16,

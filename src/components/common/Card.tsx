@@ -1,5 +1,5 @@
 import React, { memo, ReactNode } from 'react';
-import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+import { View, ViewStyle, StyleProp } from 'react-native';
 import { useColors } from '../../hooks';
 import { spacing, radius, shadow } from '../../theme';
 

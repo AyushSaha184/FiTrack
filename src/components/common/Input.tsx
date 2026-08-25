@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TextInputProps,
   ViewStyle,
-  TouchableOpacity,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -58,8 +57,12 @@ export const Input = memo<InputProps>(({
   };
 
   const getBorderColor = () => {
-    if (error) return colors.error;
-    if (isFocused) return colors.primary;
+    if (error) {
+      return colors.error;
+    }
+    if (isFocused) {
+      return colors.primary;
+    }
     return colors.cardBorder;
   };
 
@@ -87,8 +90,8 @@ export const Input = memo<InputProps>(({
             {
               color: colors.text,
             },
-            leftIcon ? { paddingLeft: 0 } : undefined,
-            rightIcon ? { paddingRight: 0 } : undefined,
+            leftIcon ? styles.inputWithLeftIcon : undefined,
+            rightIcon ? styles.inputWithRightIcon : undefined,
             style,
           ]}
           placeholderTextColor={colors.textMuted}
@@ -131,6 +134,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.base,
     fontSize: typography.body.fontSize,
+  },
+  inputWithLeftIcon: {
+    paddingLeft: 0,
+  },
+  inputWithRightIcon: {
+    paddingRight: 0,
   },
   iconLeft: {
     paddingLeft: spacing.base,

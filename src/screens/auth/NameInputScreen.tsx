@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
 import { useAuth } from '../../hooks';
-import { spacing, radius } from '../../theme';
+import { spacing, radius, responsive } from '../../theme';
 import Svg, { Path, Circle } from 'react-native-svg';
 
 const PersonIcon = ({ color }: { color: string }) => (
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.base,
   },
   errorText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     textAlign: 'center',
     fontWeight: '500',
   },

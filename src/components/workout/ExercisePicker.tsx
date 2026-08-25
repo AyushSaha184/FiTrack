@@ -10,7 +10,7 @@ import {
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '../../hooks';
-import { spacing, radius, typography } from '../../theme';
+import { spacing, radius, typography, responsive } from '../../theme';
 import { Modal } from '../common/Modal';
 import {
   getExerciseCategories,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   clearSearch: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     padding: spacing.xs,
   },
   scrollView: {

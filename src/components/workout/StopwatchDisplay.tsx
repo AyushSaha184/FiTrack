@@ -4,7 +4,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useStopwatch } from '../../hooks/useStopwatch';
 import { Modal } from '../common/Modal';
 import { useColors } from '../../hooks/useTheme';
-import { spacing, radius } from '../../theme';
+import { spacing, radius, responsive } from '../../theme';
 
 export const StopwatchDisplay = memo(() => {
   const colors = useColors();
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stopwatchText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
     lineHeight: 20,

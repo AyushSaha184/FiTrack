@@ -5,20 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Pressable,
   Platform,
 } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
 import Svg, { Path, Polyline, Line, Circle as SvgCircle } from 'react-native-svg';
 import { useColors } from '../../hooks';
-import { typography } from '../../theme';
+import { typography, spacing, radius, responsive } from '../../theme';
 import { logger } from '../../utils/logger';
+import { Modal } from './Modal';
 import {
   updateService,
   type UpdateInfo,
@@ -55,10 +48,6 @@ export const UpdateModal = memo<UpdateModalProps>(({
   onClose,
 }) => {
   const colors = useColors();
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.92);
-  const translateY = useSharedValue(24);
-
   const [phase, setPhase] = useState<Phase>('idle');
   const [progress, setProgress] = useState<DownloadProgress>({
     bytesWritten: 0,
@@ -68,18 +57,6 @@ export const UpdateModal = memo<UpdateModalProps>(({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // Track the downloaded file path so we can clean it up after install.
   const downloadedPathRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (visible) {
-      opacity.set(withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) }));
-      scale.set(withSpring(1, { damping: 18, stiffness: 220 }));
-      translateY.set(withSpring(0, { damping: 18, stiffness: 220 }));
-    } else {
-      opacity.set(withTiming(0, { duration: 160 }));
-      scale.set(withTiming(0.95, { duration: 160 }));
-      translateY.set(withTiming(12, { duration: 160 }));
-    }
-  }, [visible, opacity, scale, translateY]);
 
   // Reset phase whenever the modal is closed or the update info changes.
   useEffect(() => {
@@ -91,18 +68,6 @@ export const UpdateModal = memo<UpdateModalProps>(({
     }
   }, [visible, updateInfo?.version]);
 
-  const overlayStyle = useAnimatedStyle(() => ({
-    opacity: opacity.get(),
-  }));
-
-  const cardStyle = useAnimatedStyle(() => ({
-    opacity: opacity.get(),
-    transform: [
-      { scale: scale.get() },
-      { translateY: translateY.get() },
-    ],
-  }));
-
   if (!visible || !updateInfo) return null;
 
   const notes = parseReleaseNotes(updateInfo.releaseNotes);
@@ -113,7 +78,6 @@ export const UpdateModal = memo<UpdateModalProps>(({
 
   const handleDownload = async () => {
     if (!canDirectDownload) {
-      // No APK asset on the release -> go straight to the GitHub page.
       updateService.openReleasePage(updateInfo);
       return;
     }
@@ -128,14 +92,10 @@ export const UpdateModal = memo<UpdateModalProps>(({
       setPhase('installing');
       try {
         await updateService.installApk(filePath);
-        // Best-effort cleanup; the file may already be consumed by the installer
-        // but typically the cache copy remains until we delete it.
         await updateService.cleanupApk(filePath);
         downloadedPathRef.current = null;
         onClose();
       } catch (installErr: any) {
-        // Install intent failed -> surface the error and let the user choose
-        // to open the release page themselves.
         await updateService.cleanupApk(filePath);
         downloadedPathRef.current = null;
         setErrorMessage('Could not start the installer. You can download it from GitHub instead.');
@@ -158,11 +118,10 @@ export const UpdateModal = memo<UpdateModalProps>(({
     updateService.openReleasePage(updateInfo);
   };
 
-  // Render the action row depending on the current phase.
   const renderActions = () => {
     if (phase === 'downloading') {
       return (
-        <View style={[styles.progressBlock]}>
+        <View style={styles.progressBlock}>
           <View style={[styles.progressBarBg, { backgroundColor: colors.cardSurface }]}>
             <View
               style={[
@@ -214,7 +173,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
             onPress={handleOpenReleasePage}
             activeOpacity={0.8}
           >
-            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}>
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={styles.primaryBtnIcon}>
               <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <Polyline points="7 10 12 15 17 10" />
               <Line x1="12" y1="15" x2="12" y2="3" />
@@ -224,7 +183,6 @@ export const UpdateModal = memo<UpdateModalProps>(({
         </View>
       );
     }
-    // idle
     return (
       <View style={styles.actions}>
         {!isMandatory ? (
@@ -241,7 +199,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
           onPress={handleDownload}
           activeOpacity={0.8}
         >
-          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}>
+          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={styles.primaryBtnIcon}>
             <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <Polyline points="7 10 12 15 17 10" />
             <Line x1="12" y1="15" x2="12" y2="3" />
@@ -259,148 +217,115 @@ export const UpdateModal = memo<UpdateModalProps>(({
   };
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="auto">
-      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, overlayStyle]}>
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={inProgress || isMandatory ? undefined : handleLater}
-        />
-      </Animated.View>
+    <Modal
+      visible={visible}
+      onClose={inProgress || isMandatory ? () => {} : onClose}
+      title="Update Available"
+      sheet
+      showCloseButton={!inProgress && !isMandatory}
+      bodyStyle={styles.modalBody}
+    >
+      <View style={styles.container}>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+          FiTrack v{updateInfo.version} is now available
+        </Text>
 
-      <View style={styles.center} pointerEvents="box-none">
-        <Animated.View
-          style={[
-            styles.card,
-            { backgroundColor: colors.card, borderColor: colors.cardBorder },
-            cardStyle,
-          ]}
-        >
-          <View style={styles.iconWrap}>
-            <Text style={[styles.title, { color: colors.text }]}>
-              Update Available
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              FiTrack v{updateInfo.version} is now available
-            </Text>
+        {notes.length > 0 ? (
+          <View style={[styles.notesBox, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.notesLabel, { color: colors.textMuted }]}>WHAT'S NEW</Text>
+            <ScrollView
+              style={styles.notesScroll}
+              contentContainerStyle={styles.notesContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {notes.map((line, idx) => (
+                <View key={`${idx}-${line.slice(0, 12)}`} style={styles.noteRow}>
+                  <View style={[styles.bullet, { backgroundColor: colors.primary }]} />
+                  <Text style={[styles.noteText, { color: colors.textSecondary }]}>
+                    {line}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
           </View>
+        ) : null}
 
-          {notes.length > 0 ? (
-            <View style={[styles.notesBox, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.notesLabel, { color: colors.textMuted }]}>WHAT'S NEW</Text>
-              <ScrollView
-                style={styles.notesScroll}
-                contentContainerStyle={styles.notesContent}
-                showsVerticalScrollIndicator={false}
-              >
-                {notes.map((line, idx) => (
-                  <View key={`${idx}-${line.slice(0, 12)}`} style={styles.noteRow}>
-                    <View style={[styles.bullet, { backgroundColor: colors.primary }]} />
-                    <Text style={[styles.noteText, { color: colors.textSecondary }]}>
-                      {line}
-                    </Text>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
+        {errorMessage ? (
+          <Text style={[styles.errorText, { color: colors.textSecondary }]}>{errorMessage}</Text>
+        ) : null}
 
-          {errorMessage ? (
-            <Text style={[styles.errorText, { color: colors.textSecondary }]}>{errorMessage}</Text>
-          ) : null}
-
-          {renderActions()}
-        </Animated.View>
+        {renderActions()}
       </View>
-    </View>
+    </Modal>
   );
 });
 
 UpdateModal.displayName = 'UpdateModal';
 
-// Reference SvgCircle to avoid unused-import lint errors if the icon set changes.
 void SvgCircle;
 
 const styles = StyleSheet.create({
-  backdrop: {
-    backgroundColor: 'rgba(0,0,0,0.65)',
+  modalBody: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
   },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  card: {
+  container: {
     width: '100%',
-    maxWidth: 380,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 22,
-    paddingTop: 22,
-    paddingBottom: 18,
-  },
-  iconWrap: {
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  title: {
-    ...typography.h2,
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: typography.body.fontSize,
     textAlign: 'center',
-    marginTop: 6,
+    marginTop: spacing.xs,
+    marginBottom: spacing.base,
   },
   notesBox: {
-    marginTop: 18,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 4,
-    maxHeight: 200,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+    maxHeight: 220,
+    marginBottom: spacing.base,
   },
   notesLabel: {
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.6,
-    marginBottom: 8,
+    marginBottom: spacing.xs,
   },
   notesScroll: {
-    maxHeight: 170,
+    maxHeight: 180,
   },
   notesContent: {
-    paddingBottom: 10,
+    paddingBottom: spacing.sm,
   },
   noteRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: spacing.xs,
   },
   bullet: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
     marginTop: 8,
-    marginRight: 10,
+    marginRight: spacing.sm,
   },
   noteText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: responsive.font(13),
     lineHeight: 19,
   },
   actions: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
   secondaryBtn: {
     flex: 1,
     paddingVertical: 13,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -412,10 +337,13 @@ const styles = StyleSheet.create({
   primaryBtn: {
     flex: 1.4,
     paddingVertical: 13,
-    borderRadius: 12,
+    borderRadius: radius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  primaryBtnIcon: {
+    marginRight: spacing.xs,
   },
   primaryBtnText: {
     color: '#FFFFFF',
@@ -423,7 +351,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   progressBlock: {
-    marginTop: 18,
+    marginTop: spacing.sm,
   },
   progressBarBg: {
     height: 6,
@@ -436,18 +364,18 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
-    marginTop: 8,
+    marginTop: spacing.xs,
     textAlign: 'center',
   },
   installingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: spacing.xs,
   },
   errorText: {
     fontSize: 12,
-    marginTop: 14,
+    marginTop: spacing.base,
     textAlign: 'center',
   },
 });

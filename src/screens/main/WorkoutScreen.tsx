@@ -19,7 +19,7 @@ import { Logo } from '../../components/common/Logo';
 import { StopwatchDisplay } from '../../components/workout/StopwatchDisplay';
 import { RestTimerBanner, type RestTimerBannerHandle } from '../../components/workout/RestTimerBanner';
 import { useColors, useSettingsStore, useWorkoutStore, useAuthStore } from '../../hooks';
-import { spacing, typography, radius } from '../../theme';
+import { spacing, typography, radius, responsive } from '../../theme';
 import { getWeekDates, getDayOfWeekKey, storage, dateKey } from '../../utils/helpers';
 import type { DayOfWeek, WorkoutType, Set } from '../../models';
 import type { ExerciseItem } from '../../utils/exerciseData';
@@ -638,7 +638,7 @@ const styles = StyleSheet.create({
   },
   pillActive: {},
   pillText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '500',
   },
   restDayCard: {
@@ -739,7 +739,7 @@ const styles = StyleSheet.create({
     maxHeight: 400,
   },
   modalSubtitle: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     marginBottom: spacing.lg,
   },
   routineGrid: {

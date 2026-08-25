@@ -13,6 +13,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { observer } from 'mobx-react-lite';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { useColors, useSpacing, useTypography, useAuth } from '../../hooks';
+import { responsive } from '../../theme';
 import type { AIReportResult } from '../../services/ai/aiService';
 import { aiContentReportsService } from '../../services/ai/aiContentReportsService';
 import { CustomAlert } from '../../components/common/CustomAlert';
@@ -278,7 +279,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   noteText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     lineHeight: 20,
     flex: 1,
   },
@@ -313,7 +314,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   infoValue: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     lineHeight: 18,
   },
   flagButton: {
@@ -324,7 +325,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   flagButtonText: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     fontWeight: '500',
   },
 });

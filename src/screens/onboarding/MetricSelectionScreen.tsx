@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors, useSettingsStore, useWeightStore, useStepsStore, useAuthStore } from '../../hooks';
 import { Button } from '../../components/common/Button';
-import { spacing, typography, radius } from '../../theme';
+import { spacing, typography, radius, responsive } from '../../theme';
 import { logger } from '../../utils/logger';
 import Svg, { Path, Rect } from 'react-native-svg';
 
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   optionDesc: {
-    fontSize: 13,
+    fontSize: responsive.font(13),
     lineHeight: 18,
   },
   badgeContainer: {
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeText: {
-    fontSize: 14,
+    fontSize: responsive.font(14),
     fontWeight: '600',
   },
   divider: {

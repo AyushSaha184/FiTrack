@@ -107,7 +107,7 @@ export class StepsStore {
 
       runInAction(() => {
         if (log) {
-          this.todaySteps = Math.max(log.stepCount, nativeSteps);
+          this.todaySteps = Math.max(log.stepCount, nativeSteps, this.todaySteps);
           this.dailyGoal = log.targetGoal || this.dailyGoal;
           this.todayEntry = {
             id: log.id,
@@ -119,8 +119,8 @@ export class StepsStore {
             updatedAt: log.updatedAt,
           };
         } else {
-          // No remote log yet for today -> start at current native steps for today
-          this.todaySteps = nativeSteps;
+          // No remote log yet for today -> preserve higher of current local steps or native steps
+          this.todaySteps = Math.max(this.todaySteps, nativeSteps);
           this.todayEntry = null;
         }
         this.persistTodayCache(this.todaySteps);
@@ -214,7 +214,7 @@ export class StepsStore {
     return this.addSteps(userId, steps);
   }
 
-  async deleteEntry(entryId: string) {
+  async deleteEntry(entryId: string, userId?: string) {
     runInAction(() => {
       this.weeklyEntries = this.weeklyEntries.filter((e) => e.id !== entryId);
       storage.set('steps_weekly_cache', this.weeklyEntries);
@@ -224,6 +224,14 @@ export class StepsStore {
         this.persistTodayCache(0);
       }
     });
+
+    if (userId && entryId) {
+      try {
+        await stepsService.deleteStepLog(userId, entryId);
+      } catch (err) {
+        logger.error('[StepsStore] deleteEntry remote error:', err);
+      }
+    }
   }
 
   async syncFromHealthApp(userId: string, steps: number, source: StepSource = 'apple_health') {
@@ -330,13 +338,16 @@ export class StepsStore {
       const steps = await stepCounterService.getTodaySteps();
       const todayStr = dateKey(new Date());
 
-      // If native sensor has steps and it differs from todaySteps, update and sync
-      if (steps > 0 && steps !== this.todaySteps) {
+      // If native sensor has higher steps than stored, update and sync up
+      if (steps > this.todaySteps) {
         runInAction(() => {
           this.todaySteps = steps;
           this.persistTodayCache(this.todaySteps);
         });
         await stepsService.saveStepLog(userId, this.todaySteps, this.dailyGoal, todayStr);
+      } else if (this.todaySteps > steps && this.todaySteps > 0) {
+        // If stored steps are higher (e.g. from previous session/manual/cloud), sync down to native service
+        await stepCounterService.setInitialSteps(this.todaySteps);
       }
     } catch (err) {
       logger.error('[StepsStore] syncFromBackgroundService error:', err);

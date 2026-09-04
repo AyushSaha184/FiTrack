@@ -102,4 +102,13 @@ export const stepsService = {
       throw err;
     }
   },
+
+  async deleteStepLog(userId: string, dateStr: string): Promise<void> {
+    try {
+      await collections.stepDoc(userId, dateStr).delete();
+    } catch (err) {
+      logger.error('[stepsService] deleteStepLog error:', err);
+      throw err;
+    }
+  },
 };

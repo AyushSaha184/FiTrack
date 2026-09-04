@@ -385,22 +385,12 @@ export const WeightTrackerScreen = observer(() => {
                   ]}
                 >
                   <View style={styles.historyLeft}>
-                    <View
-                      style={[
-                        styles.historyIcon,
-                        { backgroundColor: colors.cardSurface },
-                      ]}
-                    >
-                      <Text style={styles.historyIconText}>📊</Text>
-                    </View>
-                    <View>
-                      <Text style={[styles.historyDate, { color: colors.text }]}>
-                        {formatDate(entry.date, 'short')}
-                      </Text>
-                      <Text style={[styles.historyTime, { color: colors.textMuted }]}>
-                        {formatDate(entry.createdAt, 'time')}
-                      </Text>
-                    </View>
+                    <Text style={[styles.historyDate, { color: colors.text }]}>
+                      {formatDate(entry.date, 'short')}
+                    </Text>
+                    <Text style={[styles.historyTime, { color: colors.textMuted }]}>
+                      {formatDate(entry.createdAt, 'time')}
+                    </Text>
                   </View>
                   <View style={styles.historyRight}>
                     <Text style={[styles.historyWeight, { color: colors.text }]}>
@@ -603,19 +593,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   historyLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  historyIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
     justifyContent: 'center',
-  },
-  historyIconText: {
-    fontSize: 18,
+    gap: 2,
   },
   historyDate: {
     fontSize: typography.body.fontSize,

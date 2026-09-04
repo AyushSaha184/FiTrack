@@ -34,7 +34,7 @@ import { Logo } from '../../components/common/Logo';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { useColors, useAuth, useStepsStore, useWeightStore } from '../../hooks';
 import { spacing, typography, durations } from '../../theme';
-import { formatDate, formatStepsWithCommas } from '../../utils/helpers';
+import { formatDate, formatStepsWithCommas, dateKey } from '../../utils/helpers';
 import { stepsToCalories } from '../../utils/calculations';
 import type { StepEntry } from '../../models';
 
@@ -104,7 +104,16 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
     const timer = setTimeout(() => {
       stepsStore.startLiveStepTracking(user.id);
     }, 600);
-    return () => clearTimeout(timer);
+
+    // Periodically sync steps from native background service while screen is active
+    const interval = setInterval(() => {
+      stepsStore.syncFromBackgroundService(user.id);
+    }, 5000);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [user?.id, isActive, stepsStore]);
 
   useEffect(() => {
@@ -143,22 +152,43 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
     [entries, timeRange, getFilteredEntries]
   );
 
+  const sevenDayEntries = useMemo(
+    () => getFilteredEntries(entries, '7'),
+    [entries, getFilteredEntries]
+  );
+
   const weeklyStats = useMemo(() => {
-    const totalSteps = filteredEntries.reduce((sum, e) => sum + e.steps, 0);
+    const todayStr = dateKey(new Date());
+    let hasToday = false;
+    let sumSteps = 0;
+
+    for (const e of sevenDayEntries) {
+      const isToday = dateKey(new Date(e.date)) === todayStr;
+      if (isToday) {
+        hasToday = true;
+        sumSteps += Math.max(e.steps, todaySteps);
+      } else {
+        sumSteps += e.steps;
+      }
+    }
+
+    if (!hasToday && todaySteps > 0) {
+      sumSteps += todaySteps;
+    }
+
     const userWeight = currentWeight || 70;
-    const caloriesBurned = stepsToCalories(totalSteps, userWeight);
-    const achievedDays = filteredEntries.filter((e) => e.steps >= goalSteps).length;
-    const goalAchievedPercent = filteredEntries.length > 0
-      ? Math.round((achievedDays / filteredEntries.length) * 100)
-      : 0;
+    const caloriesBurned = stepsToCalories(sumSteps, userWeight);
 
     return {
-      totalSteps,
+      totalSteps: sumSteps,
       caloriesBurned,
-      goalAchievedPercent,
-      entryCount: filteredEntries.length,
     };
-  }, [filteredEntries, goalSteps, currentWeight]);
+  }, [sevenDayEntries, todaySteps, currentWeight]);
+
+  const todayCaloriesBurned = useMemo(
+    () => stepsToCalories(todaySteps, currentWeight || 70),
+    [todaySteps, currentWeight],
+  );
 
   const percentage = Math.min(100, Math.round((todaySteps / (goalSteps || 10000)) * 100));
 
@@ -214,14 +244,14 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
   const handleConfirmDelete = useCallback(async () => {
     if (deleteTarget) {
       try {
-        await stepsStore.deleteEntry(deleteTarget.id);
+        await stepsStore.deleteEntry(deleteTarget.id, user?.id);
       } catch (e: any) {
         Alert.alert('Error', e.message || 'Failed to delete step entry');
       } finally {
         setDeleteTarget(null);
       }
     }
-  }, [deleteTarget, stepsStore]);
+  }, [deleteTarget, user?.id, stepsStore]);
 
   const handleOpenGoalModal = useCallback(() => {
     setGoalInput(goalSteps ? String(goalSteps) : '');
@@ -406,7 +436,12 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
           <AnimatedCard index={2} style={styles.statsCard}>
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={1}>
+                <Text
+                  style={[styles.statLabel, { color: colors.textMuted }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
                   Total Steps
                 </Text>
                 <Text
@@ -417,14 +452,42 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                   {formatStepsWithCommas(weeklyStats.totalSteps)}
                 </Text>
                 <Text style={[styles.statUnit, { color: colors.textMuted }]} numberOfLines={1}>
-                  {timeRange === 'all' ? 'All time' : `Last ${timeRange} days`}
+                  Last 7 days
                 </Text>
               </View>
 
               <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
 
               <View style={styles.statItem}>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={1}>
+                <Text
+                  style={[styles.statLabel, { color: colors.textMuted }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  Calories Burned
+                </Text>
+                <Text
+                  style={[styles.statValue, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {formatStepsWithCommas(todayCaloriesBurned)}
+                </Text>
+                <Text style={[styles.statUnit, { color: colors.textMuted }]} numberOfLines={1}>
+                  Today (kcal)
+                </Text>
+              </View>
+
+              <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
+
+              <View style={styles.statItem}>
+                <Text
+                  style={[styles.statLabel, { color: colors.textMuted }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
                   Calories Burned
                 </Text>
                 <Text
@@ -435,7 +498,7 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                   {formatStepsWithCommas(weeklyStats.caloriesBurned)}
                 </Text>
                 <Text style={[styles.statUnit, { color: colors.textMuted }]} numberOfLines={1}>
-                  {timeRange === 'all' ? 'All time (kcal)' : `Last ${timeRange} days (kcal)`}
+                  Last 7 days (kcal)
                 </Text>
               </View>
             </View>
@@ -460,17 +523,12 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                   ]}
                 >
                   <View style={styles.historyLeft}>
-                    <View style={[styles.historyIcon, { backgroundColor: colors.cardSurface }]}>
-                      <Text style={styles.historyIconText}>👟</Text>
-                    </View>
-                    <View>
-                      <Text style={[styles.historyDate, { color: colors.text }]}>
-                        {formatDate(entry.date, 'short')}
-                      </Text>
-                      <Text style={[styles.historyDay, { color: colors.textMuted }]}>
-                        {formatDate(entry.date, 'long').split(',')[0]}
-                      </Text>
-                    </View>
+                    <Text style={[styles.historyDate, { color: colors.text }]}>
+                      {formatDate(entry.date, 'short')}
+                    </Text>
+                    <Text style={[styles.historyDay, { color: colors.textMuted }]}>
+                      {formatDate(entry.date, 'long').split(',')[0]}
+                    </Text>
                   </View>
                   <View style={styles.historyRight}>
                     <Text style={[styles.historySteps, { color: colors.text }]}>
@@ -674,6 +732,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingVertical: spacing.xs,
+    paddingHorizontal: 2,
   },
   statIcon: {
     width: 40,
@@ -688,17 +747,18 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   statLabel: {
-    fontSize: typography.caption.fontSize,
+    fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     marginBottom: spacing.xs,
+    textAlign: 'center',
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     marginBottom: 2,
-    lineHeight: 28,
+    lineHeight: 24,
   },
   statUnit: {
     fontSize: 11,
@@ -723,20 +783,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   historyLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  historyIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  historyIconText: {
-    fontSize: 18,
+    gap: 2,
   },
   historyDate: {
     fontSize: typography.body.fontSize,

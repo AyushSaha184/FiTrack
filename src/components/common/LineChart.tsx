@@ -1,5 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
+import { observer } from 'mobx-react-lite';
 import { CartesianChart, Line, Area } from 'victory-native';
 import { Circle, vec, LinearGradient as SkiaLinearGradient, matchFont } from '@shopify/react-native-skia';
 import { useColors } from '../../hooks';
@@ -95,7 +96,7 @@ const buildEmptyData = (): ChartDataPoint[] => {
 };
 const EMPTY_DATA = buildEmptyData();
 
-export const LineChart = memo<LineChartProps>(({
+export const LineChart = observer(memo<LineChartProps>(({
   data,
   width,
   height,
@@ -108,6 +109,14 @@ export const LineChart = memo<LineChartProps>(({
 }) => {
   const colors = useColors();
   const color = lineColor || colors.text;
+
+  const chartSize = useMemo(
+    () => ({
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+    }),
+    [width, height],
+  );
 
   // Combined memo for all the heavy, derived chart data. Re-runs only when
   // the input data, pinned yMax, or tick count changes.
@@ -230,6 +239,7 @@ export const LineChart = memo<LineChartProps>(({
     <View style={[styles.container, { width, height }]}>
       <CartesianChart
         key={`cartesian-${colors.background}-${colors.cardBorder}-${color}`}
+        explicitSize={chartSize}
         data={chartData}
         xKey="x"
         yKeys={['y']}
@@ -338,7 +348,7 @@ export const LineChart = memo<LineChartProps>(({
       )}
     </View>
   );
-});
+}));
 
 LineChart.displayName = 'LineChart';
 

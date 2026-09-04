@@ -98,7 +98,6 @@ export const UpdateModal = memo<UpdateModalProps>(({
       setPhase('installing');
       try {
         await updateService.installApk(filePath);
-        await updateService.cleanupApk(filePath);
         downloadedPathRef.current = null;
         onClose();
       } catch (installErr: any) {

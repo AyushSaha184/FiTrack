@@ -261,6 +261,26 @@ export const updateService = {
   },
 
   /**
+   * Cleans up any leftover or previously downloaded APK files from CacheDir.
+   * Called on app startup so updated apps immediately free disk space.
+   */
+  async cleanupCachedApks(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    try {
+      const cacheDir = ReactNativeBlobUtil.fs.dirs.CacheDir;
+      const files = await ReactNativeBlobUtil.fs.ls(cacheDir);
+      const apkFiles = files.filter((f: string) => /\.apk$/i.test(f));
+      for (const file of apkFiles) {
+        const fullPath = `${cacheDir}/${file}`;
+        await ReactNativeBlobUtil.fs.unlink(fullPath).catch(() => {});
+        logger.info(`[updateService] Cleaned up cached APK: ${fullPath}`);
+      }
+    } catch (err) {
+      logger.warn('[updateService] Failed to cleanup cached APKs:', err);
+    }
+  },
+
+  /**
    * Open the GitHub release page in the system browser. Used as a fallback
    * when no APK asset is attached to the release or when the in-app download
    * fails for any reason.

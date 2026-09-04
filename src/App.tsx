@@ -192,6 +192,8 @@ const App = observer(() => {
     let cancelled = false;
     const checkUpdates = async () => {
       try {
+        // Clean up any previously downloaded APKs left over from earlier updates
+        updateService.cleanupCachedApks().catch(() => {});
         const info = await updateService.checkForUpdate();
         if (!cancelled && info) {
           setUpdateInfo(info);

@@ -60,6 +60,7 @@ export class AuthStore {
           updatedAt: isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
         };
         this.isAuthenticated = true;
+        this.isInitialized = true;
       }
     } catch (e) {
       logger.error('[AuthStore] restoreCachedUser error:', e);
@@ -87,7 +88,14 @@ export class AuthStore {
 
       const { session } = await firebaseAuthService.getSession();
       if (session?.user) {
-        await this.fetchUser(session.user);
+        if (this.isInitialized) {
+          // If already initialized via cached profile, refresh in background without blocking UI
+          this.fetchUser(session.user).catch((err) => {
+            logger.warn('[AuthStore] Background profile refresh failed:', err);
+          });
+        } else {
+          await this.fetchUser(session.user);
+        }
       }
 
       this.authUnsubscribe = firebaseAuthService.onAuthStateChange(

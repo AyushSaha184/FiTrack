@@ -1,16 +1,10 @@
 import React, { useMemo } from 'react';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { AuthNavigator } from './AuthNavigator';
 import { MainTabNavigator } from './MainTabNavigator';
-import { MetricSelectionScreen } from '../screens/onboarding/MetricSelectionScreen';
-import { NameInputScreen } from '../screens/auth/NameInputScreen';
-import { SettingsScreen } from '../screens/settings/SettingsScreen';
-import { ExerciseProgressScreen } from '../screens/main/ExerciseProgressScreen';
-import { AIReportScreen } from '../screens/main/AIReportScreen';
 import { observer } from 'mobx-react-lite';
 import { useAuth, useColors } from '../hooks';
-import { Loading } from '../components/common/Loading';
+import { HomeSkeletonLoading } from '../components/common/HomeSkeletonLoading';
 
 const Stack = createNativeStackNavigator();
 
@@ -18,6 +12,14 @@ const settingsScreenOptions = { animation: 'slide_from_right' as const };
 const exerciseProgressScreenOptions = { animation: 'slide_from_bottom' as const };
 const aiReportScreenOptions = { animation: 'slide_from_right' as const };
 const defaultScreenOptions = { headerShown: false };
+
+// Lazy screen loaders to reduce initial JS parse time during cold start
+const getAuthNavigator = () => require('./AuthNavigator').AuthNavigator;
+const getNameInputScreen = () => require('../screens/auth/NameInputScreen').NameInputScreen;
+const getMetricSelectionScreen = () => require('../screens/onboarding/MetricSelectionScreen').MetricSelectionScreen;
+const getSettingsScreen = () => require('../screens/settings/SettingsScreen').SettingsScreen;
+const getExerciseProgressScreen = () => require('../screens/main/ExerciseProgressScreen').ExerciseProgressScreen;
+const getAIReportScreen = () => require('../screens/main/AIReportScreen').AIReportScreen;
 
 export const AppNavigator = observer(() => {
   const { isInitialized, isAuthenticated, isOnboarded, isNameRequired } = useAuth();
@@ -40,34 +42,34 @@ export const AppNavigator = observer(() => {
   );
 
   if (!isInitialized) {
-    return <Loading fullScreen message="Loading FiTrack..." />;
+    return <HomeSkeletonLoading />;
   }
 
   return (
     <NavigationContainer theme={theme}>
       <Stack.Navigator screenOptions={defaultScreenOptions}>
         {!isAuthenticated ? (
-          <Stack.Screen name="Auth" component={AuthNavigator} />
+          <Stack.Screen name="Auth" getComponent={getAuthNavigator} />
         ) : isNameRequired ? (
-          <Stack.Screen name="NameInput" component={NameInputScreen} />
+          <Stack.Screen name="NameInput" getComponent={getNameInputScreen} />
         ) : !isOnboarded ? (
-          <Stack.Screen name="MetricSelection" component={MetricSelectionScreen} />
+          <Stack.Screen name="MetricSelection" getComponent={getMetricSelectionScreen} />
         ) : (
           <>
             <Stack.Screen name="App" component={MainTabNavigator} />
             <Stack.Screen
               name="Settings"
-              component={SettingsScreen}
+              getComponent={getSettingsScreen}
               options={settingsScreenOptions}
             />
             <Stack.Screen
               name="ExerciseProgress"
-              component={ExerciseProgressScreen}
+              getComponent={getExerciseProgressScreen}
               options={exerciseProgressScreenOptions}
             />
             <Stack.Screen
               name="AIReport"
-              component={AIReportScreen}
+              getComponent={getAIReportScreen}
               options={aiReportScreenOptions}
             />
           </>

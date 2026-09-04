@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { observer } from 'mobx-react-lite';
 import { CartesianChart, Line, Area } from 'victory-native';
@@ -96,7 +96,7 @@ const buildEmptyData = (): ChartDataPoint[] => {
 };
 const EMPTY_DATA = buildEmptyData();
 
-export const LineChart = observer(memo<LineChartProps>(({
+export const LineChart = observer<LineChartProps>(({
   data,
   width,
   height,
@@ -348,7 +348,7 @@ export const LineChart = observer(memo<LineChartProps>(({
       )}
     </View>
   );
-}));
+});
 
 LineChart.displayName = 'LineChart';
 

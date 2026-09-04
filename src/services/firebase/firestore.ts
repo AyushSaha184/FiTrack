@@ -1,10 +1,14 @@
 import firestore from '@react-native-firebase/firestore';
 
 // Explicitly enable offline cache persistence and configure cache size settings
-firestore().settings({
-  persistence: true,
-  cacheSizeBytes: firestore.CACHE_SIZE_UNLIMITED,
-});
+try {
+  firestore().settings({
+    persistence: true,
+    cacheSizeBytes: firestore.CACHE_SIZE_UNLIMITED,
+  }).catch(() => {});
+} catch {
+  // Ignore if Firestore is already started (e.g. across Fast Refresh or after background service start)
+}
 
 export const db = firestore();
 

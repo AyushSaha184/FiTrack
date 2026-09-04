@@ -191,16 +191,29 @@ export const updateService = {
     // If a previous download for this version is in flight, cancel it first.
     activeDownloads.get(updateInfo.version)?.cancel();
 
+    // Ensure any previously aborted/partial download is removed.
+    try {
+      const exists = await ReactNativeBlobUtil.fs.exists(targetPath);
+      if (exists) {
+        await ReactNativeBlobUtil.fs.unlink(targetPath);
+      }
+    } catch {
+      // Ignore cleanup error before download
+    }
+
     const task = ReactNativeBlobUtil.config({
       path: targetPath,
       fileCache: true,
       overwrite: true,
-      // Notification config is Android-only; the download runs in a foreground
-      // service so the OS doesn't kill it while the user is in another app.
-    }).fetch('GET', updateInfo.downloadUrl);
+      timeout: 120000,
+      followRedirect: true,
+    }).fetch('GET', updateInfo.downloadUrl, {
+      'User-Agent': 'Fitrack-App',
+      Accept: 'application/octet-stream',
+    });
 
     if (onProgress) {
-      task.progress({ count: 10 }, (received: number, total: number) => {
+      task.progress({ interval: 250 }, (received: number, total: number) => {
         const safeTotal = total > 0 ? total : 1;
         onProgress({
           bytesWritten: received,
@@ -219,6 +232,10 @@ export const updateService = {
         throw new Error(`Download failed with HTTP ${status}`);
       }
       const actualPath = res.path();
+      const exists = await ReactNativeBlobUtil.fs.exists(actualPath);
+      if (!exists) {
+        throw new Error('Downloaded update file not found on disk.');
+      }
       logger.info(`[updateService] Downloaded ${updateInfo.version} to ${actualPath}`);
       return actualPath;
     } finally {

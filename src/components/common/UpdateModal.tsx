@@ -166,15 +166,13 @@ export const UpdateModal = memo<UpdateModalProps>(({
     if (phase === 'error') {
       return (
         <View style={styles.actions}>
-          {!isMandatory ? (
-            <TouchableOpacity
-              style={[styles.secondaryBtn, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
-              onPress={handleLater}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.secondaryBtnText, { color: colors.text }]}>Later</Text>
-            </TouchableOpacity>
-          ) : null}
+          <TouchableOpacity
+            style={[styles.secondaryBtn, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
+            onPress={handleDownload}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.secondaryBtnText, { color: colors.text }]}>Retry</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
             onPress={handleOpenReleasePage}
@@ -185,7 +183,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
               <Polyline points="7 10 12 15 17 10" />
               <Line x1="12" y1="15" x2="12" y2="3" />
             </Svg>
-            <Text style={styles.primaryBtnText}>Download from GitHub</Text>
+            <Text style={styles.primaryBtnText}>GitHub Download</Text>
           </TouchableOpacity>
         </View>
       );

@@ -18,7 +18,6 @@ import { spacing, radius, responsive } from '../../theme';
 import { signupSchema } from '../../utils/validators';
 import type { AuthStackParamList } from '../../types/navigation';
 import { logger } from '../../utils/logger';
-import { CONFIG } from '../../config/constants';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Signup'>;
@@ -158,13 +157,13 @@ export const SignupScreen = () => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: '#000000' }]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboardView}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Back Navigation Arrow */}
           <TouchableOpacity
@@ -203,13 +202,20 @@ export const SignupScreen = () => {
                   placeholder="Full Name"
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   value={name}
-                  onChangeText={(text) => { setName(text); setErrors((prev) => { const { general, ...rest } = prev; return rest; }); }}
+                  onChangeText={(text) => {
+                    setName(text);
+                    setErrors((prev) => {
+                      const rest = { ...prev };
+                      delete rest.general;
+                      return rest;
+                    });
+                  }}
                   autoCapitalize="words"
                   autoCorrect={false}
                 />
               </View>
 
-              <View style={[styles.divider, { backgroundColor: '#1F1F1F' }]} />
+              <View style={[styles.divider, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]} />
 
               {/* Email Address */}
               <View style={styles.inputRow}>
@@ -221,14 +227,21 @@ export const SignupScreen = () => {
                   placeholder="Email Address"
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   value={email}
-                  onChangeText={(text) => { setEmail(text); setErrors((prev) => { const { general, ...rest } = prev; return rest; }); }}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    setErrors((prev) => {
+                      const rest = { ...prev };
+                      delete rest.general;
+                      return rest;
+                    });
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
               </View>
 
-              <View style={[styles.divider, { backgroundColor: '#1F1F1F' }]} />
+              <View style={[styles.divider, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]} />
 
               {/* Password */}
               <View style={styles.inputRow}>
@@ -241,7 +254,14 @@ export const SignupScreen = () => {
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   secureTextEntry={!showPassword}
                   value={password}
-                  onChangeText={(text) => { setPassword(text); setErrors((prev) => { const { general, ...rest } = prev; return rest; }); }}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    setErrors((prev) => {
+                      const rest = { ...prev };
+                      delete rest.general;
+                      return rest;
+                    });
+                  }}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />

@@ -4,7 +4,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useStopwatch } from '../../hooks/useStopwatch';
 import { Modal } from '../common/Modal';
 import { useColors } from '../../hooks/useTheme';
-import { spacing, radius, responsive } from '../../theme';
+import { spacing, radius } from '../../theme';
 
 export const StopwatchDisplay = memo(() => {
   const colors = useColors();
@@ -35,7 +35,7 @@ export const StopwatchDisplay = memo(() => {
         style={[
           styles.stopwatchButton,
           {
-            backgroundColor: stopwatch.isRunning ? colors.primary : 'rgba(255,255,255,0.08)',
+            backgroundColor: stopwatch.isRunning ? colors.primary : colors.cardSurface,
             borderColor: colors.cardBorder,
           },
         ]}
@@ -79,7 +79,7 @@ export const StopwatchDisplay = memo(() => {
           </View>
           <View style={styles.stopwatchDialogActions}>
             <TouchableOpacity
-              style={[styles.stopwatchDialogBtn, { backgroundColor: 'rgba(255,255,255,0.08)' }]}
+              style={[styles.stopwatchDialogBtn, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder, borderWidth: 1 }]}
               onPress={handleStopwatchReset}
             >
               <Text style={[styles.stopwatchDialogBtnText, { color: colors.text }]}>Reset</Text>
@@ -88,7 +88,7 @@ export const StopwatchDisplay = memo(() => {
               style={[styles.stopwatchDialogBtn, { backgroundColor: colors.primary }]}
               onPress={handleStopwatchDialogClose}
             >
-              <Text style={[styles.stopwatchDialogBtnText, { color: colors.background }]}>Close</Text>
+              <Text style={[styles.stopwatchDialogBtnText, { color: '#FFFFFF' }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -103,18 +103,19 @@ const styles = StyleSheet.create({
   stopwatchButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
     borderRadius: radius.pill,
     borderWidth: 1.5,
     gap: spacing.xs,
     justifyContent: 'center',
+    flexShrink: 0,
   },
   stopwatchText: {
-    fontSize: responsive.font(14),
+    fontSize: 13,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
-    lineHeight: 20,
+    lineHeight: 18,
   },
   stopwatchDialog: {
     paddingVertical: spacing.lg,

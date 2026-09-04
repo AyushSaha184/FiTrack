@@ -8,6 +8,9 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.WritableArray
+import com.facebook.react.bridge.WritableMap
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.appwidget.AppWidgetManager
@@ -86,6 +89,7 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun getTodaySteps(promise: Promise) {
+        StepCounterForegroundService.checkAndResetDate(prefs, reactApplicationContext)
         val today = StepCounterForegroundService.getTodayDateString()
         val storedDate = prefs.getString("date", "")
         val steps = if (storedDate == today) prefs.getInt("steps", 0) else 0
@@ -100,14 +104,53 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun setInitialSteps(steps: Int, promise: Promise) {
-        val today = StepCounterForegroundService.getTodayDateString()
-        prefs.edit().apply {
-            putInt("steps", steps)
-            putString("date", today)
-            apply()
+    fun getPendingStepLogs(promise: Promise) {
+        val pendingDatesStr = prefs.getString("pending_dates", "") ?: ""
+        val array: WritableArray = Arguments.createArray()
+        if (pendingDatesStr.isNotEmpty()) {
+            val dates = pendingDatesStr.split(",").filter { it.isNotEmpty() }
+            for (date in dates) {
+                val archivedSteps = prefs.getInt("archived_steps_$date", 0)
+                if (archivedSteps > 0) {
+                    val map: WritableMap = Arguments.createMap()
+                    map.putString("date", date)
+                    map.putInt("steps", archivedSteps)
+                    array.pushMap(map)
+                }
+            }
         }
-        updateWidget()
+        promise.resolve(array)
+    }
+
+    @ReactMethod
+    fun clearPendingStepLogs(promise: Promise) {
+        val pendingDatesStr = prefs.getString("pending_dates", "") ?: ""
+        val editor = prefs.edit()
+        if (pendingDatesStr.isNotEmpty()) {
+            val dates = pendingDatesStr.split(",").filter { it.isNotEmpty() }
+            for (date in dates) {
+                editor.remove("archived_steps_$date")
+            }
+        }
+        editor.remove("pending_dates")
+        editor.apply()
+        promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun setInitialSteps(steps: Int, promise: Promise) {
+        StepCounterForegroundService.checkAndResetDate(prefs, reactApplicationContext)
+        val today = StepCounterForegroundService.getTodayDateString()
+        val currentSteps = prefs.getInt("steps", 0)
+        // Guard against overwriting higher hardware counts or re-seeding old steps
+        if (steps > currentSteps) {
+            prefs.edit().apply {
+                putInt("steps", steps)
+                putString("date", today)
+                apply()
+            }
+            updateWidget()
+        }
         promise.resolve(true)
     }
 

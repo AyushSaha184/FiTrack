@@ -79,7 +79,7 @@ export const firebaseAuthService = {
   async signInWithGoogle() {
     try {
       await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
+      await GoogleSignin.signIn();
       const { idToken, accessToken } = await GoogleSignin.getTokens();
 
       if (!idToken) {

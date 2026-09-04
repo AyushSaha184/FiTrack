@@ -39,6 +39,45 @@ class StepCounterForegroundService : Service(), SensorEventListener {
             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
             return sdf.format(Date())
         }
+
+        fun checkAndResetDate(prefs: SharedPreferences, context: Context? = null): Boolean {
+            val today = getTodayDateString()
+            val storedDate = prefs.getString("date", "") ?: ""
+            if (storedDate.isNotEmpty() && storedDate != today) {
+                val previousSteps = prefs.getInt("steps", 0)
+                val editor = prefs.edit()
+                if (previousSteps > 0) {
+                    editor.putInt("archived_steps_$storedDate", previousSteps)
+                    val pending = prefs.getString("pending_dates", "") ?: ""
+                    val pendingList = if (pending.isEmpty()) mutableListOf<String>() else pending.split(",").filter { it.isNotEmpty() }.toMutableList()
+                    if (!pendingList.contains(storedDate)) {
+                        pendingList.add(storedDate)
+                        editor.putString("pending_dates", pendingList.joinToString(","))
+                    }
+                }
+                editor.putString("date", today)
+                editor.putInt("steps", 0)
+                editor.apply()
+
+                if (context != null) {
+                    updateWidget(context)
+                }
+                return true
+            } else if (storedDate.isEmpty()) {
+                prefs.edit().putString("date", today).putInt("steps", 0).apply()
+                return true
+            }
+            return false
+        }
+
+        fun updateWidget(context: Context) {
+            val intent = Intent(context, FitrackStepsWidget::class.java).apply {
+                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+            }
+            val ids = AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, FitrackStepsWidget::class.java))
+            intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+            context.sendBroadcast(intent)
+        }
     }
 
     override fun onCreate() {
@@ -53,16 +92,9 @@ class StepCounterForegroundService : Service(), SensorEventListener {
     }
 
     private fun checkAndResetDate() {
-        val today = getTodayDateString()
-        val storedDate = prefs.getString("date", "")
-        if (storedDate != today) {
-            prefs.edit().apply {
-                putString("date", today)
-                putInt("steps", 0)
-                apply()
-            }
+        val reset = Companion.checkAndResetDate(prefs, this)
+        if (reset) {
             initialStepCount = -1f
-            updateWidget()
         }
     }
 
@@ -137,21 +169,21 @@ class StepCounterForegroundService : Service(), SensorEventListener {
         if (isListening) return
 
         var registered = false
-        if (stepDetectorSensor != null) {
+        // Prioritize TYPE_STEP_COUNTER because it is hardware-accumulated and battery efficient.
+        // Only fall back to TYPE_STEP_DETECTOR if TYPE_STEP_COUNTER is not supported on this device.
+        // Registering both causes duplicate counting (2x steps) on devices that have both sensors.
+        if (stepCounterSensor != null) {
+            registered = sensorManager.registerListener(
+                this,
+                stepCounterSensor,
+                SensorManager.SENSOR_DELAY_NORMAL
+            )
+        } else if (stepDetectorSensor != null) {
             registered = sensorManager.registerListener(
                 this,
                 stepDetectorSensor,
-                SensorManager.SENSOR_DELAY_NORMAL // battery efficient
+                SensorManager.SENSOR_DELAY_NORMAL
             )
-        }
-
-        if (stepCounterSensor != null) {
-            val counterRegistered = sensorManager.registerListener(
-                this,
-                stepCounterSensor,
-                SensorManager.SENSOR_DELAY_NORMAL // battery efficient
-            )
-            registered = registered || counterRegistered
         }
 
         isListening = registered
@@ -188,19 +220,14 @@ class StepCounterForegroundService : Service(), SensorEventListener {
         if (stepDelta > 0) {
             val currentSteps = prefs.getInt("steps", 0)
             prefs.edit().putInt("steps", currentSteps + stepDelta).apply()
-            updateWidget()
+            Companion.updateWidget(this)
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun updateWidget() {
-        val intent = Intent(this, FitrackStepsWidget::class.java).apply {
-            action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-        }
-        val ids = AppWidgetManager.getInstance(this).getAppWidgetIds(ComponentName(this, FitrackStepsWidget::class.java))
-        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-        sendBroadcast(intent)
+        Companion.updateWidget(this)
     }
 
     override fun onDestroy() {

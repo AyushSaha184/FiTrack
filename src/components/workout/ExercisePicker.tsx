@@ -1,4 +1,4 @@
-import React, { memo, useState, useMemo, useCallback } from 'react';
+import React, { memo, useState, useMemo, useCallback, useEffect, useDeferredValue } from 'react';
 import {
   View,
   Text,
@@ -46,12 +46,32 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
     }));
   }, [visible]);
 
-  // Memoize search query results (rerender-use-deferred-value / useMemo)
-  const searchResults = useMemo(() => {
+  // 250ms debounce: `searchQuery` updates instantly so the TextInput stays
+  // responsive, but `debouncedQuery` only updates 250ms after typing stops.
+  // `searchExercises` is then computed off the debounced value so we don't
+  // re-run fuzzy/Levenshtein scoring on every intermediate keystroke.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
     const trimmed = searchQuery.trim();
-    if (trimmed.length === 0) return [];
-    return [...searchExercises(trimmed)].sort((a, b) => a.name.localeCompare(b.name));
+    if (trimmed.length === 0) {
+      setDebouncedQuery('');
+      return;
+    }
+    const handle = setTimeout(() => setDebouncedQuery(trimmed), 250);
+    return () => clearTimeout(handle);
   }, [searchQuery]);
+
+  // useDeferredValue is a second safety net: if React is busy with the
+  // modal animation or the TextInput is in the middle of a long-press
+  // selection, the deprioritized re-render of searchResults won't block
+  // the UI thread.
+  const deferredQuery = useDeferredValue(debouncedQuery);
+  const isStale = deferredQuery !== debouncedQuery;
+
+  const searchResults = useMemo(() => {
+    if (deferredQuery.length === 0) return [];
+    return searchExercises(deferredQuery);
+  }, [deferredQuery]);
 
   const resetForm = useCallback(() => {
     setSearchQuery('');
@@ -99,7 +119,7 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
         key={exercise.id}
         style={[
           styles.exerciseItem,
-          !isLastInBox && styles.exerciseItemBorder,
+          !isLastInBox && [styles.exerciseItemBorder, { borderBottomColor: colors.cardBorder }],
         ]}
         onPress={() => handleSelect(exercise)}
         activeOpacity={0.7}
@@ -110,8 +130,8 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
               {exercise.name}
             </Text>
             {exercise.isCustom && (
-              <View style={styles.customBadge}>
-                <Text style={styles.customBadgeText}>CUSTOM</Text>
+              <View style={[styles.customBadge, { backgroundColor: colors.cardBorder, borderColor: colors.cardBorder }]}>
+                <Text style={[styles.customBadgeText, { color: colors.text }]}>CUSTOM</Text>
               </View>
             )}
           </View>
@@ -153,12 +173,13 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
         </TouchableOpacity>
 
         {isExpanded && (
-          <View style={styles.expandedCategoryBox}>
+          <View style={[styles.expandedCategoryBox, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             {category.id === 'custom' && (
               <View
                 style={[
                   styles.exerciseItem,
                   styles.exerciseItemBorder,
+                  { borderBottomColor: colors.cardBorder },
                 ]}
               >
                 <View style={styles.exerciseInfo}>
@@ -206,16 +227,16 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
       title="Add Exercise"
       sheet
       noPadding
-      bodyStyle={styles.modalBody}
+      bodyStyle={[styles.modalBody, { backgroundColor: colors.card }]}
     >
-      <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+      <View style={[styles.container, { paddingBottom: insets.bottom, backgroundColor: colors.card }]}>
         {/* Search Bar */}
         <View
           style={[
             styles.searchContainer,
             {
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              borderColor: 'rgba(255, 255, 255, 0.1)',
+              backgroundColor: colors.surface,
+              borderColor: colors.cardBorder,
             },
           ]}
         >
@@ -261,7 +282,7 @@ export const ExercisePicker = memo<ExercisePickerProps>(({
           {searchQuery.length > 0 ? (
             <>
               <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>
-                RESULTS ({searchResults.length})
+                RESULTS {isStale ? '…' : `(${searchResults.length})`}
               </Text>
               {searchResults.length > 0 ? (
                 searchResults.map((item, index) => renderExerciseItem(item, index))
@@ -289,11 +310,10 @@ ExercisePicker.displayName = 'ExercisePicker';
 
 const styles = StyleSheet.create({
   modalBody: {
-    backgroundColor: '#09090B',
+    padding: 0,
   },
   container: {
     height: 550,
-    backgroundColor: '#09090B',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -366,10 +386,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   expandedCategoryBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.035)',
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
     marginTop: spacing.xs,
     marginBottom: spacing.sm,
     marginLeft: spacing.base,
@@ -384,7 +402,6 @@ const styles = StyleSheet.create({
   },
   exerciseItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.07)',
   },
   exerciseInfo: {
     flex: 1,
@@ -407,15 +424,12 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   customBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   customBadgeText: {
-    color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.5,

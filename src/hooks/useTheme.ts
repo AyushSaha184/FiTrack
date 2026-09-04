@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { colors, ThemeColors, typography, spacing, radius } from '../theme';
 import { useSettingsStore } from '../stores';
 import { Appearance } from 'react-native';
+import type { ThemeId } from '../stores/SettingsStore';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -11,28 +12,40 @@ export interface Theme {
   spacing: typeof spacing;
   radius: typeof radius;
   isDark: boolean;
+  themeId: ThemeId;
 }
+
+const resolvePaletteId = (
+  themeId: ThemeId,
+  colorScheme: ReturnType<typeof Appearance.getColorScheme>,
+): 'light' | 'dark' | 'amoled' => {
+  if (themeId === 'auto') {
+    return colorScheme === 'light' ? 'light' : 'dark';
+  }
+  return themeId;
+};
 
 export const useTheme = (): Theme => {
   const settingsStore = useSettingsStore();
   const colorScheme = Appearance.getColorScheme();
 
+  const paletteId = resolvePaletteId(settingsStore.theme, colorScheme);
+
   const isDark = useMemo(() => {
-    if (settingsStore.theme === 'auto') {
-      return colorScheme === 'dark';
-    }
-    return settingsStore.theme === 'dark';
+    if (settingsStore.theme === 'auto') return colorScheme !== 'light';
+    return settingsStore.theme !== 'light';
   }, [settingsStore.theme, colorScheme]);
 
   const theme = useMemo<Theme>(
     () => ({
-      colors: isDark ? colors.dark : colors.light,
+      colors: colors[paletteId],
       typography,
       spacing,
       radius,
       isDark,
+      themeId: settingsStore.theme,
     }),
-    [isDark],
+    [paletteId, isDark, settingsStore.theme],
   );
 
   return theme;

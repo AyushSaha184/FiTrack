@@ -1,5 +1,17 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, useWindowDimensions, Alert, AppState, AppStateStatus } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  TouchableOpacity,
+  Pressable,
+  useWindowDimensions,
+  Alert,
+  AppState,
+  AppStateStatus,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { observer } from 'mobx-react-lite';
@@ -21,7 +33,7 @@ import { Button } from '../../components/common/Button';
 import { Logo } from '../../components/common/Logo';
 import { CustomAlert } from '../../components/common/CustomAlert';
 import { useColors, useAuth, useStepsStore, useWeightStore } from '../../hooks';
-import { spacing, typography, durations, responsive } from '../../theme';
+import { spacing, typography, durations } from '../../theme';
 import { formatDate, formatStepsWithCommas } from '../../utils/helpers';
 import { stepsToCalories } from '../../utils/calculations';
 import type { StepEntry } from '../../models';
@@ -51,19 +63,41 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
   const [goalInput, setGoalInput] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<StepEntry | null>(null);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   const todaySteps = stepsStore.todaySteps;
   const goalSteps = stepsStore.dailyGoal;
   const entries = stepsStore.weeklyEntries;
 
-  useEffect(() => {
-    if (user?.id) {
-      stepsStore.loadTodaySteps(user.id);
-      stepsStore.loadWeeklySteps(user.id);
-    }
+  const handleRefreshData = useCallback(async () => {
+    if (!user?.id) return;
+    await stepsStore.syncFromBackgroundService(user.id);
+    await Promise.all([
+      stepsStore.loadTodaySteps(user.id),
+      stepsStore.loadWeeklySteps(user.id),
+    ]);
   }, [user?.id, stepsStore]);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await handleRefreshData();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [handleRefreshData]);
+
+  // Load today's steps and weekly history whenever active screen or user changes
   useEffect(() => {
-    if (!user?.id || !isActive) return;
+    if (user?.id && isActive) {
+      handleRefreshData();
+    }
+  }, [user?.id, isActive, handleRefreshData]);
+
+  useEffect(() => {
+    if (!user?.id || !isActive) {
+      return;
+    }
     // Defer the permission request until after the swipe-in animation
     // (250ms in MainTabNavigator) and the initial layout settle. This avoids
     // the system dialog popping up while the screen is still animating in.
@@ -74,15 +108,9 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
   }, [user?.id, isActive, stepsStore]);
 
   useEffect(() => {
-    if (user?.id) {
-      stepsStore.syncFromBackgroundService(user.id);
-    }
-  }, [user?.id, stepsStore]);
-
-  useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active' && user?.id) {
-        stepsStore.syncFromBackgroundService(user.id);
+        handleRefreshData();
       }
     };
 
@@ -91,7 +119,7 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
     return () => {
       subscription.remove();
     };
-  }, [user?.id, stepsStore]);
+  }, [user?.id, handleRefreshData]);
 
   const currentWeight = weightStore.currentWeight;
 
@@ -99,7 +127,9 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
   // never compute the same filtered entry list twice.
   const getFilteredEntries = useCallback(
     (source: StepEntry[], range: string): StepEntry[] => {
-      if (range === 'all') return [...source];
+      if (range === 'all') {
+        return [...source];
+      }
       const days = parseInt(range, 10);
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
@@ -235,17 +265,25 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
         >
           {/* Header */}
           <View style={styles.header}>
             <Logo size="medium" />
             <TouchableOpacity
               onPress={() => navigation.navigate('Settings')}
-              style={styles.settingsButton}
+              style={[styles.settingsButton, { backgroundColor: colors.cardSurface }]}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Circle cx="12" cy="12" r="3" />
-                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </Svg>
             </TouchableOpacity>
           </View>
@@ -285,7 +323,7 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                       cx={45}
                       cy={45}
                       r={38}
-                      stroke="rgba(255,255,255,0.08)"
+                      stroke={colors.cardBorder}
                       strokeWidth={6}
                       fill="transparent"
                     />
@@ -321,7 +359,7 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
 
             {/* Progress Bar */}
             <View style={styles.progressBarContainer}>
-              <View style={styles.progressTrack}>
+              <View style={[styles.progressTrack, { backgroundColor: colors.cardBorder }]}>
                 <Animated.View
                   style={[
                     styles.progressFill,
@@ -368,13 +406,17 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
           <AnimatedCard index={2} style={styles.statsCard}>
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                <Text style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={1}>
                   Total Steps
                 </Text>
-                <Text style={[styles.statValue, { color: colors.text }]}>
+                <Text
+                  style={[styles.statValue, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {formatStepsWithCommas(weeklyStats.totalSteps)}
                 </Text>
-                <Text style={[styles.statUnit, { color: colors.textMuted }]}>
+                <Text style={[styles.statUnit, { color: colors.textMuted }]} numberOfLines={1}>
                   {timeRange === 'all' ? 'All time' : `Last ${timeRange} days`}
                 </Text>
               </View>
@@ -382,13 +424,17 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
               <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
 
               <View style={styles.statItem}>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                <Text style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={1}>
                   Calories Burned
                 </Text>
-                <Text style={[styles.statValue, { color: colors.text }]}>
+                <Text
+                  style={[styles.statValue, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {formatStepsWithCommas(weeklyStats.caloriesBurned)}
                 </Text>
-                <Text style={[styles.statUnit, { color: colors.textMuted }]}>
+                <Text style={[styles.statUnit, { color: colors.textMuted }]} numberOfLines={1}>
                   {timeRange === 'all' ? 'All time (kcal)' : `Last ${timeRange} days (kcal)`}
                 </Text>
               </View>
@@ -414,7 +460,7 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
                   ]}
                 >
                   <View style={styles.historyLeft}>
-                    <View style={styles.historyIcon}>
+                    <View style={[styles.historyIcon, { backgroundColor: colors.cardSurface }]}>
                       <Text style={styles.historyIconText}>👟</Text>
                     </View>
                     <View>
@@ -565,6 +611,10 @@ const styles = StyleSheet.create({
   },
   stepsIconCenter: {
     position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -617,11 +667,13 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingVertical: spacing.xs,
   },
   statIcon: {
     width: 40,
@@ -643,16 +695,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   statValue: {
-    fontSize: typography.h3.fontSize,
+    fontSize: 24,
     fontWeight: '700',
     marginBottom: 2,
+    lineHeight: 28,
   },
   statUnit: {
-    fontSize: responsive.font(typography.caption.fontSize ?? 14),
+    fontSize: 11,
+    lineHeight: 14,
+    textAlign: 'center',
   },
   statDivider: {
     width: 1,
-    height: 60,
+    alignSelf: 'center',
+    minHeight: 50,
   },
   historyCard: {
     marginBottom: spacing.lg,

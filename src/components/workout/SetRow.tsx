@@ -120,7 +120,7 @@ export const SetRow = memo<SetRowProps>(({
           onPress={handleDelete}
           style={({ pressed }) => [styles.deleteButton, pressed && { opacity: 0.6 }]}
         >
-          <View style={[styles.deleteIconContainer, { backgroundColor: 'rgba(255,80,80,0.1)' }]}>
+          <View style={[styles.deleteIconContainer, { backgroundColor: colors.error + '20' }]}>
             <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={colors.error} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M3 6h18" />
               <Path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />

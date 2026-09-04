@@ -18,10 +18,10 @@ import { Modal } from '../../components/common/Modal';
 import { Logo } from '../../components/common/Logo';
 import { StopwatchDisplay } from '../../components/workout/StopwatchDisplay';
 import { RestTimerBanner, type RestTimerBannerHandle } from '../../components/workout/RestTimerBanner';
-import { useColors, useSettingsStore, useWorkoutStore, useAuthStore } from '../../hooks';
-import { spacing, typography, radius, responsive } from '../../theme';
+import { useColors, useSettingsStore, useWorkoutStore } from '../../hooks';
+import { spacing, radius, responsive } from '../../theme';
 import { getWeekDates, getDayOfWeekKey, storage, dateKey } from '../../utils/helpers';
-import type { DayOfWeek, WorkoutType, Set } from '../../models';
+import type { WorkoutType, Set } from '../../models';
 import type { ExerciseItem } from '../../utils/exerciseData';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -41,13 +41,12 @@ export const WorkoutScreen = observer(() => {
   const colors = useColors();
   const navigation = useNavigation<any>();
   const workoutStore = useWorkoutStore();
-  const authStore = useAuthStore();
   const restTimerRef = useRef<RestTimerBannerHandle>(null);
-  
+
   // Store references
   const activeWorkout = workoutStore.activeWorkout;
   const activeWorkoutExercises = workoutStore.activeWorkoutExercises;
-  
+
   // Local state for day selection
   const [selectedDate, setSelectedDate] = useState<Date>(workoutStore.selectedDate);
   const selectedDay = workoutStore.selectedDay;
@@ -60,7 +59,9 @@ export const WorkoutScreen = observer(() => {
   // AuthStore.fetchUser. The store dedupes the underlying onSnapshot.
   useEffect(() => {
     const userId = workoutStore.userId;
-    if (!userId) return;
+    if (!userId) {
+      return;
+    }
     const unsubscribe = workoutStore.subscribeWorkouts(userId);
     return unsubscribe;
   }, [workoutStore]);
@@ -295,7 +296,7 @@ export const WorkoutScreen = observer(() => {
             </View>
             <TouchableOpacity
               onPress={() => navigation.navigate('Settings')}
-              style={[styles.settingsButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
+              style={[styles.settingsButton, { backgroundColor: colors.cardSurface }]}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Circle cx="12" cy="12" r="3" />
@@ -336,7 +337,7 @@ export const WorkoutScreen = observer(() => {
                       styles.dayItem,
                       isSelected && [
                         styles.dayItemSelected,
-                        { backgroundColor: 'rgba(255,255,255,0.12)' },
+                        { backgroundColor: colors.cardBorder },
                       ],
                     ]}
                     activeOpacity={0.7}
@@ -367,13 +368,8 @@ export const WorkoutScreen = observer(() => {
                 <TouchableOpacity
                   style={[
                     styles.pill,
-                    !isRestDay && styles.pillActive,
-                    {
-                      backgroundColor: !isRestDay
-                        ? 'rgba(255,255,255,0.1)'
-                        : 'transparent',
-                      borderColor: colors.cardBorder,
-                    },
+                    { borderColor: colors.cardBorder },
+                    !isRestDay ? { backgroundColor: colors.cardSurface } : styles.pillInactive,
                   ]}
                   onPress={() => {
                     if (isRestDay) {
@@ -396,13 +392,8 @@ export const WorkoutScreen = observer(() => {
                 <TouchableOpacity
                   style={[
                     styles.pill,
-                    isRestDay && styles.pillActive,
-                    {
-                      backgroundColor: isRestDay
-                        ? 'rgba(255,255,255,0.9)'
-                        : 'transparent',
-                      borderColor: colors.cardBorder,
-                    },
+                    { borderColor: colors.cardBorder },
+                    isRestDay ? { backgroundColor: colors.text } : styles.pillInactive,
                   ]}
                   onPress={handleRestDay}
                   activeOpacity={0.7}
@@ -410,9 +401,7 @@ export const WorkoutScreen = observer(() => {
                   <Text
                     style={[
                       styles.pillText,
-                      {
-                        color: isRestDay ? '#000000' : colors.textMuted,
-                      },
+                      { color: isRestDay ? colors.background : colors.textMuted },
                     ]}
                   >
                     Rest Day
@@ -475,7 +464,7 @@ export const WorkoutScreen = observer(() => {
         {/* Floating Add Exercise Button (Pressable with animated shared value) */}
         {!isRestDay ? (
           <AnimatedPressable
-            style={[styles.fab, fabAnimatedStyle]}
+            style={[styles.fab, { backgroundColor: colors.surface, borderColor: colors.cardBorder }, fabAnimatedStyle]}
             onPress={handleOpenExercisePicker}
             onPressIn={handleFabPressIn}
             onPressOut={handleFabPressOut}
@@ -508,7 +497,7 @@ export const WorkoutScreen = observer(() => {
                 style={[
                   styles.routineItem,
                   {
-                    backgroundColor: 'rgba(255,255,255,0.04)',
+                    backgroundColor: colors.cardSurface,
                     borderColor: colors.cardBorder,
                   },
                 ]}
@@ -637,6 +626,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   pillActive: {},
+  pillInactive: {
+    backgroundColor: 'transparent',
+  },
   pillText: {
     fontSize: responsive.font(14),
     fontWeight: '500',

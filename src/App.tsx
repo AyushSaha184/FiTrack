@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { StatusBar, LogBox, View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { StatusBar, LogBox, View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+
+if (Text && (Text as any).defaultProps == null) {
+  (Text as any).defaultProps = (Text as any).defaultProps || {};
+  (Text as any).defaultProps.allowFontScaling = false;
+}
+if (TextInput && (TextInput as any).defaultProps == null) {
+  (TextInput as any).defaultProps = (TextInput as any).defaultProps || {};
+  (TextInput as any).defaultProps.allowFontScaling = false;
+}
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -7,7 +16,8 @@ import { logger, getErrorLogs } from './utils/logger';
 import { crashReportsService } from './services/firebase/crashReports';
 import { AppNavigator } from './navigation/AppNavigator';
 import { StoreContext, rootStore } from './stores';
-import { colors } from './theme';
+import { observer } from 'mobx-react-lite';
+import { useColors } from './hooks';
 
 LogBox.ignoreLogs([
   'Non-serializable values were found in the navigation state',
@@ -167,44 +177,47 @@ const styles = StyleSheet.create({
   },
   gestureRoot: {
     flex: 1,
-    backgroundColor: colors.dark.background,
   },
 });
 
 import { updateService, type UpdateInfo } from './services/update/updateService';
 import { UpdateModal } from './components/common/UpdateModal';
 
-const App = () => {
+const App = observer(() => {
+  const colors = useColors();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const checkUpdates = async () => {
-      if (!updateService.shouldCheckForUpdateOnLaunch()) {
-        return;
-      }
       try {
         const info = await updateService.checkForUpdate();
-        if (info) {
+        if (!cancelled && info) {
           setUpdateInfo(info);
           setShowUpdateModal(true);
         }
       } catch (err) {
-        // Silently fail auto-check on startup
+        logger.warn('[App] Update auto-check failed silently on startup:', err);
       }
     };
-    // Run update check shortly after launch
-    const timer = setTimeout(checkUpdates, 1500);
-    return () => clearTimeout(timer);
+    // Run the check shortly after launch
+    const timer = setTimeout(checkUpdates, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
+
+  const statusBarStyle = colors.background === '#FFFFFF' || colors.background === '#F5F5F5' ? 'dark-content' : 'light-content';
 
   return (
     <ErrorBoundary>
-      <GestureHandlerRootView style={styles.gestureRoot}>
+      <GestureHandlerRootView style={[styles.gestureRoot, { backgroundColor: colors.background }]}>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
             <StoreContext.Provider value={rootStore}>
-              <StatusBar barStyle="light-content" backgroundColor={colors.dark.background} />
+              <StatusBar barStyle={statusBarStyle} backgroundColor={colors.background} />
               <AppNavigator />
               <UpdateModal
                 visible={showUpdateModal}
@@ -217,6 +230,6 @@ const App = () => {
       </GestureHandlerRootView>
     </ErrorBoundary>
   );
-};
+});
 
 export default App;

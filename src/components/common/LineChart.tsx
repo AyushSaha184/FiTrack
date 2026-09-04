@@ -15,8 +15,7 @@ interface LineChartProps {
   data: ChartDataPoint[];
   width: number;
   height: number;
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  _yAxisLabel?: string;
+  yAxisLabel?: string;
   showTooltip?: boolean;
   tooltipValue?: string;
   areaFill?: boolean;
@@ -39,7 +38,9 @@ const CHART_FONT = matchFont({
 });
 
 const downsampleData = (pts: ChartDataPoint[], maxPoints = 30): ChartDataPoint[] => {
-  if (pts.length <= maxPoints) return pts;
+  if (pts.length <= maxPoints) {
+    return pts;
+  }
   const sampled: ChartDataPoint[] = [];
   const step = (pts.length - 1) / (maxPoints - 1);
   for (let i = 0; i < maxPoints; i++) {
@@ -54,16 +55,24 @@ const downsampleData = (pts: ChartDataPoint[], maxPoints = 30): ChartDataPoint[]
 // Round a number UP to the nearest "nice" value. e.g. 7500 -> 8000,
 // 12000 -> 12000, 4750 -> 5000. Used to pin a Y-axis max to a clean number.
 const niceCeil = (n: number): number => {
-  if (!Number.isFinite(n) || n <= 0) return 100;
+  if (!Number.isFinite(n) || n <= 0) {
+    return 100;
+  }
   const exp = Math.floor(Math.log10(n));
   const base = Math.pow(10, exp);
   const fraction = n / base;
   let niceFraction: number;
-  if (fraction <= 1) niceFraction = 1;
-  else if (fraction <= 2) niceFraction = 2;
-  else if (fraction <= 2.5) niceFraction = 2.5;
-  else if (fraction <= 5) niceFraction = 5;
-  else niceFraction = 10;
+  if (fraction <= 1) {
+    niceFraction = 1;
+  } else if (fraction <= 2) {
+    niceFraction = 2;
+  } else if (fraction <= 2.5) {
+    niceFraction = 2.5;
+  } else if (fraction <= 5) {
+    niceFraction = 5;
+  } else {
+    niceFraction = 10;
+  }
   return niceFraction * base;
 };
 
@@ -90,7 +99,6 @@ export const LineChart = memo<LineChartProps>(({
   data,
   width,
   height,
-  _yAxisLabel,
   showTooltip = true,
   tooltipValue,
   areaFill = true,
@@ -147,15 +155,25 @@ export const LineChart = memo<LineChartProps>(({
     const maxXTicks = 6;
     const xTickIndices: number[] = (() => {
       const n = chartData.length;
-      if (n <= 0) return [];
-      if (n === 1) return [0];
+      if (n <= 0) {
+        return [];
+      }
+      if (n === 1) {
+        return [0];
+      }
       const count = Math.min(maxXTicks, n);
       const indices: number[] = [];
       for (let i = 0; i < count; i++) {
         const idx = Math.round((i * (n - 1)) / (count - 1));
-        if (idx < 0) continue;
-        if (idx > n - 1) break;
-        if (!indices.includes(idx)) indices.push(idx);
+        if (idx < 0) {
+          continue;
+        }
+        if (idx > n - 1) {
+          break;
+        }
+        if (!indices.includes(idx)) {
+          indices.push(idx);
+        }
       }
       if (indices[indices.length - 1] !== n - 1) {
         indices[indices.length - 1] = n - 1;
@@ -211,21 +229,26 @@ export const LineChart = memo<LineChartProps>(({
   return (
     <View style={[styles.container, { width, height }]}>
       <CartesianChart
+        key={`cartesian-${colors.background}-${colors.cardBorder}-${color}`}
         data={chartData}
         xKey="x"
-        yKeys={["y"]}
+        yKeys={['y']}
         domainPadding={{ left: 16, right: 16, top: 20, bottom: 30 }}
         domain={{ y: [0, maxVal] }}
         axisOptions={{
           font,
           tickCount: { x: xTickIndices.length, y: yTickCount },
           tickValues: { x: xTickIndices, y: yTickValues },
-          lineColor: 'rgba(255,255,255,0.08)',
-          labelColor: 'rgba(255,255,255,0.5)',
+          lineColor: colors.cardBorder,
+          labelColor: colors.textMuted,
           formatXLabel: (val: number) => {
             const idx = Math.round(val);
-            if (idx < 0 || idx >= chartData.length) return '';
-            if (!xTickSet.has(idx)) return '';
+            if (idx < 0 || idx >= chartData.length) {
+              return '';
+            }
+            if (!xTickSet.has(idx)) {
+              return '';
+            }
             const label = chartData[idx]?.label || '';
             return label.length > 8 ? label.substring(0, 6) + '..' : label;
           },
@@ -262,14 +285,16 @@ export const LineChart = memo<LineChartProps>(({
 
             {/* Data points */}
             {!isEmpty && points.y.map((point, i) => {
-              if (!point || point.x == null || point.y == null) return null;
+              if (!point || point.x == null || point.y == null) {
+                return null;
+              }
               return (
                 <React.Fragment key={`point-${i}`}>
                   <Circle
                     cx={point.x}
                     cy={point.y}
                     r={4}
-                    color={colors.background}
+                    color={colors.card}
                     style="fill"
                   />
                   <Circle
@@ -301,10 +326,8 @@ export const LineChart = memo<LineChartProps>(({
           style={[
             styles.tooltip,
             {
-              backgroundColor: 'rgba(255,255,255,0.12)',
-              borderColor: 'rgba(255,255,255,0.2)',
-              right: 8,
-              top: 8,
+              backgroundColor: colors.surface,
+              borderColor: colors.cardBorder,
             },
           ]}
         >
@@ -331,7 +354,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     zIndex: 2,
     borderRadius: 12,
   },
@@ -346,6 +368,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: 8,
     borderWidth: 1,
+    right: 8,
+    top: 8,
   },
   tooltipText: {
     fontSize: 12,

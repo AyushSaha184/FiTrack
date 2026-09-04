@@ -11,8 +11,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { observer } from 'mobx-react-lite';
-import Svg, { Path, Line, Polyline } from 'react-native-svg';
-import { useColors, useSpacing, useTypography, useAuth } from '../../hooks';
+import Svg, { Line, Polyline } from 'react-native-svg';
+import { useColors, useAuth } from '../../hooks';
 import { responsive } from '../../theme';
 import type { AIReportResult } from '../../services/ai/aiService';
 import { aiContentReportsService } from '../../services/ai/aiContentReportsService';
@@ -39,8 +39,6 @@ const REPORT_CATEGORIES = [
 
 export const AIReportScreen = observer(() => {
   const colors = useColors();
-  const spacing = useSpacing();
-  const typography = useTypography();
   const navigation = useNavigation();
   const route = useRoute<AIReportScreenRouteProp>();
   const { user } = useAuth();
@@ -96,14 +94,14 @@ export const AIReportScreen = observer(() => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Weekly AI Report</Text>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={[styles.backButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
+          style={[styles.backButton, { backgroundColor: colors.cardSurface }]}
           activeOpacity={0.7}
         >
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
             <Line x1="19" y1="12" x2="5" y2="12" />
             <Polyline points="12 19 5 12 12 5" />
           </Svg>

@@ -35,11 +35,20 @@ export class StepsStore {
     });
   }
 
+  private persistTodayCache(steps: number) {
+    const todayStr = dateKey(new Date());
+    storage.set('steps_today_cache_v2', { date: todayStr, steps });
+  }
+
   private restoreCachedSteps() {
     try {
-      const cachedToday = storage.get<number>('steps_today_cache');
-      if (typeof cachedToday === 'number') {
-        this.todaySteps = cachedToday;
+      const todayStr = dateKey(new Date());
+      const cachedToday = storage.get<{ date: string; steps: number }>('steps_today_cache_v2');
+      if (cachedToday && cachedToday.date === todayStr && typeof cachedToday.steps === 'number') {
+        this.todaySteps = cachedToday.steps;
+      } else {
+        // Stale or legacy cache from a previous day -> reset to 0 for today
+        this.todaySteps = 0;
       }
       const cachedWeekly = storage.get<any[]>('steps_weekly_cache');
       if (cachedWeekly && Array.isArray(cachedWeekly) && cachedWeekly.length > 0) {
@@ -94,21 +103,27 @@ export class StepsStore {
       this.isLoading = true;
       const todayStr = dateKey(new Date());
       const log = await stepsService.getStepLogs(userId, todayStr);
+      const nativeSteps = await stepCounterService.getTodaySteps().catch(() => 0);
+
       runInAction(() => {
         if (log) {
-          this.todaySteps = log.stepCount;
+          this.todaySteps = Math.max(log.stepCount, nativeSteps);
           this.dailyGoal = log.targetGoal || this.dailyGoal;
           this.todayEntry = {
             id: log.id,
             userId: log.userId,
-            steps: log.stepCount,
+            steps: this.todaySteps,
             date: log.date,
             source: 'manual',
             createdAt: log.createdAt,
             updatedAt: log.updatedAt,
           };
+        } else {
+          // No remote log yet for today -> start at current native steps for today
+          this.todaySteps = nativeSteps;
+          this.todayEntry = null;
         }
-        storage.set('steps_today_cache', this.todaySteps);
+        this.persistTodayCache(this.todaySteps);
       });
     } catch (error: any) {
       logger.error('[StepsStore] loadTodaySteps error:', error);
@@ -122,8 +137,25 @@ export class StepsStore {
     }
   }
 
-  async loadWeeklySteps(_userId: string, _days = 90) {
-    // Rely on local cached weekly entries or live steps log
+  async loadWeeklySteps(userId: string, days = 30) {
+    if (!userId) return;
+    try {
+      const logs = await stepsService.getStepHistory(userId, days);
+      runInAction(() => {
+        this.weeklyEntries = logs.map((log) => ({
+          id: log.id,
+          userId: log.userId,
+          steps: log.stepCount,
+          date: log.date,
+          source: 'manual',
+          createdAt: log.createdAt,
+          updatedAt: log.updatedAt,
+        }));
+        storage.set('steps_weekly_cache', this.weeklyEntries);
+      });
+    } catch (error: any) {
+      logger.error('[StepsStore] loadWeeklySteps error:', error);
+    }
   }
 
   async addSteps(userId: string, steps: number, date?: Date) {
@@ -132,8 +164,11 @@ export class StepsStore {
       return;
     }
     try {
-      const dateStr = dateKey(date || new Date());
+      const targetDate = date || new Date();
+      const dateStr = dateKey(targetDate);
+      const isToday = dateStr === dateKey(new Date());
       const log = await stepsService.saveStepLog(userId, steps, this.dailyGoal, dateStr);
+
       runInAction(() => {
         const entry: StepEntry = {
           id: log.id,
@@ -144,13 +179,25 @@ export class StepsStore {
           createdAt: log.createdAt,
           updatedAt: log.updatedAt,
         };
-        this.todayEntry = entry;
-        this.todaySteps = steps;
-        storage.set('steps_today_cache', this.todaySteps);
+
+        if (isToday) {
+          this.todayEntry = entry;
+          this.todaySteps = steps;
+          this.persistTodayCache(this.todaySteps);
+        }
+
+        // Upsert into weekly entries
+        const existingIdx = this.weeklyEntries.findIndex((e) => dateKey(new Date(e.date)) === dateStr);
+        if (existingIdx !== -1) {
+          this.weeklyEntries[existingIdx] = entry;
+        } else {
+          this.weeklyEntries = [entry, ...this.weeklyEntries];
+        }
+        storage.set('steps_weekly_cache', this.weeklyEntries);
       });
-      
+
       // Update background service if active and date is today
-      if (this.isLiveTracking && (!date || dateKey(date) === dateKey(new Date()))) {
+      if (this.isLiveTracking && isToday) {
         await stepCounterService.setInitialSteps(steps);
       }
     } catch (error: any) {
@@ -170,10 +217,11 @@ export class StepsStore {
   async deleteEntry(entryId: string) {
     runInAction(() => {
       this.weeklyEntries = this.weeklyEntries.filter((e) => e.id !== entryId);
+      storage.set('steps_weekly_cache', this.weeklyEntries);
       if (this.todayEntry?.id === entryId) {
         this.todayEntry = null;
         this.todaySteps = 0;
-        storage.set('steps_today_cache', 0);
+        this.persistTodayCache(0);
       }
     });
   }
@@ -186,7 +234,7 @@ export class StepsStore {
       runInAction(() => {
         this.todaySteps = steps;
         this.source = source;
-        storage.set('steps_today_cache', this.todaySteps);
+        this.persistTodayCache(this.todaySteps);
       });
     } catch (error: any) {
       runInAction(() => {
@@ -209,12 +257,17 @@ export class StepsStore {
 
   getChartData(): { date: Date; steps: number }[] {
     const last7 = getLast7Days();
+    const todayStr = dateKey(new Date());
     return last7.map((date) => {
       const dateStr = dateKey(date);
+      const isToday = dateStr === todayStr;
       const entry = this.weeklyEntries.find(
         (e) => dateKey(new Date(e.date)) === dateStr,
       );
-      return { date, steps: entry?.steps ?? (dateStr === dateKey(new Date()) ? this.todaySteps : 0) };
+      return {
+        date,
+        steps: isToday ? this.todaySteps : (entry?.steps ?? 0),
+      };
     });
   }
 
@@ -257,13 +310,32 @@ export class StepsStore {
   async syncFromBackgroundService(userId: string) {
     if (!userId) return;
     try {
+      // 1. Process and upload any archived step logs from previous days (e.g. rollover occurred while app was in background/closed)
+      const pendingLogs = await stepCounterService.getPendingStepLogs();
+      if (pendingLogs.length > 0) {
+        for (const item of pendingLogs) {
+          if (item.steps > 0 && item.date) {
+            try {
+              await stepsService.saveStepLog(userId, item.steps, this.dailyGoal, item.date);
+            } catch (saveErr) {
+              logger.warn('[StepsStore] Failed to sync pending log for date:', item.date, saveErr);
+            }
+          }
+        }
+        await stepCounterService.clearPendingStepLogs();
+        await this.loadWeeklySteps(userId);
+      }
+
+      // 2. Synchronize today's steps
       const steps = await stepCounterService.getTodaySteps();
-      if (steps > this.todaySteps) {
+      const todayStr = dateKey(new Date());
+
+      // If native sensor has steps and it differs from todaySteps, update and sync
+      if (steps > 0 && steps !== this.todaySteps) {
         runInAction(() => {
           this.todaySteps = steps;
-          storage.set('steps_today_cache', this.todaySteps);
+          this.persistTodayCache(this.todaySteps);
         });
-        const todayStr = dateKey(new Date());
         await stepsService.saveStepLog(userId, this.todaySteps, this.dailyGoal, todayStr);
       }
     } catch (err) {

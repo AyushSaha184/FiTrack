@@ -127,7 +127,7 @@ export const DropdownPicker = memo<DropdownPickerProps>(({
                     styles.optionDivider,
                     { borderBottomColor: colors.cardBorder },
                   ],
-                  option.value === selectedValue && styles.optionSelected,
+                  option.value === selectedValue && { backgroundColor: colors.cardSurface },
                 ]}
                 onPress={() => handleSelect(option.value)}
                 activeOpacity={0.7}

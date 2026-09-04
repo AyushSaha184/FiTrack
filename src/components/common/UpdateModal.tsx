@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Polyline, Line, Circle as SvgCircle } from 'react-native-svg';
 import { useColors } from '../../hooks';
-import { typography, spacing, radius, responsive } from '../../theme';
+import { typography, spacing, radius } from '../../theme';
 import { logger } from '../../utils/logger';
 import { Modal } from './Modal';
 import {
@@ -27,7 +27,9 @@ interface UpdateModalProps {
 type Phase = 'idle' | 'downloading' | 'installing' | 'error';
 
 const parseReleaseNotes = (raw: string): string[] => {
-  if (!raw) return [];
+  if (!raw) {
+    return [];
+  }
   const cleaned = raw.replace(/\[!\s*mandatory\]/gi, '').trim();
   return cleaned
     .split(/\r?\n/)
@@ -36,7 +38,9 @@ const parseReleaseNotes = (raw: string): string[] => {
 };
 
 const formatBytes = (b: number): string => {
-  if (!b || b <= 0) return '0 B';
+  if (!b || b <= 0) {
+    return '0 B';
+  }
   const units = ['B', 'KB', 'MB', 'GB'];
   const i = Math.min(units.length - 1, Math.floor(Math.log(b) / Math.log(1024)));
   return `${(b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
@@ -68,7 +72,9 @@ export const UpdateModal = memo<UpdateModalProps>(({
     }
   }, [visible, updateInfo?.version]);
 
-  if (!visible || !updateInfo) return null;
+  if (!visible || !updateInfo) {
+    return null;
+  }
 
   const notes = parseReleaseNotes(updateInfo.releaseNotes);
   const isMandatory = !!updateInfo.mandatory;
@@ -109,7 +115,9 @@ export const UpdateModal = memo<UpdateModalProps>(({
   };
 
   const handleLater = () => {
-    if (isMandatory || inProgress) return;
+    if (isMandatory || inProgress) {
+      return;
+    }
     updateService.deferForSession(updateInfo.version);
     onClose();
   };
@@ -122,7 +130,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
     if (phase === 'downloading') {
       return (
         <View style={styles.progressBlock}>
-          <View style={[styles.progressBarBg, { backgroundColor: colors.cardSurface }]}>
+          <View style={[styles.progressBarBg, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             <View
               style={[
                 styles.progressBarFill,
@@ -161,7 +169,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
         <View style={styles.actions}>
           {!isMandatory ? (
             <TouchableOpacity
-              style={[styles.secondaryBtn, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}
+              style={[styles.secondaryBtn, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
               onPress={handleLater}
               activeOpacity={0.7}
             >
@@ -187,7 +195,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
       <View style={styles.actions}>
         {!isMandatory ? (
           <TouchableOpacity
-            style={[styles.secondaryBtn, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}
+            style={[styles.secondaryBtn, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
             onPress={handleLater}
             activeOpacity={0.7}
           >
@@ -231,7 +239,7 @@ export const UpdateModal = memo<UpdateModalProps>(({
         </Text>
 
         {notes.length > 0 ? (
-          <View style={[styles.notesBox, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
+          <View style={[styles.notesBox, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             <Text style={[styles.notesLabel, { color: colors.textMuted }]}>WHAT'S NEW</Text>
             <ScrollView
               style={styles.notesScroll}
@@ -285,7 +293,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingTop: spacing.sm,
     paddingBottom: spacing.xs,
-    maxHeight: 220,
+    maxHeight: 320,
     marginBottom: spacing.base,
   },
   notesLabel: {
@@ -295,7 +303,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   notesScroll: {
-    maxHeight: 180,
+    maxHeight: 280,
   },
   notesContent: {
     paddingBottom: spacing.sm,
@@ -303,7 +311,7 @@ const styles = StyleSheet.create({
   noteRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
   bullet: {
     width: 5,
@@ -314,8 +322,8 @@ const styles = StyleSheet.create({
   },
   noteText: {
     flex: 1,
-    fontSize: responsive.font(13),
-    lineHeight: 19,
+    fontSize: 13,
+    lineHeight: 22,
   },
   actions: {
     flexDirection: 'row',

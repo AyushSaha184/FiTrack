@@ -1,4 +1,4 @@
-import type { DayOfWeek, WorkoutType } from '../models';
+import type { WorkoutType } from '../models';
 
 export type RootStackParamList = {
   Auth: undefined;

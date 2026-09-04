@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -39,6 +39,12 @@ export const Input = memo<InputProps>(({
   const colors = useColors();
   const [isFocused, setIsFocused] = useState(false);
   const borderColor = useSharedValue<string>(colors.cardBorder);
+
+  useEffect(() => {
+    if (!isFocused) {
+      borderColor.value = error ? colors.error : colors.cardBorder;
+    }
+  }, [colors.cardBorder, colors.error, isFocused, error, borderColor]);
 
   const animatedBorderStyle = useAnimatedStyle(() => ({
     borderColor: borderColor.value,

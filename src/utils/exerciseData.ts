@@ -37,23 +37,10 @@ export const saveCustomExercise = (item: {
   };
   const updated = [newItem, ...current];
   storage.set('workout.custom_exercises', updated);
+  // Invalidate the cached search index so the new exercise becomes searchable
+  // on the next query without restarting the app.
+  invalidateSearchIndex();
   return newItem;
-};
-
-export const getExerciseCategories = (): ExerciseCategory[] => {
-  const custom = getCustomExercises();
-  const customCategory: ExerciseCategory = {
-    id: 'custom',
-    name: 'Custom',
-    icon: '✨',
-    exercises: custom,
-  };
-  return [...exerciseCategories, customCategory];
-};
-
-export const getAllExercises = (): ExerciseItem[] => {
-  const custom = getCustomExercises();
-  return [...custom, ...exerciseCategories.flatMap((cat) => cat.exercises)];
 };
 
 export const exerciseCategories: ExerciseCategory[] = [
@@ -198,30 +185,41 @@ export const exerciseCategories: ExerciseCategory[] = [
   },
 ];
 
-// Helper function to calculate Levenshtein Distance for fuzzy matching
-const levenshteinDistance = (a: string, b: string): number => {
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-
-  const matrix: number[][] = [];
-  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1, // substitution
-          matrix[i][j - 1] + 1,     // insertion
-          matrix[i - 1][j] + 1,     // deletion
-        );
-      }
-    }
-  }
-  return matrix[b.length][a.length];
+export const getExerciseCategories = (): ExerciseCategory[] => {
+  const custom = getCustomExercises();
+  const customCategory: ExerciseCategory = {
+    id: 'custom',
+    name: 'Custom',
+    icon: '✨',
+    exercises: custom,
+  };
+  return [...exerciseCategories, customCategory];
 };
+
+export const getAllExercises = (): ExerciseItem[] => {
+  const custom = getCustomExercises();
+  return [...custom, ...exerciseCategories.flatMap((cat) => cat.exercises)];
+};
+
+// ---------------------------------------------------------------------------
+// Search index
+// ---------------------------------------------------------------------------
+//
+// We precompute a normalized/tokenized form of every exercise once at module
+// load (and on custom-exercise insertion) and reuse it for every keystroke.
+// `searchExercises` then becomes a lightweight map+filter+sort over the
+// precomputed records — no per-keystroke regex normalization or tokenization.
+
+interface IndexedExercise {
+  exercise: ExerciseItem;
+  rawNameLower: string;
+  normalizedName: string;
+  nameTokens: string[];
+  normalizedMuscle: string;
+  normalizedEquipment: string;
+}
+
+const tokenize = (s: string): string[] => s.split(/\s+/).filter(Boolean);
 
 const normalizeText = (text: string): string => {
   return text
@@ -240,32 +238,138 @@ const normalizeText = (text: string): string => {
     .trim();
 };
 
+let searchIndex: IndexedExercise[] | null = null;
+
+const buildIndex = (): IndexedExercise[] => {
+  return getAllExercises().map((exercise) => {
+    const rawNameLower = exercise.name.toLowerCase();
+    const normalizedName = normalizeText(exercise.name);
+    return {
+      exercise,
+      rawNameLower,
+      normalizedName,
+      nameTokens: tokenize(normalizedName),
+      normalizedMuscle: normalizeText(exercise.muscleGroup),
+      normalizedEquipment: normalizeText(exercise.equipment),
+    };
+  });
+};
+
+const getSearchIndex = (): IndexedExercise[] => {
+  if (searchIndex == null) {
+    searchIndex = buildIndex();
+  }
+  return searchIndex;
+};
+
+const invalidateSearchIndex = (): void => {
+  searchIndex = null;
+};
+
+// Test-only escape hatch: if the index is set to a non-null array (even an
+// empty one) the builder will not run, so tests can supply a canned fixture
+// without the production builder hitting MMKV.
+export const __setSearchIndexForTests = (index: IndexedExercise[] | null): void => {
+  if (index === null) {
+    invalidateSearchIndex();
+  } else {
+    searchIndex = index;
+  }
+};
+
+// Bumped whenever the scoring algorithm changes in an incompatible way.
+const SEARCH_INDEX_VERSION = 2;
+
+let searchIndexVersion = 0;
+if (searchIndexVersion !== SEARCH_INDEX_VERSION) {
+  searchIndex = null;
+  searchIndexVersion = SEARCH_INDEX_VERSION;
+}
+
+// ---------------------------------------------------------------------------
+// Scoring
+// ---------------------------------------------------------------------------
+//
+// Weights are deliberately gapped: an exact substring match on the raw name
+// (100) is far above any fuzzy/typo match (~9–12). This prevents noisy
+// short-token fuzzy matches (e.g. "leg" matching "hip") from outranking
+// genuine exact hits.
+
+const levenshteinDistance = (a: string, b: string): number => {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  // Use a single rolling row to keep memory O(min(a,b)).
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+
+  let prev = new Array<number>(shorter.length + 1);
+  let curr = new Array<number>(shorter.length + 1);
+  for (let j = 0; j <= shorter.length; j++) prev[j] = j;
+
+  for (let i = 1; i <= longer.length; i++) {
+    curr[0] = i;
+    const li = longer.charCodeAt(i - 1);
+    for (let j = 1; j <= shorter.length; j++) {
+      const cost = li === shorter.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,        // deletion
+        curr[j - 1] + 1,    // insertion
+        prev[j - 1] + cost, // substitution
+      );
+    }
+    const tmp = prev;
+    prev = curr;
+    curr = tmp;
+  }
+  return prev[shorter.length];
+};
+
+const FUZZY_MIN_TOKEN_LENGTH = 4;
+const FUZZY_BASE_WEIGHT = 12; // max weight at dist=0 (which is impossible since prefix/exact are caught first)
+
+interface ScoredExercise {
+  exercise: ExerciseItem;
+  score: number;
+  /** Lower is better; used as a tie-breaker. */
+  matchPosition: number;
+}
+
 export const searchExercises = (query: string): ExerciseItem[] => {
-  const rawQuery = query.trim().toLowerCase();
+  const rawQuery = query.trim();
   if (!rawQuery) return [];
 
+  const rawQueryLower = rawQuery.toLowerCase();
   const normalizedQuery = normalizeText(rawQuery);
-  const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  if (!normalizedQuery) return [];
 
-  const scoredExercises = getAllExercises().map((exercise) => {
-    const rawName = exercise.name.toLowerCase();
-    const normalizedName = normalizeText(exercise.name);
-    const normalizedMuscle = normalizeText(exercise.muscleGroup);
-    const normalizedEquipment = normalizeText(exercise.equipment);
-    const nameTokens = normalizedName.split(/\s+/);
+  const queryTokens = tokenize(normalizedQuery);
+  const index = getSearchIndex();
 
+  const scored: ScoredExercise[] = [];
+
+  for (const item of index) {
     let score = 0;
+    let matchPosition = Number.MAX_SAFE_INTEGER;
 
-    // 1. Direct raw substring match
-    if (rawName.includes(rawQuery)) score += 100;
-    if (normalizedName.includes(normalizedQuery)) score += 80;
-    if (normalizedMuscle.includes(normalizedQuery)) score += 50;
-    if (normalizedEquipment.includes(normalizedQuery)) score += 40;
+    // 1. Direct substring matches (these are the strongest signals).
+    const rawIdx = item.rawNameLower.indexOf(rawQueryLower);
+    if (rawIdx !== -1) {
+      score += 100;
+      if (rawIdx < matchPosition) matchPosition = rawIdx;
+    }
+    const normIdx = item.normalizedName.indexOf(normalizedQuery);
+    if (normIdx !== -1) {
+      score += 80;
+      if (normIdx < matchPosition) matchPosition = normIdx;
+    }
+    if (item.normalizedMuscle.includes(normalizedQuery)) score += 50;
+    if (item.normalizedEquipment.includes(normalizedQuery)) score += 40;
 
-    // 2. Token level matching (exact, prefix, and fuzzy)
+    // 2. Per-token matching.
     for (const qToken of queryTokens) {
       let tokenMatched = false;
-      for (const nToken of nameTokens) {
+      for (const nToken of item.nameTokens) {
         if (nToken === qToken) {
           score += 30;
           tokenMatched = true;
@@ -276,12 +380,17 @@ export const searchExercises = (query: string): ExerciseItem[] => {
           tokenMatched = true;
           break;
         }
-        // Fuzzy Levenshtein check for typos (for words longer than 3 characters)
-        if (qToken.length >= 3 && nToken.length >= 3) {
+        if (
+          qToken.length >= FUZZY_MIN_TOKEN_LENGTH &&
+          nToken.length >= FUZZY_MIN_TOKEN_LENGTH
+        ) {
           const dist = levenshteinDistance(qToken, nToken);
-          const maxAllowedDist = qToken.length > 5 ? 2 : 1;
-          if (dist <= maxAllowedDist) {
-            score += 15 - dist * 3;
+          const maxAllowedDist = qToken.length > 6 ? 2 : 1;
+          if (dist > 0 && dist <= maxAllowedDist) {
+            // Short tokens pay an extra penalty so a typo on a 4-letter
+            // word doesn't outrank a real exact match elsewhere.
+            const lengthPenalty = qToken.length < 5 ? 3 : 0;
+            score += Math.max(1, FUZZY_BASE_WEIGHT - dist * 4 - lengthPenalty);
             tokenMatched = true;
             break;
           }
@@ -289,17 +398,31 @@ export const searchExercises = (query: string): ExerciseItem[] => {
       }
 
       if (!tokenMatched) {
-        // Also check against muscle group and equipment
-        if (normalizedMuscle.includes(qToken)) score += 10;
-        if (normalizedEquipment.includes(qToken)) score += 10;
+        if (item.normalizedMuscle.includes(qToken)) score += 10;
+        if (item.normalizedEquipment.includes(qToken)) score += 10;
       }
     }
 
-    return { exercise, score };
+    if (score > 0) {
+      scored.push({ exercise: item.exercise, score, matchPosition });
+    }
+  }
+
+  // Primary sort: score desc. Tie-breakers: earlier substring position wins,
+  // then alphabetical. This keeps ranking stable and predictable.
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (a.matchPosition !== b.matchPosition) return a.matchPosition - b.matchPosition;
+    return a.exercise.name.localeCompare(b.exercise.name);
   });
 
-  return scoredExercises
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map((item) => item.exercise);
+  return scored.map((s) => s.exercise);
+};
+
+// Test-only helper: re-export buildIndex version so tests can verify behavior.
+export const __searchInternals = {
+  invalidateSearchIndex,
+  getSearchIndex,
+  normalizeText,
+  levenshteinDistance,
 };

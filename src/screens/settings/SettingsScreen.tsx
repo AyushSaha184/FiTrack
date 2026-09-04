@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   Switch,
   Image,
-  Share,
-  Platform,
   Alert,
   Linking,
   TextInput,
@@ -27,7 +25,8 @@ import { CustomAlert } from '../../components/common/CustomAlert';
 import { Logo } from '../../components/common/Logo';
 import { observer } from 'mobx-react-lite';
 import { useAuth, useColors, useSettingsStore } from '../../hooks';
-import { spacing, typography, radius, responsive } from '../../theme';
+import type { ThemeId } from '../../stores/SettingsStore';
+import { spacing, radius, responsive } from '../../theme';
 import { getErrorLogs, logger } from '../../utils/logger';
 import { CONFIG } from '../../config/constants';
 import { crashReportsService } from '../../services/firebase/crashReports';
@@ -36,6 +35,12 @@ import { firebaseAuthService } from '../../services/firebase/auth';
 import { storage } from '../../utils/storage';
 import { updateService, type UpdateInfo } from '../../services/update/updateService';
 import { UpdateModal } from '../../components/common/UpdateModal';
+
+const THEME_OPTIONS: { id: ThemeId; label: string }[] = [
+  { id: 'dark', label: 'Dark' },
+  { id: 'amoled', label: 'AMOLED' },
+  { id: 'light', label: 'Light' },
+];
 
 export const SettingsScreen = observer(() => {
   const colors = useColors();
@@ -74,13 +79,28 @@ export const SettingsScreen = observer(() => {
   const [heightInput, setHeightInput] = useState(user?.profile?.height ? String(user.profile.height) : '');
   const [containerWidth, setContainerWidth] = useState(0);
 
+  // Theme picker state (same pill-bubble pattern as gender)
+  const [themeContainerWidth, setThemeContainerWidth] = useState(0);
+  const themeSlideOffset = useSharedValue(0);
+
+  useEffect(() => {
+    if (themeContainerWidth > 0) {
+      const idx = Math.max(0, THEME_OPTIONS.findIndex((o) => o.id === settingsStore.theme));
+      themeSlideOffset.value = idx * (themeContainerWidth / THEME_OPTIONS.length);
+    }
+  }, [settingsStore.theme, themeContainerWidth, themeSlideOffset]);
+
+  const handleThemeChange = (id: ThemeId) => {
+    settingsStore.setTheme(id);
+  };
+
   const slideOffset = useSharedValue(0);
 
   useEffect(() => {
     if (containerWidth > 0) {
       slideOffset.value = gender === 'male' ? 0 : containerWidth / 2;
     }
-  }, [gender, containerWidth]);
+  }, [gender, containerWidth, slideOffset]);
 
   const handleGenderChange = async (newGender: 'male' | 'female') => {
     setGender(newGender);
@@ -118,6 +138,10 @@ export const SettingsScreen = observer(() => {
 
   const animatedBubbleStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: withSpring(slideOffset.value, { damping: 20, stiffness: 220 }) }],
+  }));
+
+  const animatedThemeBubbleStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: withSpring(themeSlideOffset.value, { damping: 20, stiffness: 220 }) }],
   }));
 
   const avatarSource = useMemo(
@@ -205,7 +229,9 @@ export const SettingsScreen = observer(() => {
   };
 
   const handleSaveApiKey = () => {
-    if (!selectedProvider) return;
+    if (!selectedProvider) {
+      return;
+    }
     if (!apiKeyInput.trim()) {
       Alert.alert('Error', 'Please enter a valid API key');
       return;
@@ -232,7 +258,6 @@ export const SettingsScreen = observer(() => {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       deepseek: 'DeepSeek',
-      cohere: 'Cohere',
     };
     return labels[provider] || provider;
   };
@@ -251,7 +276,7 @@ export const SettingsScreen = observer(() => {
             <Logo size="medium" />
             <TouchableOpacity
               onPress={() => navigation.goBack()}
-              style={[styles.settingsButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
+              style={[styles.settingsButton, { backgroundColor: colors.cardSurface }]}
             >
               <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                 <Line x1="19" y1="12" x2="5" y2="12" />
@@ -276,7 +301,7 @@ export const SettingsScreen = observer(() => {
                   style={[
                     styles.logoutPill,
                     {
-                      backgroundColor: 'rgba(255,255,255,0.06)',
+                      backgroundColor: colors.cardSurface,
                       borderColor: colors.cardBorder,
                     },
                   ]}
@@ -329,7 +354,7 @@ export const SettingsScreen = observer(() => {
               style={[
                 styles.editNamePill,
                 {
-                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  backgroundColor: colors.cardSurface,
                   borderColor: colors.cardBorder,
                 },
               ]}
@@ -353,14 +378,14 @@ export const SettingsScreen = observer(() => {
                 <Text style={[styles.statsLabel, { color: colors.textMuted }]}>GENDER</Text>
                 <View 
                   onLayout={(e: LayoutChangeEvent) => setContainerWidth(e.nativeEvent.layout.width)}
-                  style={[styles.genderContainer, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}
+                  style={[styles.genderContainer, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}
                 >
                   {/* Bubble animation */}
                   {containerWidth > 0 && (
                     <Animated.View
                       style={[
                         styles.genderBubble,
-                        { backgroundColor: 'rgba(255, 255, 255, 0.15)', width: containerWidth / 2 },
+                        { backgroundColor: colors.cardBorder, width: containerWidth / 2 },
                         animatedBubbleStyle,
                       ]}
                     />
@@ -392,7 +417,7 @@ export const SettingsScreen = observer(() => {
               {/* Height selection */}
               <View style={styles.statsColRight}>
                 <Text style={[styles.statsLabel, { color: colors.textMuted }]}>HEIGHT</Text>
-                <View style={[styles.heightInputContainer, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.cardBorder }]}>
+                <View style={[styles.heightInputContainer, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
                   <TextInput
                     keyboardType="numeric"
                     placeholder="--"
@@ -409,8 +434,48 @@ export const SettingsScreen = observer(() => {
             </View>
           </AnimatedCard>
 
-          {/* AI Configuration */}
           <AnimatedCard index={2} style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+                THEME
+              </Text>
+            </View>
+
+            <View
+              onLayout={(e: LayoutChangeEvent) => setThemeContainerWidth(e.nativeEvent.layout.width)}
+              style={[styles.themeContainer, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}
+            >
+              {themeContainerWidth > 0 && (
+                <Animated.View
+                  style={[
+                    styles.themeBubble,
+                    { backgroundColor: colors.cardBorder, width: themeContainerWidth / THEME_OPTIONS.length },
+                    animatedThemeBubbleStyle,
+                  ]}
+                />
+              )}
+              {THEME_OPTIONS.map((opt) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={styles.themePill}
+                  onPress={() => handleThemeChange(opt.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.themeText,
+                      { color: settingsStore.theme === opt.id ? colors.text : colors.textMuted },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </AnimatedCard>
+
+          {/* AI Configuration */}
+          <AnimatedCard index={3} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
                 AI CONFIGURATION
@@ -419,21 +484,25 @@ export const SettingsScreen = observer(() => {
 
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.base }}>
               {([
-                { id: 'gemini', label: 'Google Gemini' },
+                { id: 'gemini', label: 'Gemini' },
                 { id: 'groq', label: 'Groq' },
                 { id: 'openrouter', label: 'OpenRouter' },
                 { id: 'openai', label: 'OpenAI' },
                 { id: 'anthropic', label: 'Anthropic' },
-                { id: 'deepseek', label: 'DeepSeek' },
-                { id: 'cohere', label: 'Cohere' }
-              ] as const).map((prov) => {
+                { id: 'deepseek', label: 'DeepSeek' }
+              ] as { id: AIProvider; label: string; description?: string }[]).map((prov) => {
                 const savedKeyObj = savedKeys.find(k => k.provider === prov.id);
                 return (
-                  <View key={prov.id} style={[styles.providerGridItem, { backgroundColor: 'rgba(255,255,255,0.03)', borderColor: colors.cardBorder }]}>
+                  <View key={prov.id} style={[styles.providerGridItem, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}>
                     <View style={styles.providerInfo}>
                       <Text style={[styles.providerNameText, { color: colors.text }]} numberOfLines={1}>
                         {prov.label}
                       </Text>
+                      {prov.description ? (
+                        <Text style={[styles.providerDescText, { color: colors.textMuted }]} numberOfLines={1}>
+                          {prov.description}
+                        </Text>
+                      ) : null}
                       {savedKeyObj ? (
                         <Text style={[styles.providerKeyText, { color: colors.textMuted }]}>
                           ************
@@ -466,7 +535,7 @@ export const SettingsScreen = observer(() => {
                 style={[
                   styles.crashButton,
                   {
-                    backgroundColor: 'rgba(255,255,255,0.06)',
+                    backgroundColor: colors.cardSurface,
                     borderColor: colors.cardBorder,
                   },
                 ]}
@@ -478,7 +547,7 @@ export const SettingsScreen = observer(() => {
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.crashIcon}>+ </Text>
+                <Text style={[styles.crashIcon, { color: colors.text }]}>+ </Text>
                 <Text style={[styles.crashButtonText, { color: colors.text }]}>
                   Add API Key
                 </Text>
@@ -491,7 +560,7 @@ export const SettingsScreen = observer(() => {
           </AnimatedCard>
 
           {/* Help Improve FiTrack (Crash Reports) */}
-          <AnimatedCard index={3} style={styles.sectionCard}>
+          <AnimatedCard index={4} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
                 HELP IMPROVE FITRACK
@@ -502,7 +571,7 @@ export const SettingsScreen = observer(() => {
               style={[
                 styles.crashButton,
                 {
-                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  backgroundColor: colors.cardSurface,
                   borderColor: colors.cardBorder,
                 },
               ]}
@@ -530,7 +599,7 @@ export const SettingsScreen = observer(() => {
               'Your reports help us make FiTrack better for everyone.',
             ].map((step, index) => (
               <View key={index} style={styles.stepRow}>
-                <View style={[styles.stepNumber, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+                <View style={[styles.stepNumber, { backgroundColor: colors.cardSurface }]}>
                   <Text style={[styles.stepNumberText, { color: colors.text }]}>
                     {index + 1}
                   </Text>
@@ -543,7 +612,7 @@ export const SettingsScreen = observer(() => {
           </AnimatedCard>
 
           {/* Developer Options */}
-          <AnimatedCard index={4} style={styles.sectionCard}>
+          <AnimatedCard index={5} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionIcon}>{'</>'}</Text>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
@@ -565,8 +634,8 @@ export const SettingsScreen = observer(() => {
                 value={settingsStore.recordBugReports}
                 onValueChange={(val) => settingsStore.setRecordBugReports(val)}
                 trackColor={{
-                  false: 'rgba(255,255,255,0.12)',
-                  true: 'rgba(255,255,255,0.35)',
+                  false: colors.cardBorder,
+                  true: colors.primary,
                 }}
                 thumbColor="#FFFFFF"
               />
@@ -586,8 +655,8 @@ export const SettingsScreen = observer(() => {
                 value={settingsStore.restartOnBoot}
                 onValueChange={(val) => settingsStore.setRestartOnBoot(val)}
                 trackColor={{
-                  false: 'rgba(255,255,255,0.12)',
-                  true: 'rgba(255,255,255,0.35)',
+                  false: colors.cardBorder,
+                  true: colors.primary,
                 }}
                 thumbColor="#FFFFFF"
               />
@@ -595,7 +664,7 @@ export const SettingsScreen = observer(() => {
           </AnimatedCard>
 
           {/* App Updates Section */}
-          <AnimatedCard index={5} style={styles.sectionCard}>
+          <AnimatedCard index={6} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
                 APP UPDATES
@@ -615,7 +684,7 @@ export const SettingsScreen = observer(() => {
                 style={[
                   styles.logoutPill,
                   {
-                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    backgroundColor: colors.cardSurface,
                     borderColor: colors.cardBorder,
                   },
                 ]}
@@ -650,7 +719,7 @@ export const SettingsScreen = observer(() => {
           </AnimatedCard>
 
           {/* About Section */}
-          <AnimatedCard index={6} style={styles.sectionCard}>
+          <AnimatedCard index={7} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
                 ABOUT
@@ -663,7 +732,7 @@ export const SettingsScreen = observer(() => {
                 style={[
                   styles.logoutPill,
                   {
-                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    backgroundColor: colors.cardSurface,
                     borderColor: colors.cardBorder,
                   },
                 ]}
@@ -745,6 +814,16 @@ export const SettingsScreen = observer(() => {
         ]}
       />
 
+      <CustomAlert
+        visible={showDeleteErrorAlert}
+        onClose={() => setShowDeleteErrorAlert(false)}
+        title="Deletion Failed"
+        message={deleteErrorMessage || 'Failed to delete account. Please try again.'}
+        actions={[
+          { text: 'OK', onPress: () => setShowDeleteErrorAlert(false) },
+        ]}
+      />
+
       {/* Re-auth Modal: shown when Firebase requires a recent login for deletion. */}
       <Modal
         visible={showReauthModal}
@@ -806,7 +885,7 @@ export const SettingsScreen = observer(() => {
           placeholder="Enter your name"
           autoCapitalize="words"
           leftIcon={
-            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
               <Circle cx="12" cy="7" r="4" />
             </Svg>
@@ -854,14 +933,13 @@ export const SettingsScreen = observer(() => {
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
               {([
-                { id: 'gemini', label: 'Google Gemini' },
+                { id: 'gemini', label: 'Gemini' },
                 { id: 'groq', label: 'Groq' },
                 { id: 'openrouter', label: 'OpenRouter' },
                 { id: 'openai', label: 'OpenAI' },
                 { id: 'anthropic', label: 'Anthropic' },
-                { id: 'deepseek', label: 'DeepSeek' },
-                { id: 'cohere', label: 'Cohere' }
-              ] as const).map((prov) => {
+                { id: 'deepseek', label: 'DeepSeek' }
+              ] as { id: AIProvider; label: string; description?: string }[]).map((prov) => {
                 const alreadyHasKey = savedKeys.some(k => k.provider === prov.id);
                 return (
                   <TouchableOpacity
@@ -871,7 +949,7 @@ export const SettingsScreen = observer(() => {
                       styles.modalProviderGridItem,
                       {
                         borderColor: colors.cardBorder,
-                        backgroundColor: 'rgba(255,255,255,0.03)',
+                        backgroundColor: colors.cardSurface,
                         opacity: alreadyHasKey ? 0.4 : 1
                       }
                     ]}
@@ -881,10 +959,15 @@ export const SettingsScreen = observer(() => {
                     }}
                     activeOpacity={0.7}
                   >
-                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingRight: 20 }}>
                       <Text style={[styles.modalProviderText, { color: colors.text }]} numberOfLines={1}>
                         {prov.label}
                       </Text>
+                      {prov.description ? (
+                        <Text style={[styles.modalProviderDescText, { color: colors.textMuted }]} numberOfLines={1}>
+                          {prov.description}
+                        </Text>
+                      ) : null}
                       {alreadyHasKey && (
                         <Text style={[styles.alreadyHasKeyText, { color: colors.textMuted, fontSize: 10, marginTop: 2 }]}>
                           Added
@@ -908,10 +991,10 @@ export const SettingsScreen = observer(() => {
                 setSelectedProvider(null);
                 setApiKeyInput('');
               }}
-              style={styles.whiteBackBtn}
+              style={[styles.whiteBackBtn, { backgroundColor: colors.cardSurface, borderRadius: 16 }]}
               activeOpacity={0.7}
             >
-              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                 <Line x1="19" y1="12" x2="5" y2="12" />
                 <Polyline points="12 19 5 12 12 5" />
               </Svg>
@@ -1028,8 +1111,8 @@ const styles = StyleSheet.create({
   logoutPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: responsive.sizeNoFont(spacing.sm),
-    paddingHorizontal: responsive.sizeNoFont(spacing.base),
+    paddingVertical: responsive.sizeNoFont(spacing.xs),
+    paddingHorizontal: responsive.sizeNoFont(spacing.md),
     borderRadius: radius.pill,
     borderWidth: 1,
     gap: spacing.xs,
@@ -1037,14 +1120,14 @@ const styles = StyleSheet.create({
   deleteAccountPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: responsive.sizeNoFont(spacing.sm),
-    paddingHorizontal: responsive.sizeNoFont(spacing.base),
+    paddingVertical: responsive.sizeNoFont(spacing.xs),
+    paddingHorizontal: responsive.sizeNoFont(spacing.md),
     borderRadius: radius.pill,
     borderWidth: 1,
     gap: spacing.xs,
   },
   deleteAccountText: {
-    fontSize: responsive.font(typography.captionMedium.fontSize ?? 14),
+    fontSize: 12,
     fontWeight: '500',
   },
   editNamePill: {
@@ -1071,12 +1154,12 @@ const styles = StyleSheet.create({
     fontSize: responsive.font(14),
     fontWeight: '500',
   },
-  logoutIcon: {
-    fontSize: responsive.font(14),
-  },
   logoutText: {
-    fontSize: responsive.font(typography.captionMedium.fontSize ?? 14),
+    fontSize: 12,
     fontWeight: '500',
+  },
+  logoutIcon: {
+    fontSize: 12,
   },
   profileInfo: {
     flexDirection: 'row',
@@ -1233,6 +1316,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  providerDescText: {
+    fontSize: 10,
+    marginTop: 1,
+    textAlign: 'center',
+  },
   providerKeyText: {
     fontSize: 12,
     marginTop: 2,
@@ -1266,6 +1354,11 @@ const styles = StyleSheet.create({
   modalProviderText: {
     fontSize: responsive.font(13),
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalProviderDescText: {
+    fontSize: 9,
+    marginTop: 1,
     textAlign: 'center',
   },
   alreadyHasKeyText: {
@@ -1328,7 +1421,34 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   genderText: {
-    fontSize: responsive.font(13),
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  themeContainer: {
+    flexDirection: 'row',
+    width: '100%',
+    height: 38,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  themeBubble: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: radius.md - 1,
+  },
+  themePill: {
+    flex: 1,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  themeText: {
+    fontSize: 12,
     fontWeight: '600',
   },
   heightInputContainer: {

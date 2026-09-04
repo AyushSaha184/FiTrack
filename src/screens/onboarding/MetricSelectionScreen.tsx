@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useColors, useSettingsStore, useWeightStore, useStepsStore, useAuthStore } from '../../hooks';
+import { useSettingsStore, useWeightStore, useStepsStore, useAuthStore } from '../../hooks';
 import { Button } from '../../components/common/Button';
-import { spacing, typography, radius, responsive } from '../../theme';
+import { responsive } from '../../theme';
 import { logger } from '../../utils/logger';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
 // Custom premium Scale SVG Icon for metrics header
 const ScaleIcon = () => (
@@ -17,7 +17,6 @@ const ScaleIcon = () => (
 );
 
 export const MetricSelectionScreen = () => {
-  const colors = useColors();
   const settingsStore = useSettingsStore();
   const weightStore = useWeightStore();
   const stepsStore = useStepsStore();

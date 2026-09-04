@@ -155,7 +155,20 @@ export const Modal = memo<ModalProps>(({
       styles.content,
       { backgroundColor: colors.card, borderColor: colors.cardBorder },
       ...(fullScreen ? [styles.fullScreen] : []),
-      ...(sheet ? [styles.sheet] : []),
+      ...(sheet
+        ? [
+            styles.sheet,
+            {
+              backgroundColor: colors.card,
+              borderTopWidth: 1.5,
+              borderTopColor: colors.cardBorder,
+              borderLeftWidth: 1,
+              borderLeftColor: colors.cardBorder,
+              borderRightWidth: 1,
+              borderRightColor: colors.cardBorder,
+            },
+          ]
+        : []),
     ],
     [colors.card, colors.cardBorder, fullScreen, sheet]
   );
@@ -164,10 +177,10 @@ export const Modal = memo<ModalProps>(({
     () => (
       <View style={styles.sheetHeaderWrapper}>
         <View style={styles.handleContainer}>
-          <View style={[styles.handle, { backgroundColor: colors.textMuted }]} />
+          <View style={[styles.handle, { backgroundColor: colors.border }]} />
         </View>
         {(title || showCloseButton) && (
-          <View style={styles.header}>
+          <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
             {title ? (
               <Text style={[styles.title, { color: colors.text }]}>
                 {title}
@@ -184,13 +197,13 @@ export const Modal = memo<ModalProps>(({
         )}
       </View>
     ),
-    [title, showCloseButton, onClose, colors.text, colors.textSecondary, colors.textMuted]
+    [title, showCloseButton, onClose, colors.text, colors.textSecondary, colors.border, colors.cardBorder]
   );
 
   const defaultHeader = useMemo(
     () => (
       (title || showCloseButton) && (
-        <View style={styles.header}>
+        <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
           {title ? (
             <Text style={[styles.title, { color: colors.text }]}>
               {title}
@@ -206,7 +219,7 @@ export const Modal = memo<ModalProps>(({
         </View>
       )
     ),
-    [title, showCloseButton, onClose, colors.text, colors.textSecondary]
+    [title, showCloseButton, onClose, colors.text, colors.textSecondary, colors.cardBorder]
   );
 
   return (

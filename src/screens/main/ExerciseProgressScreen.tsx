@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,13 +14,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { observer } from 'mobx-react-lite';
-import Svg, { Path, Line, Polyline } from 'react-native-svg';
-import { useColors, useSpacing, useTypography, useWorkoutStore } from '../../hooks';
-import { spacing, radius, typography, responsive } from '../../theme';
+import Svg, { Line, Polyline } from 'react-native-svg';
+import { useColors, useWorkoutStore } from '../../hooks';
+import { spacing, radius, responsive } from '../../theme';
 import { aiService } from '../../services/ai/aiService';
 import { storage } from '../../utils/storage';
 import { dateKey } from '../../utils/helpers';
-import type { Workout, WorkoutExercise } from '../../models';
+import type { Workout } from '../../models';
 import { logger } from '../../utils/logger';
 
 // Enable layout animations for smooth collapse/expand on Android
@@ -49,8 +49,6 @@ interface ExerciseHistory {
 
 export const ExerciseProgressScreen = observer(() => {
   const colors = useColors();
-  const spacing = useSpacing();
-  const typography = useTypography();
   const navigation = useNavigation();
   const workoutStore = useWorkoutStore();
 
@@ -58,10 +56,6 @@ export const ExerciseProgressScreen = observer(() => {
   const [exerciseHistories, setExerciseHistories] = useState<ExerciseHistory[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-
-  useEffect(() => {
-    loadProgressData();
-  }, []);
 
   const handleGenerateReport = async () => {
     if (exerciseHistories.length === 0) return;
@@ -73,7 +67,7 @@ export const ExerciseProgressScreen = observer(() => {
         'Please add at least one AI API key in the settings menu to generate weekly reports.',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Go to Settings', onPress: () => navigation.navigate('Settings' as any) }
+          { text: 'Go to Settings', onPress: () => (navigation as any).navigate('Settings') },
         ]
       );
       return;
@@ -92,7 +86,7 @@ export const ExerciseProgressScreen = observer(() => {
       }));
 
       const reportResult = await aiService.generateReport(JSON.stringify(minifiedHistory));
-      navigation.navigate('AIReport' as any, { report: reportResult });
+      (navigation as any).navigate('AIReport', { report: reportResult });
     } catch (err: any) {
       logger.error('[ExerciseProgressScreen] Failed to generate AI report:', err);
       Alert.alert(
@@ -104,7 +98,7 @@ export const ExerciseProgressScreen = observer(() => {
     }
   };
 
-  const loadProgressData = async () => {
+  const loadProgressData = useCallback(async () => {
     try {
       setLoading(true);
       const userId = workoutStore.userId;
@@ -115,46 +109,29 @@ export const ExerciseProgressScreen = observer(() => {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-      const parseLocalDate = (dateStr: string): Date => {
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-          const year = parseInt(parts[0], 10);
-          const month = parseInt(parts[1], 10) - 1; // 0-indexed
-          const day = parseInt(parts[2], 10);
-          return new Date(year, month, day);
-        }
-        return new Date(dateStr);
-      };
-
       const parseDateSafely = (val: any): Date => {
-        if (!val) return new Date();
-        if (val instanceof Date) return val;
+        if (!val) {
+          return new Date();
+        }
+        if (val instanceof Date) {
+          return val;
+        }
         if (typeof val === 'string') {
           if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
-            return parseLocalDate(val);
+            const parts = val.split('-');
+            return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
           }
           const parsed = new Date(val);
-          if (!isNaN(parsed.getTime())) return parsed;
+          if (!isNaN(parsed.getTime())) {
+            return parsed;
+          }
         }
         return new Date(val);
       };
 
-      const getDayOfWeekKeyFromDate = (date: Date): string => {
-        const keys = [
-          'sunday',
-          'monday',
-          'tuesday',
-          'wednesday',
-          'thursday',
-          'friday',
-          'saturday',
-        ];
-        return keys[date.getDay()];
-      };
-
-      // 1. Get workouts from local MMKV storage
-      const localWorkouts: Workout[] = [];
+      // 1. Gather all archives within the last 30 days that match the current day of the week
       const allKeys = storage.getAllKeys();
+      const localWorkouts: Workout[] = [];
 
       allKeys.forEach((key: string) => {
         if (key.startsWith('workout.archive.')) {
@@ -163,10 +140,10 @@ export const ExerciseProgressScreen = observer(() => {
           if (!isNaN(keyDate.getTime()) && keyDate >= thirtyDaysAgo) {
             const archives = storage.get<any[]>(key) || [];
             archives.forEach((arc) => {
-              if (arc.workout) {
-                // Determine day of week
+              if (arc && arc.workout) {
                 const d = parseDateSafely(arc.workout.date);
-                const arcDayKey = getDayOfWeekKeyFromDate(d);
+                const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+                const arcDayKey = dayNames[d.getDay()];
 
                 if (arcDayKey === targetDay) {
                   localWorkouts.push({
@@ -177,7 +154,7 @@ export const ExerciseProgressScreen = observer(() => {
                     date: d,
                     completed: true,
                     totalVolume: 0,
-                    exercises: arc.exercises || [],
+                    exercises: arc.workout.exercises || [],
                     createdAt: d,
                     updatedAt: d,
                   });
@@ -206,7 +183,8 @@ export const ExerciseProgressScreen = observer(() => {
       const filterAndAdd = (workoutList: Workout[]) => {
         workoutList.forEach((w) => {
           const wDate = parseDateSafely(w.date);
-          const wDayKey = getDayOfWeekKeyFromDate(wDate);
+          const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+          const wDayKey = dayNames[wDate.getDay()];
           if (wDayKey === targetDay) {
             const keyStr = dateKey(wDate);
             mergedWorkoutsMap.set(keyStr, {
@@ -341,7 +319,11 @@ export const ExerciseProgressScreen = observer(() => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [workoutStore.userId, workoutStore.selectedDay, workoutStore.workouts, workoutStore.activeWorkoutExercises]);
+
+  useEffect(() => {
+    loadProgressData();
+  }, [loadProgressData]);
 
   const toggleExpand = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -351,20 +333,20 @@ export const ExerciseProgressScreen = observer(() => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Exercise Progress</Text>
         <View style={styles.headerActions}>
           {exerciseHistories.length > 0 && (
             <TouchableOpacity
               onPress={handleGenerateReport}
               disabled={generating}
-              style={styles.generateButton}
+              style={[styles.generateButton, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}
               activeOpacity={0.7}
             >
               {generating ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={colors.text} />
               ) : (
-                <Text style={styles.generateButtonText}>
+                <Text style={[styles.generateButtonText, { color: colors.text }]}>
                   Generate Report
                 </Text>
               )}
@@ -372,10 +354,10 @@ export const ExerciseProgressScreen = observer(() => {
           )}
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={[styles.backButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
+            style={[styles.backButton, { backgroundColor: colors.cardSurface }]}
             activeOpacity={0.7}
           >
-            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
               <Line x1="19" y1="12" x2="5" y2="12" />
               <Polyline points="12 19 5 12 12 5" />
             </Svg>
@@ -536,7 +518,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

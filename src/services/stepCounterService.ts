@@ -4,6 +4,11 @@ import { storage } from '../utils/storage';
 
 const { StepCounterModule } = NativeModules;
 
+export interface PendingStepLog {
+  date: string;
+  steps: number;
+}
+
 export const stepCounterService = {
   async requestPermission(userId?: string): Promise<boolean> {
     if (Platform.OS !== 'android') return true;
@@ -74,7 +79,9 @@ export const stepCounterService = {
   async startForegroundService(initialSteps: number, goal: number): Promise<boolean> {
     if (!StepCounterModule) return false;
     try {
-      await StepCounterModule.setInitialSteps(initialSteps);
+      if (initialSteps > 0) {
+        await StepCounterModule.setInitialSteps(initialSteps);
+      }
       await StepCounterModule.setGoal(goal);
       const started = await StepCounterModule.startStepCounter();
       return !!started;
@@ -113,6 +120,31 @@ export const stepCounterService = {
     } catch (error) {
       logger.error('[stepCounterService] getTodaySteps error:', error);
       return 0;
+    }
+  },
+
+  async getPendingStepLogs(): Promise<PendingStepLog[]> {
+    if (!StepCounterModule || typeof StepCounterModule.getPendingStepLogs !== 'function') {
+      return [];
+    }
+    try {
+      return await StepCounterModule.getPendingStepLogs();
+    } catch (error) {
+      logger.error('[stepCounterService] getPendingStepLogs error:', error);
+      return [];
+    }
+  },
+
+  async clearPendingStepLogs(): Promise<boolean> {
+    if (!StepCounterModule || typeof StepCounterModule.clearPendingStepLogs !== 'function') {
+      return false;
+    }
+    try {
+      await StepCounterModule.clearPendingStepLogs();
+      return true;
+    } catch (error) {
+      logger.error('[stepCounterService] clearPendingStepLogs error:', error);
+      return false;
     }
   },
 

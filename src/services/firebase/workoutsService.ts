@@ -1,6 +1,6 @@
 import firestore from '@react-native-firebase/firestore';
 import { collections } from './firestore';
-import type { Workout, WorkoutExercise, Set } from '../../models';
+import type { Workout, WorkoutExercise } from '../../models';
 import { logger } from '../../utils/logger';
 
 export const workoutsService = {

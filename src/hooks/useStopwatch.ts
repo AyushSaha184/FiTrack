@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   useSharedValue,
   useAnimatedReaction,
@@ -27,9 +27,12 @@ export const useStopwatch = (): UseStopwatchResult => {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [endTime, setEndTime] = useState<number | null>(null);
 
-  // Mirror the shared value into React state at 1Hz so text that depends on
-  // `elapsedTime` re-renders without us paying the cost of a full tree
-  // re-render every frame.
+  // Refs that mirror the latest state values so the JS interval closure
+  // always sees fresh values without needing to be torn down on every tick.
+  const startTimeRef = useRef<number | null>(null);
+  const isRunningRef = useRef<boolean>(false);
+  const accumulatedRef = useRef<number>(0);
+
   useAnimatedReaction(
     () => sharedElapsed.value,
     (current, previous) => {
@@ -40,40 +43,47 @@ export const useStopwatch = (): UseStopwatchResult => {
     []
   );
 
-  // Drive a 100ms interval on the JS thread. We don't need 1ms granularity
-  // (the displayed value only changes per second), but a 100ms tick keeps the
-  // shared value moving smoothly between integer seconds.
   useEffect(() => {
     if (!isRunning) return;
     const id = setInterval(() => {
-      const start = startTime ?? Date.now();
-      sharedElapsed.value = Date.now() - start;
+      const base = startTimeRef.current ?? Date.now() - accumulatedRef.current;
+      sharedElapsed.value = Date.now() - base;
     }, 100);
     return () => clearInterval(id);
-  }, [isRunning, startTime, sharedElapsed]);
+  }, [isRunning, sharedElapsed]);
 
   const stop = useCallback(() => {
+    if (!isRunningRef.current) return;
+    const base = startTimeRef.current ?? Date.now();
+    const finalElapsed = Date.now() - base;
+    accumulatedRef.current = finalElapsed;
+    sharedElapsed.value = finalElapsed;
+    setElapsedTime(finalElapsed);
     setEndTime(Date.now());
     setIsRunning(false);
-  }, []);
+    isRunningRef.current = false;
+  }, [sharedElapsed]);
 
   const start = useCallback(() => {
-    if (isRunning) return;
-    setStartTime((prev) => {
-      const base = prev ?? Date.now() - elapsedTime;
-      sharedElapsed.value = Date.now() - base;
-      return base;
-    });
+    if (isRunningRef.current) return;
+    const base = Date.now() - accumulatedRef.current;
+    startTimeRef.current = base;
+    isRunningRef.current = true;
+    sharedElapsed.value = accumulatedRef.current;
+    setStartTime(base);
     setEndTime(null);
     setIsRunning(true);
-  }, [isRunning, elapsedTime, sharedElapsed]);
+  }, [sharedElapsed]);
 
   const reset = useCallback(() => {
-    setIsRunning(false);
+    accumulatedRef.current = 0;
+    isRunningRef.current = false;
+    startTimeRef.current = null;
     sharedElapsed.value = 0;
     setElapsedTime(0);
     setStartTime(null);
     setEndTime(null);
+    setIsRunning(false);
   }, [sharedElapsed]);
 
   const getFormattedTime = useCallback((): string => {

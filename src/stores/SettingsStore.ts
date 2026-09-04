@@ -1,11 +1,13 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { NativeModules } from 'react-native';
-import type { Units, UserPreferences, NotificationSettings, WorkoutSettings } from '../models';
+import type { Units, NotificationSettings, WorkoutSettings } from '../models';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS } from '../utils/constants';
 
+export type ThemeId = 'light' | 'dark' | 'amoled' | 'auto';
+
 export class SettingsStore {
-  theme: 'light' | 'dark' | 'auto' = 'dark';
+  theme: ThemeId = 'dark';
   units: Units = { weight: 'kg', height: 'cm', temperature: 'celsius' };
   notifications: NotificationSettings = {
     workoutReminders: true,
@@ -33,7 +35,7 @@ export class SettingsStore {
   }
 
   load() {
-    const savedTheme = storage.get<'light' | 'dark' | 'auto'>(STORAGE_KEYS.THEME);
+    const savedTheme = storage.get<ThemeId>(STORAGE_KEYS.THEME);
     const savedUnits = storage.get<Units>(STORAGE_KEYS.UNITS);
     const savedNotifications = storage.get<NotificationSettings>(STORAGE_KEYS.NOTIFICATIONS);
     const savedWorkout = storage.get<WorkoutSettings>(STORAGE_KEYS.WORKOUT_SETTINGS);
@@ -55,7 +57,7 @@ export class SettingsStore {
     });
   }
 
-  setTheme(theme: 'light' | 'dark' | 'auto') {
+  setTheme(theme: ThemeId) {
     runInAction(() => {
       this.theme = theme;
       storage.set(STORAGE_KEYS.THEME, theme);

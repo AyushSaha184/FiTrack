@@ -9,6 +9,7 @@ import Animated, {
   Easing,
   runOnJS,
 } from 'react-native-reanimated';
+import { observer } from 'mobx-react-lite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Polyline } from 'react-native-svg';
 import { WeightTrackerScreen } from '../screens/main/WeightTrackerScreen';
@@ -57,7 +58,7 @@ interface TabItemProps {
   renderIcon: (color: string) => React.ReactNode;
 }
 
-const TabItem = memo(({ focused, label, renderIcon }: TabItemProps) => {
+const TabItem = observer(({ focused, label, renderIcon }: TabItemProps) => {
   const colors = useColors();
   const scale = useSharedValue(focused ? 1 : 0.92);
   const pillWidth = useSharedValue(focused ? 1 : 0);
@@ -92,7 +93,7 @@ const TabItem = memo(({ focused, label, renderIcon }: TabItemProps) => {
         style={[
           styles.tabPill,
           {
-            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+            backgroundColor: colors.cardSurface,
           },
           animatedPillStyle,
         ]}
@@ -118,7 +119,7 @@ const TabItem = memo(({ focused, label, renderIcon }: TabItemProps) => {
 });
 TabItem.displayName = 'TabItem';
 
-export const MainTabNavigator = () => {
+export const MainTabNavigator = observer(() => {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -241,7 +242,7 @@ export const MainTabNavigator = () => {
         style={[
           styles.tabBar,
           {
-            backgroundColor: '#0C0C0C',
+            backgroundColor: colors.background,
             borderColor: colors.cardBorder,
             height: 80 + insets.bottom,
             paddingBottom: insets.bottom,
@@ -284,7 +285,7 @@ export const MainTabNavigator = () => {
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

@@ -1,7 +1,7 @@
 import { storage } from '../../utils/storage';
 import { logger } from '../../utils/logger';
 
-export type AIProvider = 'gemini' | 'groq' | 'openrouter' | 'openai' | 'anthropic' | 'deepseek' | 'cohere';
+export type AIProvider = 'gemini' | 'groq' | 'openrouter' | 'openai' | 'anthropic' | 'deepseek';
 
 export interface SavedKey {
   provider: AIProvider;
@@ -326,35 +326,6 @@ export const aiService = {
         const data = await response.json();
         const text = data?.choices?.[0]?.message?.content;
         if (!text) throw new Error('Empty response from DeepSeek API');
-        return { text, model };
-      }
-
-      if (provider === 'cohere') {
-        const model = 'command-r-plus';
-        const response = await fetch('https://api.cohere.com/v2/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
-            temperature: 0.2,
-          }),
-        });
-
-        if (!response.ok) {
-          const errBody = await response.text().catch(() => '');
-          throw new Error(`HTTP ${response.status} ${errBody || response.statusText}`);
-        }
-
-        const data = await response.json();
-        const text = data?.choices?.[0]?.message?.content;
-        if (!text) throw new Error('Empty response from Cohere API');
         return { text, model };
       }
 

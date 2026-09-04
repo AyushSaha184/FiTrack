@@ -1,7 +1,5 @@
 import firestore from '@react-native-firebase/firestore';
-import { Platform } from 'react-native';
 import { collections } from '../firebase/firestore';
-import { CONFIG } from '../../config/constants';
 import { logger } from '../../utils/logger';
 
 export interface AIContentReport {

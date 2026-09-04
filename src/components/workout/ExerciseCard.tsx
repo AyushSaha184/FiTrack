@@ -79,7 +79,13 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
       padding="base"
       style={[
         styles.container,
-        isDragging && styles.draggingContainer,
+        isDragging && [
+          styles.draggingContainer,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.primary,
+          },
+        ],
       ]}
     >
       {/* Header — Tapping exercise name line expands/collapses card */}
@@ -147,7 +153,7 @@ export const ExerciseCard = memo<ExerciseCardProps>(({
       {/* Table & Content (Hidden when collapsed) */}
       {!isCollapsed ? (
         <>
-          <View style={styles.tableHeader}>
+          <View style={[styles.tableHeader, { borderBottomColor: colors.cardBorder }]}>
             <View style={styles.tableHeaderSpacer} />
             <Text style={[styles.headerText, styles.setCol, { color: colors.textMuted }]}>
               SET
@@ -199,9 +205,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.base,
   },
   draggingContainer: {
-    borderColor: 'rgba(255, 255, 255, 0.7)',
-    borderWidth: 2.5,
-    backgroundColor: '#1C1C1E',
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 12,
   },
   header: {
     flexDirection: 'row',

@@ -13,15 +13,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   interpolate,
   Extrapolation,
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useColors } from '../../hooks';
 import { Logo } from '../../components/common/Logo';
-import { spacing, typography, radius, responsive } from '../../theme';
+import { responsive } from '../../theme';
 import type { AuthStackParamList } from '../../types/navigation';
 import Svg, { Path, Circle, Polyline } from 'react-native-svg';
 
@@ -89,8 +87,6 @@ const PreviewCardComponent = ({
   index: number;
   scrollX: Animated.SharedValue<number>;
 }) => {
-  const colors = useColors();
-
   const animatedStyle = useAnimatedStyle(() => {
     const inputRange = [
       (index - 1) * (CARD_WIDTH + CARD_SPACING),
@@ -470,7 +466,6 @@ const PreviewCardComponent = ({
 };
 
 export const WelcomeScreen = () => {
-  const colors = useColors();
   const navigation = useNavigation<NavigationProp>();
   const [activeIndex, setActiveIndex] = useState(1); // Default to middle card (Home screen)
   const scrollX = useSharedValue(CARD_WIDTH + CARD_SPACING); // Centered default position

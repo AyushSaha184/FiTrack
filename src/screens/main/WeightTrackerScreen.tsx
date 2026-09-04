@@ -34,7 +34,9 @@ const sanitizeWeightInput = (raw: string): string => {
   if (dotIndex !== -1) {
     text = text.slice(0, dotIndex + 1) + text.slice(dotIndex + 1).replace(/\./g, '');
   }
-  if (text.length > 5) text = text.slice(0, 5);
+  if (text.length > 5) {
+    text = text.slice(0, 5);
+  }
   return text;
 };
 
@@ -63,7 +65,9 @@ export const WeightTrackerScreen = observer(() => {
   // sync) without re-fetching.
   useEffect(() => {
     const userId = auth.user?.id;
-    if (!userId) return;
+    if (!userId) {
+      return;
+    }
     const unsubscribe = weightStore.subscribeEntries(userId);
     return unsubscribe;
   }, [auth.user?.id, weightStore]);
@@ -83,7 +87,7 @@ export const WeightTrackerScreen = observer(() => {
     if (timeRange === 'all') {
       filteredEntries = [...entries];
     } else {
-      const days = parseInt(timeRange);
+      const days = parseInt(timeRange, 10);
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
       filteredEntries = entries.filter((e) => new Date(e.date) >= cutoffDate);
@@ -102,7 +106,9 @@ export const WeightTrackerScreen = observer(() => {
     const dayKey = (e: WeightEntry): string => {
       const raw: any = e.createdAt ?? e.date;
       const d = raw instanceof Date ? raw : new Date(raw);
-      if (isNaN(d.getTime())) return String(e.date);
+      if (isNaN(d.getTime())) {
+        return String(e.date);
+      }
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     };
 
@@ -118,7 +124,9 @@ export const WeightTrackerScreen = observer(() => {
     const sorted = Array.from(byDay.values()).sort((a, b) => {
       const tA = getTimestamp(a);
       const tB = getTimestamp(b);
-      if (tA !== tB) return tA - tB;
+      if (tA !== tB) {
+        return tA - tB;
+      }
       return filteredEntries.indexOf(b) - filteredEntries.indexOf(a);
     });
 
@@ -141,7 +149,9 @@ export const WeightTrackerScreen = observer(() => {
   const hasGender = Boolean(userGender);
 
   const maintenanceCalories = useMemo(() => {
-    if (!hasWeight || !hasHeight || !hasGender) return null;
+    if (!hasWeight || !hasHeight || !hasGender) {
+      return null;
+    }
     return calculateMaintenanceCalories({
       weight: latestWeight!,
       weightUnit: weightUnit as 'kg' | 'lbs',
@@ -240,7 +250,7 @@ export const WeightTrackerScreen = observer(() => {
             <Logo size="medium" />
             <TouchableOpacity
               onPress={() => navigation.navigate('Settings')}
-              style={[styles.settingsButton, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
+              style={[styles.settingsButton, { backgroundColor: colors.cardSurface }]}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Circle cx="12" cy="12" r="3" />
@@ -258,7 +268,7 @@ export const WeightTrackerScreen = observer(() => {
           {/* Current Weight Card */}
           <AnimatedCard index={0} style={styles.currentCard}>
             <View style={styles.currentHeader}>
-              <View style={{ flex: 1 }}>
+              <View style={styles.currentLeft}>
                 <Text style={[styles.currentLabel, { color: colors.textMuted }]}>
                   Current Weight
                 </Text>
@@ -281,12 +291,12 @@ export const WeightTrackerScreen = observer(() => {
                 </TouchableOpacity>
               </View>
 
-              <View style={{ alignItems: 'flex-end' }}>
+              <View style={styles.currentRight}>
                 <TouchableOpacity
                   style={[
                     styles.addButton,
                     {
-                      backgroundColor: 'rgba(255,255,255,0.08)',
+                      backgroundColor: colors.cardSurface,
                       borderColor: colors.cardBorder,
                     },
                   ]}
@@ -368,17 +378,17 @@ export const WeightTrackerScreen = observer(() => {
                   key={entry.id}
                   style={[
                     styles.historyItem,
-                    index < displayLimit - 1 && {
-                      borderBottomWidth: 1,
-                      borderBottomColor: colors.cardBorder,
-                    },
+                    index < displayLimit - 1 && [
+                      styles.historyItemBorder,
+                      { borderBottomColor: colors.cardBorder },
+                    ],
                   ]}
                 >
                   <View style={styles.historyLeft}>
                     <View
                       style={[
                         styles.historyIcon,
-                        { backgroundColor: 'rgba(255,255,255,0.05)' },
+                        { backgroundColor: colors.cardSurface },
                       ]}
                     >
                       <Text style={styles.historyIconText}>📊</Text>
@@ -509,6 +519,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  currentLeft: {
+    flex: 1,
+  },
+  currentRight: {
+    alignItems: 'flex-end',
+  },
   currentLabel: {
     fontSize: typography.caption.fontSize,
     fontWeight: '600',
@@ -583,6 +599,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.md,
   },
+  historyItemBorder: {
+    borderBottomWidth: 1,
+  },
   historyLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -627,7 +646,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   maintenanceLabel: {
-    fontSize: responsive.font(13),
+    fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.5,
     textTransform: 'uppercase',

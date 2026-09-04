@@ -82,11 +82,13 @@ export const Modal = memo<ModalProps>(({
     } else if (mounted) {
       opacity.set(withTiming(0, { duration: 200 }));
       if (sheet) {
-        translateY.set(withTiming(600, { duration: 250 }, (finished) => {
-          if (finished) {
-            runOnJS(handleUnmount)();
-          }
-        }));
+        translateY.set(
+          withSpring(600, { damping: 24, stiffness: 220, mass: 0.8 }, (finished) => {
+            if (finished) {
+              runOnJS(handleUnmount)();
+            }
+          })
+        );
       } else {
         scale.set(withTiming(0.95, { duration: 200 }));
         translateY.set(withTiming(50, { duration: 200 }, (finished) => {
@@ -123,15 +125,32 @@ export const Modal = memo<ModalProps>(({
       // If dragged down enough (e.g. 150px) or flicked down rapidly (velocityY > 600)
       const shouldClose = event.translationY > 150 || event.velocityY > 600;
       if (shouldClose) {
-        opacity.set(withTiming(0, { duration: 200 }));
-        dragY.set(withTiming(600, { duration: 250 }, (finished) => {
-          if (finished) {
-            runOnJS(handleCloseAndUnmount)();
-          }
-        }));
+        opacity.set(withTiming(0, { duration: 180 }));
+        dragY.set(
+          withSpring(
+            600,
+            {
+              velocity: Math.max(0, event.velocityY),
+              damping: 22,
+              stiffness: 240,
+              mass: 0.8,
+            },
+            (finished) => {
+              if (finished) {
+                runOnJS(handleCloseAndUnmount)();
+              }
+            }
+          )
+        );
       } else {
-        // Spring back to normal size
-        dragY.set(withSpring(0, { damping: 20, stiffness: 250 }));
+        // Spring back to resting position with gesture velocity
+        dragY.set(
+          withSpring(0, {
+            velocity: event.velocityY,
+            damping: 20,
+            stiffness: 250,
+          })
+        );
       }
     });
 

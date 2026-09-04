@@ -9,7 +9,7 @@ import {
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
+  withSpring,
 } from 'react-native-reanimated';
 import { useColors } from '../../hooks';
 import { spacing, radius } from '../../theme';
@@ -69,11 +69,11 @@ export const Button = memo<ButtonProps>(({
   }));
 
   const handlePressIn = () => {
-    scale.set(withTiming(0.97, { duration: 120 }));
+    scale.set(withSpring(0.96, { damping: 14, stiffness: 350, mass: 0.5 }));
   };
 
   const handlePressOut = () => {
-    scale.set(withTiming(1, { duration: 120 }));
+    scale.set(withSpring(1, { damping: 14, stiffness: 350, mass: 0.5 }));
   };
 
   const backgroundColor = disabled

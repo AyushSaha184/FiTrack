@@ -614,7 +614,6 @@ export const SettingsScreen = observer(() => {
           {/* Developer Options */}
           <AnimatedCard index={5} style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionIcon}>{'</>'}</Text>
               <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
                 DEVELOPER OPTIONS
               </Text>

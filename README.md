@@ -24,18 +24,8 @@ Track your workouts, monitor your progress, and understand your training without
 
 ##  Download FiTrack
 
-<p align="center">
-  <a href="https://play.google.com/store/apps/details?id=YOUR_PACKAGE_NAME">
-    <img
-      src="https://img.shields.io/badge/Google%20Play-Download%20FiTrack-414141?style=for-the-badge&logo=google-play&logoColor=white"
-      alt="Download FiTrack on Google Play"
-    />
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/AyushSaha184/FiTrack">
-    <img src="https://img.shields.io/badge/GitHub-View%20Source-181717?style=for-the-badge&logo=github" alt="View FiTrack on GitHub" />
+  <a href="https://github.com/AyushSaha184/FiTrack/releases">
+    <img src="https://img.shields.io/badge/Releases-All%20Versions-181717?style=for-the-badge&logo=github" alt="FiTrack Releases" />
   </a>
   <a href="https://github.com/AyushSaha184/FiTrack/issues">
     <img src="https://img.shields.io/badge/Report%20a%20Bug-EA4335?style=for-the-badge&logo=github" alt="Report a bug" />

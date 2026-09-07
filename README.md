@@ -15,9 +15,9 @@ Track your workouts, monitor your progress, and understand your training without
 ##  Screens
 
 <p align="center">
-  <img src="assets/screenshots/home.png" alt="FiTrack Home" width="220" />
-  <img src="assets/screenshots/weight.png" alt="FiTrack Weight Tracking" width="220" />
-  <img src="assets/screenshots/steps.png" alt="FiTrack Step Tracking" width="220" />
+  <img src="assets/screenshots/home.jpg" alt="FiTrack Home" width="220" />
+  <img src="assets/screenshots/weight.jpg" alt="FiTrack Weight Tracking" width="220" />
+  <img src="assets/screenshots/steps.jpg" alt="FiTrack Step Tracking" width="220" />
 </p>
 
 ---

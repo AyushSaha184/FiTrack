@@ -40,26 +40,34 @@ export class WorkoutStore {
   }
 
   get totalVolume(): number {
-    if (!this.activeWorkout) return 0;
+    if (!this.activeWorkout) {
+      return 0;
+    }
     return this.activeWorkout.exercises.reduce((total, ex) => {
       return total + ex.sets.reduce((t, s) => t + (s.completed ? s.weight * s.reps : 0), 0);
     }, 0);
   }
 
   get completedSetsCount(): number {
-    if (!this.activeWorkout) return 0;
+    if (!this.activeWorkout) {
+      return 0;
+    }
     return this.activeWorkout.exercises.reduce((total, ex) => {
       return total + ex.sets.filter((s) => s.completed).length;
     }, 0);
   }
 
   get totalSetsCount(): number {
-    if (!this.activeWorkout) return 0;
+    if (!this.activeWorkout) {
+      return 0;
+    }
     return this.activeWorkout.exercises.reduce((total, ex) => total + ex.sets.length, 0);
   }
 
   async pruneOldWorkouts() {
-    if (!this.userId) return;
+    if (!this.userId) {
+      return;
+    }
     try {
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
@@ -111,7 +119,9 @@ export class WorkoutStore {
 
   async loadWorkouts(userId: string, startDate?: string, endDate?: string) {
     if (!userId) {
-      if (__DEV__) logger.warn('[WorkoutStore] Skipping loadWorkouts: missing userId');
+      if (__DEV__) {
+        logger.warn('[WorkoutStore] Skipping loadWorkouts: missing userId');
+      }
       return;
     }
     // Dedupe concurrent calls for the same user/range.
@@ -159,7 +169,9 @@ export class WorkoutStore {
    * mount). The returned function unsubscribes.
    */
   subscribeWorkouts(userId: string, startDate?: string, endDate?: string): () => void {
-    if (!userId) return () => {};
+    if (!userId) {
+      return () => {};
+    }
     // Tear down any existing listener first so we don't double-subscribe.
     if (this.workoutsUnsubscribe) {
       this.workoutsUnsubscribe();
@@ -277,6 +289,23 @@ export class WorkoutStore {
     return this.activeWorkout;
   }
 
+  clearActiveWorkout(day?: DayOfWeek) {
+    if (this.saveDraftTimer) {
+      clearTimeout(this.saveDraftTimer);
+      this.saveDraftTimer = null;
+    }
+    if (this.syncFirestoreTimer) {
+      clearTimeout(this.syncFirestoreTimer);
+      this.syncFirestoreTimer = null;
+    }
+    const targetDay = day || this.selectedDay;
+    storage.delete(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT);
+    storage.delete(this.getDayDraftKey(targetDay));
+    runInAction(() => {
+      this.activeWorkout = null;
+    });
+  }
+
   async addExercise(exerciseId: string, exerciseName: string, muscleGroup: string, equipment: string = 'barbell') {
     if (!this.activeWorkout) {
       if (!this.userId) {
@@ -318,7 +347,9 @@ export class WorkoutStore {
       }
     }
 
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     const newExercise: WorkoutExercise = {
       id: generateUUID(),
       exerciseId,
@@ -330,7 +361,9 @@ export class WorkoutStore {
     };
 
     runInAction(() => {
-      if (!this.activeWorkout) return;
+      if (!this.activeWorkout) {
+        return;
+      }
       this.activeWorkout = {
         ...this.activeWorkout,
         exercises: [...this.activeWorkout.exercises, newExercise],
@@ -342,7 +375,9 @@ export class WorkoutStore {
   }
 
   async removeExercise(workoutExerciseId: string) {
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     const updatedExercises = this.activeWorkout.exercises
       .filter((e) => e.id !== workoutExerciseId)
       .map((ex, idx) => ({ ...ex, orderIndex: idx }));
@@ -361,7 +396,9 @@ export class WorkoutStore {
   }
 
   reorderExercises(fromIndex: number, toIndex: number) {
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     if (
       fromIndex < 0 ||
       fromIndex >= this.activeWorkout.exercises.length ||
@@ -378,8 +415,12 @@ export class WorkoutStore {
     // also work for MobX, but the memoized components downstream would
     // bail out and the user would not see the new ordering instantly.
     const reordered = this.activeWorkout.exercises.map((ex, idx) => {
-      if (idx === fromIndex) return this.activeWorkout!.exercises[toIndex];
-      if (idx === toIndex) return this.activeWorkout!.exercises[fromIndex];
+      if (idx === fromIndex) {
+        return this.activeWorkout!.exercises[toIndex];
+      }
+      if (idx === toIndex) {
+        return this.activeWorkout!.exercises[fromIndex];
+      }
       return ex;
     }).map((ex, idx) => ({ ...ex, orderIndex: idx }));
 
@@ -398,11 +439,15 @@ export class WorkoutStore {
   }
 
   async addSet(workoutExerciseId: string, weight = 0, reps = 0) {
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     const exerciseIndex = this.activeWorkout.exercises.findIndex(
       (e) => e.id === workoutExerciseId,
     );
-    if (exerciseIndex === -1) return;
+    if (exerciseIndex === -1) {
+      return;
+    }
 
     const exercise = this.activeWorkout.exercises[exerciseIndex];
     const newSet: Set = {
@@ -418,7 +463,9 @@ export class WorkoutStore {
     // All mutations inside runInAction, and we build a brand-new exercise
     // object so memoized children (ExerciseCard / SetRow) re-render.
     runInAction(() => {
-      if (!this.activeWorkout) return;
+      if (!this.activeWorkout) {
+        return;
+      }
       const updatedExercise: WorkoutExercise = {
         ...exercise,
         sets: [...exercise.sets, newSet],
@@ -440,21 +487,29 @@ export class WorkoutStore {
   }
 
   async updateSet(workoutExerciseId: string, setId: string, updates: Partial<Set>) {
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     const exerciseIndex = this.activeWorkout.exercises.findIndex(
       (e) => e.id === workoutExerciseId,
     );
-    if (exerciseIndex === -1) return;
+    if (exerciseIndex === -1) {
+      return;
+    }
 
     const exercise = this.activeWorkout.exercises[exerciseIndex];
     const setIndex = exercise.sets.findIndex((s) => s.id === setId);
-    if (setIndex === -1) return;
+    if (setIndex === -1) {
+      return;
+    }
 
     const existing = exercise.sets[setIndex];
     const updatedSet: Set = { ...existing, ...updates, updatedAt: new Date() };
 
     runInAction(() => {
-      if (!this.activeWorkout) return;
+      if (!this.activeWorkout) {
+        return;
+      }
       const newSets = [
         ...exercise.sets.slice(0, setIndex),
         updatedSet,
@@ -478,17 +533,25 @@ export class WorkoutStore {
   }
 
   async toggleSetComplete(workoutExerciseId: string, setId: string) {
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     const exerciseIndex = this.activeWorkout.exercises.findIndex(
       (e) => e.id === workoutExerciseId,
     );
-    if (exerciseIndex === -1) return;
+    if (exerciseIndex === -1) {
+      return;
+    }
 
     const exercise = this.activeWorkout.exercises[exerciseIndex];
     const setIndex = exercise.sets.findIndex((s) => s.id === setId);
-    if (setIndex === -1) return;
+    if (setIndex === -1) {
+      return;
+    }
     const set = exercise.sets[setIndex];
-    if (!set) return;
+    if (!set) {
+      return;
+    }
 
     const nextCompleted = !set.completed;
     const updatedSet: Set = {
@@ -498,7 +561,9 @@ export class WorkoutStore {
     };
 
     runInAction(() => {
-      if (!this.activeWorkout) return;
+      if (!this.activeWorkout) {
+        return;
+      }
       const newSets = [
         ...exercise.sets.slice(0, setIndex),
         updatedSet,
@@ -522,11 +587,15 @@ export class WorkoutStore {
   }
 
   async removeSet(workoutExerciseId: string, setId: string) {
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     const exerciseIndex = this.activeWorkout.exercises.findIndex(
       (e) => e.id === workoutExerciseId,
     );
-    if (exerciseIndex === -1) return;
+    if (exerciseIndex === -1) {
+      return;
+    }
 
     const exercise = this.activeWorkout.exercises[exerciseIndex];
     const newSets = exercise.sets
@@ -534,7 +603,9 @@ export class WorkoutStore {
       .map((s, i) => ({ ...s, orderIndex: i + 1 }));
 
     runInAction(() => {
-      if (!this.activeWorkout) return;
+      if (!this.activeWorkout) {
+        return;
+      }
       const updatedExercise: WorkoutExercise = { ...exercise, sets: newSets };
       const updatedExercises = [...this.activeWorkout.exercises];
       updatedExercises[exerciseIndex] = updatedExercise;
@@ -653,7 +724,9 @@ export class WorkoutStore {
   }
 
   private saveRoutineTemplate() {
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     const templateExercises = this.activeWorkout.exercises.map(ex => ({
       exerciseId: ex.exerciseId,
       exercise: ex.exercise,
@@ -669,7 +742,9 @@ export class WorkoutStore {
   }
 
   private debouncedSyncToFirestore(exercises: WorkoutExercise[], immediate = false) {
-    if (!this.userId || !this.activeWorkout) return;
+    if (!this.userId || !this.activeWorkout) {
+      return;
+    }
     const userId = this.userId;
     const workoutId = this.activeWorkout.id;
 
@@ -694,7 +769,9 @@ export class WorkoutStore {
   }
 
   private saveDraft(immediate = false) {
-    if (!this.activeWorkout) return;
+    if (!this.activeWorkout) {
+      return;
+    }
     if (this.saveDraftTimer) {
       clearTimeout(this.saveDraftTimer);
       this.saveDraftTimer = null;

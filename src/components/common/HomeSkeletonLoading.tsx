@@ -79,11 +79,11 @@ export const HomeSkeletonLoading = observer(() => {
     const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon...
     const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // 0 = Mon ... 6 = Sun
 
+    const selectedDayKey = getDayOfWeekKey(today);
     const restDays = storage.get<Record<string, boolean>>('workout.rest_days') || {};
-    const isRest = !!restDays[dateStr];
+    const isRest = typeof restDays[selectedDayKey] === 'boolean' ? restDays[selectedDayKey] : !!restDays[dateStr];
 
     // Check MobX active workout first, then fall back to synchronous MMKV drafts
-    const selectedDayKey = getDayOfWeekKey(today);
     const dayDraft = storage.get<Workout>(`workout.draft.${selectedDayKey}`);
     const activeDraft = storage.get<Workout>(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT);
 

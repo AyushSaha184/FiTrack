@@ -49,7 +49,6 @@ export const WorkoutScreen = observer(() => {
 
   // Local state for day selection
   const [selectedDate, setSelectedDate] = useState<Date>(workoutStore.selectedDate);
-  const selectedDay = workoutStore.selectedDay;
   const weightUnit = useSettingsStore().units.weight;
 
   // Memoize week dates to avoid allocating 7 Date objects on every render
@@ -66,17 +65,22 @@ export const WorkoutScreen = observer(() => {
     return unsubscribe;
   }, [workoutStore]);
 
-  // Rest day storage persistence
+  // Derive current day of week key from selected date (e.g. 'monday', 'sunday')
+  const currentDayKey = getDayOfWeekKey(selectedDate);
+  const dateStr = dateKey(selectedDate);
+
+  // Rest day storage persistence (keyed by DayOfWeek, e.g. 'monday', defaults to false/non-rest)
   const [restDays, setRestDays] = useState<Record<string, boolean>>(() => {
     return storage.get<Record<string, boolean>>('workout.rest_days') || {};
   });
 
-  // Planned routines storage persistence
+  // Planned routines storage persistence (keyed by DayOfWeek with dateStr fallback)
   const [plannedRoutines, setPlannedRoutines] = useState<Record<string, WorkoutType>>(() => {
     return storage.get<Record<string, WorkoutType>>('workout.planned_routines') || {};
   });
-  const dateStr = dateKey(selectedDate);
-  const isRestDay = !!restDays[dateStr];
+
+  // Every day is a non-rest day by default unless explicitly set by the user
+  const isRestDay = !!restDays[currentDayKey];
 
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [showRestDayAlert, setShowRestDayAlert] = useState(false);
@@ -96,41 +100,53 @@ export const WorkoutScreen = observer(() => {
 
   // Derived workout type label
   const workoutTypeLabel = useMemo(() => {
-    if (plannedRoutines[dateStr]) {
-      const planned = ROUTINE_OPTIONS.find(opt => opt.type === plannedRoutines[dateStr]);
+    const routineType = plannedRoutines[currentDayKey] || plannedRoutines[dateStr];
+    if (routineType) {
+      const planned = ROUTINE_OPTIONS.find(opt => opt.type === routineType);
       return planned ? planned.label : 'Customise';
     }
     return 'Customise';
-  }, [plannedRoutines, dateStr]);
+  }, [plannedRoutines, currentDayKey, dateStr]);
+
+  const handleCancelRestDay = useCallback(() => {
+    setRestDays((prev) => {
+      const next = { ...prev, [currentDayKey]: false };
+      storage.set('workout.rest_days', next);
+      return next;
+    });
+  }, [currentDayKey]);
 
   const handleSelectRoutine = useCallback((type: WorkoutType) => {
     setShowRoutineModal(false);
     setPlannedRoutines((prev) => {
-      const next = { ...prev, [dateStr]: type };
+      const next = { ...prev, [currentDayKey]: type };
       storage.set('workout.planned_routines', next);
       return next;
     });
-  }, [dateStr]);
+    // Selecting a routine clears rest day status for this day
+    setRestDays((prev) => {
+      const next = { ...prev, [currentDayKey]: false };
+      storage.set('workout.rest_days', next);
+      return next;
+    });
+  }, [currentDayKey]);
 
   const handleRestDay = useCallback(() => {
+    if (isRestDay) {
+      // Tapping Rest Day when already active toggles it off back to normal
+      handleCancelRestDay();
+      return;
+    }
     if (workoutStore.activeWorkout) {
       setShowRestDayAlert(true);
     } else {
       setRestDays((prev) => {
-        const next = { ...prev, [dateStr]: true };
+        const next = { ...prev, [currentDayKey]: true };
         storage.set('workout.rest_days', next);
         return next;
       });
     }
-  }, [workoutStore.activeWorkout, dateStr]);
-
-  const handleCancelRestDay = useCallback(() => {
-    setRestDays((prev) => {
-      const next = { ...prev, [dateStr]: false };
-      storage.set('workout.rest_days', next);
-      return next;
-    });
-  }, [dateStr]);
+  }, [isRestDay, handleCancelRestDay, workoutStore.activeWorkout, currentDayKey]);
 
   const handleExerciseSelect = useCallback((exercise: ExerciseItem) => {
     workoutStore.addExercise(exercise.id, exercise.name, exercise.muscleGroup, exercise.equipment);
@@ -211,15 +227,13 @@ export const WorkoutScreen = observer(() => {
 
   const handleSwitchToRestDay = useCallback(async () => {
     setShowRestDayAlert(false);
-    storage.delete('workout.active.draft');
-    storage.delete(`workout.draft.${selectedDay}`);
-    workoutStore.activeWorkout = null;
+    workoutStore.clearActiveWorkout(currentDayKey);
     setRestDays((prev) => {
-      const newRestDays = { ...prev, [dateStr]: true };
+      const newRestDays = { ...prev, [currentDayKey]: true };
       storage.set('workout.rest_days', newRestDays);
       return newRestDays;
     });
-  }, [dateStr, selectedDay, workoutStore]);
+  }, [currentDayKey, workoutStore]);
 
   const handleCloseRemoveAlert = useCallback(() => {
     setShowRemoveAlert(false);
@@ -372,9 +386,6 @@ export const WorkoutScreen = observer(() => {
                     !isRestDay ? { backgroundColor: colors.cardSurface } : styles.pillInactive,
                   ]}
                   onPress={() => {
-                    if (isRestDay) {
-                      handleCancelRestDay();
-                    }
                     setShowRoutineModal(true);
                   }}
                   activeOpacity={0.7}

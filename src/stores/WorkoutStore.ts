@@ -638,19 +638,23 @@ export class WorkoutStore {
 
       // 1. Get dates for the currently selected week (starts on Monday)
       const weekDates = getWeekDates(this.selectedDate);
+      const workoutsToSyncToFirestore: { id: string; workoutRecord: any; snapshotExercises: WorkoutExercise[]; dayDate: Date }[] = [];
+      const now = new Date();
 
       // 2. Iterate through all 7 days in the week
       for (let i = 0; i < DAY_ORDER.length; i++) {
         const dayKey = DAY_ORDER[i];
         const dayDate = weekDates[i] || new Date();
         const dayDateStr = dateKey(dayDate);
+        const isCurrentSelectedDay = dayKey.toLowerCase() === this.selectedDay.toLowerCase();
 
         // Retrieve existing draft or active workout for this day
         let dayWorkout: Workout | null = null;
-        if (dayKey === this.selectedDay && this.activeWorkout && this.activeWorkout.exercises.length > 0) {
+        if (isCurrentSelectedDay && this.activeWorkout) {
           dayWorkout = this.activeWorkout;
-        } else {
-          dayWorkout = storage.get<Workout>(this.getDayDraftKey(dayKey)) || null;
+        }
+        if (!dayWorkout || !dayWorkout.exercises || dayWorkout.exercises.length === 0) {
+          dayWorkout = storage.get<Workout>(this.getDayDraftKey(dayKey)) || dayWorkout || null;
         }
 
         const templateKey = `workout.routine.${dayKey}`;
@@ -661,12 +665,12 @@ export class WorkoutStore {
         // If no draft was found, check if a template exists for this day
         if (exercisesToProcess.length === 0 && savedTemplate && Array.isArray(savedTemplate) && savedTemplate.length > 0) {
           exercisesToProcess = savedTemplate.map((te: any, exIdx: number) => ({
-            id: generateUUID(),
+            id: te.id || generateUUID(),
             exerciseId: te.exerciseId || te.id || generateUUID(),
             exercise: te.exercise,
             orderIndex: te.orderIndex ?? exIdx,
             sets: (te.sets || []).map((ts: any, sIdx: number) => ({
-              id: generateUUID(),
+              id: ts.id || generateUUID(),
               orderIndex: ts.orderIndex ?? sIdx + 1,
               weight: ts.weight || 0,
               reps: ts.reps || 0,
@@ -699,9 +703,9 @@ export class WorkoutStore {
           sets: (ex.sets || []).map((s, sIdx) => ({
             ...s,
             orderIndex: s.orderIndex ?? sIdx + 1,
-            weight: s.weight || 0,
-            reps: s.reps || 0,
-            completed: s.completed || false,
+            weight: Number(s.weight) || 0,
+            reps: Number(s.reps) || 0,
+            completed: Boolean(s.completed),
             createdAt: s.createdAt ? new Date(s.createdAt) : new Date(),
             updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
           })),
@@ -710,7 +714,7 @@ export class WorkoutStore {
         }));
 
         if (hasLoggedData) {
-          // A. Archive locally for progress tracking (keyed by date, compatible with ExerciseProgressScreen)
+          // Archive locally for progress tracking (keyed by date, compatible with ExerciseProgressScreen)
           const archiveKey = `workout.archive.${dayDateStr}`;
           const existingArchive = storage.get<any[]>(archiveKey) || [];
           const workoutRecord = {
@@ -734,43 +738,19 @@ export class WorkoutStore {
           }
           storage.set(archiveKey, existingArchive);
 
-          // B. Store in Firestore DB if authenticated
+          // Queue for non-blocking Firestore sync
           if (this.userId) {
-            try {
-              const totalVolume = exercisesToProcess.reduce((total, ex) => {
-                return total + (ex.sets || []).reduce((t, s) => t + (s.completed ? s.weight * s.reps : 0), 0);
-              }, 0);
-
-              await workoutsService.createWorkout(this.userId, {
-                id: workoutIdToArchive,
-                name: workoutNameToArchive,
-                type: workoutTypeToArchive,
-                date: dayDate,
-                completed: true,
-                totalVolume,
-                exercises: snapshotExercises,
-              });
-
-              this.workouts.set(workoutIdToArchive, {
-                id: workoutIdToArchive,
-                userId: this.userId,
-                name: workoutNameToArchive,
-                type: workoutTypeToArchive,
-                date: dayDate,
-                completed: true,
-                totalVolume,
-                exercises: snapshotExercises,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              });
-            } catch (err) {
-              logger.error(`[WorkoutStore] Failed to persist workout ${workoutIdToArchive} to Firestore:`, err);
-            }
+            workoutsToSyncToFirestore.push({
+              id: workoutIdToArchive,
+              workoutRecord,
+              snapshotExercises,
+              dayDate,
+            });
           }
         }
 
         // 4. Reset routine for this day:
-        // Preserves user-added exercises, IDs, and set counts, while resetting reps/weights to 0 and unticking completed.
+        // Preserves user-added exercises and configured sets, resets weight & reps to 0, unticks completed.
         const resetExercises: WorkoutExercise[] = exercisesToProcess.map((ex, exIdx) => ({
           ...ex,
           orderIndex: ex.orderIndex ?? exIdx,
@@ -780,9 +760,9 @@ export class WorkoutStore {
             weight: 0,
             reps: 0,
             completed: false,
-            updatedAt: new Date(),
+            updatedAt: now,
           })),
-          updatedAt: new Date(),
+          updatedAt: now,
         }));
 
         const resetWorkout: Workout = {
@@ -794,8 +774,8 @@ export class WorkoutStore {
           exercises: resetExercises,
           completed: false,
           totalVolume: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          createdAt: now,
+          updatedAt: now,
         };
 
         // Save reset draft to MMKV
@@ -818,12 +798,72 @@ export class WorkoutStore {
         }
 
         // If this is the currently selected day on screen, update activeWorkout immediately
-        if (dayKey === this.selectedDay) {
+        if (isCurrentSelectedDay) {
           runInAction(() => {
             this.activeWorkout = resetWorkout;
           });
           storage.set(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT, resetWorkout);
         }
+      }
+
+      // 5. Asynchronously persist archived workouts to Firestore in the background without blocking the UI
+      if (this.userId && workoutsToSyncToFirestore.length > 0) {
+        const userId = this.userId;
+        setTimeout(async () => {
+          for (const item of workoutsToSyncToFirestore) {
+            try {
+              const totalVolume = item.snapshotExercises.reduce((total: number, ex: any) => {
+                return total + (ex.sets || []).reduce((t: number, s: any) => t + (s.completed ? (s.weight || 0) * (s.reps || 0) : 0), 0);
+              }, 0);
+
+              // Plain JSON serialization for Firestore
+              const firestoreExercises = item.snapshotExercises.map((ex: any) => ({
+                id: String(ex.id || generateUUID()),
+                exerciseId: String(ex.exerciseId || ''),
+                exercise: ex.exercise ? {
+                  name: String(ex.exercise.name || ''),
+                  muscleGroup: String(ex.exercise.muscleGroup || ''),
+                  equipment: String(ex.exercise.equipment || ''),
+                } : null,
+                orderIndex: Number(ex.orderIndex || 0),
+                sets: (ex.sets || []).map((s: any) => ({
+                  id: String(s.id || generateUUID()),
+                  orderIndex: Number(s.orderIndex || 0),
+                  weight: Number(s.weight || 0),
+                  reps: Number(s.reps || 0),
+                  completed: Boolean(s.completed),
+                })),
+              }));
+
+              await workoutsService.createWorkout(userId, {
+                id: item.id,
+                name: item.workoutRecord.name,
+                type: item.workoutRecord.type,
+                date: item.dayDate,
+                completed: true,
+                totalVolume,
+                exercises: firestoreExercises as any,
+              });
+
+              runInAction(() => {
+                this.workouts.set(item.id, {
+                  id: item.id,
+                  userId,
+                  name: item.workoutRecord.name,
+                  type: item.workoutRecord.type as any,
+                  date: item.dayDate,
+                  completed: true,
+                  totalVolume,
+                  exercises: item.snapshotExercises,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                });
+              });
+            } catch (err) {
+              logger.error(`[WorkoutStore] Background Firestore archive failed for ${item.id}:`, err);
+            }
+          }
+        }, 0);
       }
     } finally {
       runInAction(() => {

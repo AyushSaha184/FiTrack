@@ -65,11 +65,11 @@ export const SetRow = memo<SetRowProps>(({
   // Synchronize internal input text when set.weight or set.reps change externally (e.g. week reset)
   useEffect(() => {
     setUncontrolledWeight(set.weight > 0 ? String(set.weight) : '');
-  }, [set.weight]);
+  }, [set.weight, set.updatedAt]);
 
   useEffect(() => {
     setUncontrolledReps(set.reps > 0 ? String(set.reps) : '');
-  }, [set.reps]);
+  }, [set.reps, set.updatedAt]);
 
   const handleToggleComplete = useCallback(() => {
     // Use .set() for React Compiler compatibility (react-compiler-reanimated-shared-values)
@@ -99,7 +99,7 @@ export const SetRow = memo<SetRowProps>(({
   }, [uncontrolledWeight, onWeightChange, setId, set.weight]);
 
   const handleRepsBlur = useCallback(() => {
-    const val = parseInt(uncontrolledReps);
+    const val = parseInt(uncontrolledReps, 10);
     if (!isNaN(val) && val >= 0) {
       onRepsChange(setId, val);
     } else {
@@ -151,9 +151,9 @@ export const SetRow = memo<SetRowProps>(({
         ]}
       >
         <TextInput
-          key={`w-${setId}-${set.weight}`}
+          key={`w-${setId}`}
           style={[styles.inputText, { color: colors.text }]}
-          defaultValue={set.weight > 0 ? String(set.weight) : ''}
+          value={uncontrolledWeight}
           onChangeText={handleWeightChange}
           onBlur={handleWeightBlur}
           keyboardType="number-pad"
@@ -173,9 +173,9 @@ export const SetRow = memo<SetRowProps>(({
         ]}
       >
         <TextInput
-          key={`r-${setId}-${set.reps}`}
+          key={`r-${setId}`}
           style={[styles.inputText, { color: colors.text }]}
-          defaultValue={set.reps > 0 ? String(set.reps) : ''}
+          value={uncontrolledReps}
           onChangeText={handleRepsChange}
           onBlur={handleRepsBlur}
           keyboardType="number-pad"

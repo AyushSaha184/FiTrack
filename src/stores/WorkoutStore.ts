@@ -4,7 +4,7 @@ import { workoutsService } from '../services/firebase/workoutsService';
 import { collections } from '../services/firebase/firestore';
 import firestore from '@react-native-firebase/firestore';
 import { storage } from '../utils/storage';
-import { STORAGE_KEYS, getDayOfWeekKey } from '../utils/constants';
+import { STORAGE_KEYS, getDayOfWeekKey, DAY_ORDER, getWeekDates } from '../utils/constants';
 import { generateUUID, dateKey } from '../utils/helpers';
 import { logger } from '../utils/logger';
 import { authStore } from './AuthStore';
@@ -626,66 +626,203 @@ export class WorkoutStore {
   async resetWorkoutRoutine() {
     try {
       this.isLoading = true;
-      if (this.activeWorkout) {
-        const archiveKey = `workout.archive.${dateKey(this.selectedDate)}`;
-        const existingArchive = storage.get<any[]>(archiveKey) || [];
-        existingArchive.push({
-          archivedAt: new Date().toISOString(),
-          workout: {
-            name: this.activeWorkout.name,
-            type: this.activeWorkout.type,
-            date: dateKey(this.selectedDate),
-          },
-          exercises: this.activeWorkout.exercises.map(ex => ({
+
+      if (this.saveDraftTimer) {
+        clearTimeout(this.saveDraftTimer);
+        this.saveDraftTimer = null;
+      }
+      if (this.syncFirestoreTimer) {
+        clearTimeout(this.syncFirestoreTimer);
+        this.syncFirestoreTimer = null;
+      }
+
+      // 1. Get dates for the currently selected week (starts on Monday)
+      const weekDates = getWeekDates(this.selectedDate);
+
+      // 2. Iterate through all 7 days in the week
+      for (let i = 0; i < DAY_ORDER.length; i++) {
+        const dayKey = DAY_ORDER[i];
+        const dayDate = weekDates[i] || new Date();
+        const dayDateStr = dateKey(dayDate);
+
+        // Retrieve existing draft or active workout for this day
+        let dayWorkout: Workout | null = null;
+        if (dayKey === this.selectedDay && this.activeWorkout && this.activeWorkout.exercises.length > 0) {
+          dayWorkout = this.activeWorkout;
+        } else {
+          dayWorkout = storage.get<Workout>(this.getDayDraftKey(dayKey)) || null;
+        }
+
+        const templateKey = `workout.routine.${dayKey}`;
+        const savedTemplate = storage.get<any[]>(templateKey);
+
+        let exercisesToProcess: WorkoutExercise[] = dayWorkout?.exercises || [];
+
+        // If no draft was found, check if a template exists for this day
+        if (exercisesToProcess.length === 0 && savedTemplate && Array.isArray(savedTemplate) && savedTemplate.length > 0) {
+          exercisesToProcess = savedTemplate.map((te: any, exIdx: number) => ({
+            id: generateUUID(),
+            exerciseId: te.exerciseId || te.id || generateUUID(),
+            exercise: te.exercise,
+            orderIndex: te.orderIndex ?? exIdx,
+            sets: (te.sets || []).map((ts: any, sIdx: number) => ({
+              id: generateUUID(),
+              orderIndex: ts.orderIndex ?? sIdx + 1,
+              weight: ts.weight || 0,
+              reps: ts.reps || 0,
+              completed: ts.completed || false,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            })),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }));
+        }
+
+        // If this day has no exercises planned at all, continue
+        if (exercisesToProcess.length === 0) {
+          continue;
+        }
+
+        // 3. Check if there is logged workout data (weights, reps, or completed sets) to archive
+        const hasLoggedData = exercisesToProcess.some(ex =>
+          (ex.sets || []).some(s => s.completed || (s.weight && s.weight > 0) || (s.reps && s.reps > 0))
+        );
+
+        const workoutIdToArchive = dayWorkout?.id || generateUUID();
+        const workoutNameToArchive = dayWorkout?.name || this.getWorkoutName(dayWorkout?.type || 'custom');
+        const workoutTypeToArchive = dayWorkout?.type || 'custom';
+
+        const snapshotExercises: WorkoutExercise[] = exercisesToProcess.map((ex, exIdx) => ({
+          ...ex,
+          orderIndex: ex.orderIndex ?? exIdx,
+          sets: (ex.sets || []).map((s, sIdx) => ({
+            ...s,
+            orderIndex: s.orderIndex ?? sIdx + 1,
+            weight: s.weight || 0,
+            reps: s.reps || 0,
+            completed: s.completed || false,
+            createdAt: s.createdAt ? new Date(s.createdAt) : new Date(),
+            updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
+          })),
+          createdAt: ex.createdAt ? new Date(ex.createdAt) : new Date(),
+          updatedAt: new Date(),
+        }));
+
+        if (hasLoggedData) {
+          // A. Archive locally for progress tracking (keyed by date, compatible with ExerciseProgressScreen)
+          const archiveKey = `workout.archive.${dayDateStr}`;
+          const existingArchive = storage.get<any[]>(archiveKey) || [];
+          const workoutRecord = {
+            id: workoutIdToArchive,
+            name: workoutNameToArchive,
+            type: workoutTypeToArchive,
+            date: dayDateStr,
+            exercises: snapshotExercises,
+          };
+          const archiveEntry = {
+            archivedAt: new Date().toISOString(),
+            workout: workoutRecord,
+            exercises: snapshotExercises,
+          };
+
+          const existingIndex = existingArchive.findIndex(item => item?.workout?.id === workoutIdToArchive);
+          if (existingIndex >= 0) {
+            existingArchive[existingIndex] = archiveEntry;
+          } else {
+            existingArchive.push(archiveEntry);
+          }
+          storage.set(archiveKey, existingArchive);
+
+          // B. Store in Firestore DB if authenticated
+          if (this.userId) {
+            try {
+              const totalVolume = exercisesToProcess.reduce((total, ex) => {
+                return total + (ex.sets || []).reduce((t, s) => t + (s.completed ? s.weight * s.reps : 0), 0);
+              }, 0);
+
+              await workoutsService.createWorkout(this.userId, {
+                id: workoutIdToArchive,
+                name: workoutNameToArchive,
+                type: workoutTypeToArchive,
+                date: dayDate,
+                completed: true,
+                totalVolume,
+                exercises: snapshotExercises,
+              });
+
+              this.workouts.set(workoutIdToArchive, {
+                id: workoutIdToArchive,
+                userId: this.userId,
+                name: workoutNameToArchive,
+                type: workoutTypeToArchive,
+                date: dayDate,
+                completed: true,
+                totalVolume,
+                exercises: snapshotExercises,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              });
+            } catch (err) {
+              logger.error(`[WorkoutStore] Failed to persist workout ${workoutIdToArchive} to Firestore:`, err);
+            }
+          }
+        }
+
+        // 4. Reset routine for this day:
+        // Preserves user-added exercises, IDs, and set counts, while resetting reps/weights to 0 and unticking completed.
+        const resetExercises: WorkoutExercise[] = exercisesToProcess.map((ex, exIdx) => ({
+          ...ex,
+          orderIndex: ex.orderIndex ?? exIdx,
+          sets: (ex.sets || []).map((s, sIdx) => ({
+            ...s,
+            orderIndex: s.orderIndex ?? sIdx + 1,
+            weight: 0,
+            reps: 0,
+            completed: false,
+            updatedAt: new Date(),
+          })),
+          updatedAt: new Date(),
+        }));
+
+        const resetWorkout: Workout = {
+          id: generateUUID(),
+          userId: this.userId || '',
+          name: workoutNameToArchive,
+          type: workoutTypeToArchive,
+          date: dayDate,
+          exercises: resetExercises,
+          completed: false,
+          totalVolume: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        // Save reset draft to MMKV
+        storage.set(this.getDayDraftKey(dayKey), resetWorkout);
+
+        // If routine template exists, also update it with reset sets
+        if (savedTemplate && Array.isArray(savedTemplate)) {
+          const resetTemplate = resetExercises.map(ex => ({
             exerciseId: ex.exerciseId,
             exercise: ex.exercise,
             orderIndex: ex.orderIndex,
             sets: ex.sets.map(s => ({
-              weight: s.weight,
-              reps: s.reps,
-              completed: s.completed,
               orderIndex: s.orderIndex,
-            })),
-          })),
-        });
-        storage.set(archiveKey, existingArchive);
-
-        const resetExercises = this.activeWorkout.exercises.map(ex => ({
-          ...ex,
-          sets: ex.sets.map(s => ({
-            ...s,
-            completed: false,
-            weight: 0,
-            reps: 0,
-          })),
-        }));
-
-        runInAction(() => {
-          if (this.activeWorkout) {
-            this.activeWorkout = {
-              ...this.activeWorkout,
-              exercises: resetExercises,
-            };
-            this.saveDraft(true);
-          }
-        });
-
-        if (this.userId) {
-          await workoutsService.saveWorkoutExercises(this.userId, this.activeWorkout.id, resetExercises);
-        }
-      } else {
-        const savedTemplate = storage.get<any[]>(`workout.routine.${this.selectedDay}`);
-        if (savedTemplate && Array.isArray(savedTemplate)) {
-          const resetTemplate = savedTemplate.map(te => ({
-            ...te,
-            sets: (te.sets || []).map((ts: any) => ({
-              ...ts,
               weight: 0,
               reps: 0,
               completed: false,
             })),
           }));
-          storage.set(`workout.routine.${this.selectedDay}`, resetTemplate);
+          storage.set(templateKey, resetTemplate);
+        }
+
+        // If this is the currently selected day on screen, update activeWorkout immediately
+        if (dayKey === this.selectedDay) {
+          runInAction(() => {
+            this.activeWorkout = resetWorkout;
+          });
+          storage.set(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT, resetWorkout);
         }
       }
     } finally {

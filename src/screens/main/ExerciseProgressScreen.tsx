@@ -19,7 +19,7 @@ import { useColors, useWorkoutStore } from '../../hooks';
 import { spacing, radius, responsive } from '../../theme';
 import { aiService } from '../../services/ai/aiService';
 import { storage } from '../../utils/storage';
-import { dateKey } from '../../utils/helpers';
+import { dateKey, getDayOfWeekKey } from '../../utils/helpers';
 import type { Workout } from '../../models';
 import { logger } from '../../utils/logger';
 
@@ -102,7 +102,15 @@ export const ExerciseProgressScreen = observer(() => {
     try {
       setLoading(true);
       const userId = workoutStore.userId;
-      const targetDay = workoutStore.selectedDay; // e.g., 'MON', 'TUE'
+      const targetDay = workoutStore.selectedDay; // e.g. 'monday', 'tuesday'
+
+      // Helper to match days regardless of full name ('monday') or short name ('MON')
+      const isMatchingDay = (d: Date, target: string): boolean => {
+        if (!target) return false;
+        const dKey = getDayOfWeekKey(d).toLowerCase();
+        const tKey = target.toLowerCase();
+        return dKey === tKey || dKey.startsWith(tKey.slice(0, 3)) || tKey.startsWith(dKey.slice(0, 3));
+      };
 
       // Calculate 30 days ago limit
       const thirtyDaysAgo = new Date();
@@ -140,21 +148,21 @@ export const ExerciseProgressScreen = observer(() => {
           if (!isNaN(keyDate.getTime()) && keyDate >= thirtyDaysAgo) {
             const archives = storage.get<any[]>(key) || [];
             archives.forEach((arc) => {
-              if (arc && arc.workout) {
-                const d = parseDateSafely(arc.workout.date);
-                const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-                const arcDayKey = dayNames[d.getDay()];
+              if (arc && (arc.workout || arc.exercises)) {
+                const workoutObj = arc.workout || arc;
+                const d = parseDateSafely(workoutObj.date || dateStr);
 
-                if (arcDayKey === targetDay) {
+                if (isMatchingDay(d, targetDay)) {
+                  const arcExercises = workoutObj.exercises || arc.exercises || [];
                   localWorkouts.push({
-                    id: arc.workout.id || key,
+                    id: workoutObj.id || key,
                     userId: userId || 'local',
-                    name: arc.workout.name || 'Workout',
-                    type: arc.workout.type || 'custom',
+                    name: workoutObj.name || 'Workout',
+                    type: workoutObj.type || 'custom',
                     date: d,
                     completed: true,
-                    totalVolume: 0,
-                    exercises: arc.workout.exercises || [],
+                    totalVolume: workoutObj.totalVolume || 0,
+                    exercises: arcExercises,
                     createdAt: d,
                     updatedAt: d,
                   });
@@ -179,18 +187,21 @@ export const ExerciseProgressScreen = observer(() => {
       // 3. Merge Local and Store workouts (remove duplicates by date)
       const mergedWorkoutsMap = new Map<string, Workout>();
 
-      // Filter for target day of week
+      // Filter for target day of week, excluding uncompleted/empty reset sessions
       const filterAndAdd = (workoutList: Workout[]) => {
         workoutList.forEach((w) => {
           const wDate = parseDateSafely(w.date);
-          const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-          const wDayKey = dayNames[wDate.getDay()];
-          if (wDayKey === targetDay) {
-            const keyStr = dateKey(wDate);
-            mergedWorkoutsMap.set(keyStr, {
-              ...w,
-              date: wDate,
-            });
+          if (isMatchingDay(wDate, targetDay)) {
+            const hasData = (w.exercises || []).some((ex) =>
+              (ex.sets || []).some((s) => s.completed || (s.weight && s.weight > 0) || (s.reps && s.reps > 0))
+            );
+            if (w.completed || hasData) {
+              const keyStr = dateKey(wDate);
+              mergedWorkoutsMap.set(keyStr, {
+                ...w,
+                date: wDate,
+              });
+            }
           }
         });
       };
@@ -212,8 +223,11 @@ export const ExerciseProgressScreen = observer(() => {
         return;
       }
 
-      // Collect all exercises seen in today's active workout or any of the last 4 workouts
-      const todayExercises = workoutStore.activeWorkoutExercises;
+      // Collect all exercises seen in today's active workout, today's draft, or any of the last 4 workouts
+      const targetDayDraft = storage.get<Workout>(`workout.draft.${targetDay}`);
+      const todayExercises = workoutStore.activeWorkoutExercises.length > 0
+        ? workoutStore.activeWorkoutExercises
+        : (targetDayDraft?.exercises || []);
       const allExerciseIds = new Set<string>();
       const exerciseMeta = new Map<string, { name: string; muscleGroup: string }>();
 

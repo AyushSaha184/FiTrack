@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback } from 'react';
+import React, { memo, useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Animated, {
@@ -41,8 +41,7 @@ const sanitizeRepsInput = (raw: string): string => {
 // Use uncontrolled TextInputs keyed off the set id + value. The `key` reset
 // pattern means React remounts the input (and re-initialises defaultValue)
 // whenever the underlying set is replaced (e.g. after a successful blur that
-// round-trips through the store). This avoids the previous
-// useEffect->setState double-render that fired on every weight/reps change.
+// round-trips through the store or when routine is reset).
 export const SetRow = memo<SetRowProps>(({
   set,
   setId,
@@ -62,6 +61,15 @@ export const SetRow = memo<SetRowProps>(({
   const [uncontrolledReps, setUncontrolledReps] = useState<string>(() =>
     set.reps > 0 ? String(set.reps) : ''
   );
+
+  // Synchronize internal input text when set.weight or set.reps change externally (e.g. week reset)
+  useEffect(() => {
+    setUncontrolledWeight(set.weight > 0 ? String(set.weight) : '');
+  }, [set.weight]);
+
+  useEffect(() => {
+    setUncontrolledReps(set.reps > 0 ? String(set.reps) : '');
+  }, [set.reps]);
 
   const handleToggleComplete = useCallback(() => {
     // Use .set() for React Compiler compatibility (react-compiler-reanimated-shared-values)
@@ -145,7 +153,7 @@ export const SetRow = memo<SetRowProps>(({
         <TextInput
           key={`w-${setId}-${set.weight}`}
           style={[styles.inputText, { color: colors.text }]}
-          defaultValue={uncontrolledWeight}
+          defaultValue={set.weight > 0 ? String(set.weight) : ''}
           onChangeText={handleWeightChange}
           onBlur={handleWeightBlur}
           keyboardType="number-pad"
@@ -167,7 +175,7 @@ export const SetRow = memo<SetRowProps>(({
         <TextInput
           key={`r-${setId}-${set.reps}`}
           style={[styles.inputText, { color: colors.text }]}
-          defaultValue={uncontrolledReps}
+          defaultValue={set.reps > 0 ? String(set.reps) : ''}
           onChangeText={handleRepsChange}
           onBlur={handleRepsBlur}
           keyboardType="number-pad"

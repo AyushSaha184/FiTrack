@@ -86,3 +86,4 @@ scripts/output/
 *.apk
 *.aab
 !android/app/debug.keystore
+/graphify-out

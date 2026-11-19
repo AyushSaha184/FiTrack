@@ -54,15 +54,13 @@ class MainApplication : Application(), ReactApplication {
     }
 
     registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-      override fun onActivityStarted(activity: Activity) {
+      override fun onActivityResumed(activity: Activity) {
         startedActivities++
-        if (startedActivities == 1) {
-          isAppInForeground = true
-          notifyServiceAppVisibility(true)
-        }
+        isAppInForeground = true
+        notifyServiceAppVisibility(true)
       }
 
-      override fun onActivityStopped(activity: Activity) {
+      override fun onActivityPaused(activity: Activity) {
         startedActivities--
         if (startedActivities <= 0) {
           startedActivities = 0
@@ -72,8 +70,11 @@ class MainApplication : Application(), ReactApplication {
       }
 
       override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
-      override fun onActivityResumed(activity: Activity) {}
-      override fun onActivityPaused(activity: Activity) {}
+      override fun onActivityStarted(activity: Activity) {}
+      override fun onActivityStopped(activity: Activity) {
+        isAppInForeground = false
+        notifyServiceAppVisibility(false)
+      }
       override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
       override fun onActivityDestroyed(activity: Activity) {}
     })

@@ -31,6 +31,7 @@ import { crashReportsService } from '../../services/crashReports';
 import { updateService, type UpdateInfo } from '../../services/update/updateService';
 import { UpdateModal } from '../../components/common/UpdateModal';
 import { avatarService } from '../../services/profile/avatarService';
+import { stepCounterService } from '../../services/stepCounterService';
 
 const THEME_OPTIONS: { id: ThemeId; label: string }[] = [
   { id: 'dark', label: 'Dark' },
@@ -55,6 +56,11 @@ export const SettingsScreen = observer(() => {
   const [showUpToDateAlert, setShowUpToDateAlert] = useState(false);
   const [updateErrorMessage, setUpdateErrorMessage] = useState('');
   const [showUpdateErrorAlert, setShowUpdateErrorAlert] = useState(false);
+  const [isXiaomi, setIsXiaomi] = useState(false);
+
+  useEffect(() => {
+    stepCounterService.isXiaomiDevice().then((val) => setIsXiaomi(val)).catch(() => {});
+  }, []);
 
   // Physical stats state
   const initialGender = user?.profile?.gender || 'male';
@@ -579,6 +585,33 @@ export const SettingsScreen = observer(() => {
                 thumbColor="#FFFFFF"
               />
             </View>
+
+            {isXiaomi && (
+              <View style={styles.settingRow}>
+                <View style={styles.settingTextGroup}>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>
+                    Xiaomi / MIUI Background Tracking
+                  </Text>
+                  <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                    Enable Autostart and set Battery Saver to "No restrictions" so MIUI does not kill step tracking when clearing recents.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.logoutPill,
+                    {
+                      backgroundColor: colors.cardSurface,
+                      borderColor: colors.cardBorder,
+                    },
+                  ]}
+                  onPress={() => stepCounterService.openAutostartSettings()}
+                >
+                  <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
+                    Settings
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <View style={styles.settingRow}>
               <View style={styles.settingTextGroup}>

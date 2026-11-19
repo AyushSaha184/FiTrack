@@ -1,20 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_steps_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
     android:background="@drawable/widget_background"
-    android:padding="12dp"
+    android:padding="8dp"
     android:clickable="true"
     android:focusable="true">
 
-    <!-- Left Side: Step Counter Progress Ring -->
+    <!-- Top-Right Refresh Button -->
+    <ImageView
+        android:id="@+id/widget_refresh_button"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:padding="4dp"
+        android:src="@drawable/ic_widget_refresh"
+        android:contentDescription="Refresh Steps"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- Left Side: Step Counter Progress Ring (Fills height to fit screen) -->
     <FrameLayout
-        android:layout_width="100dp"
-        android:layout_height="100dp"
-        android:layout_gravity="center_vertical">
+        android:id="@+id/widget_ring_container"
+        android:layout_width="114dp"
+        android:layout_height="match_parent"
+        android:layout_alignParentStart="true"
+        android:layout_centerVertical="true">
 
         <ImageView
             android:id="@+id/widget_progress_ring"
@@ -36,7 +49,7 @@
                 android:layout_height="wrap_content"
                 android:text="0"
                 android:textColor="#FFFFFF"
-                android:textSize="18sp"
+                android:textSize="20sp"
                 android:textStyle="bold"
                 android:includeFontPadding="false" />
 
@@ -50,21 +63,25 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- Right Side: Rectangular Box with Curved Edges for Calories Burned -->
+    <!-- Right Side: Calorie Box Shifted to the Right Side -->
     <LinearLayout
         android:id="@+id/widget_calories_box"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:layout_marginStart="12dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerVertical="true"
+        android:layout_alignParentEnd="true"
+        android:layout_marginEnd="16dp"
         android:background="@drawable/widget_box_background"
         android:gravity="center"
         android:orientation="horizontal"
-        android:padding="12dp">
+        android:paddingStart="16dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp">
 
         <ImageView
-            android:layout_width="26dp"
-            android:layout_height="26dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
             android:layout_marginEnd="8dp"
             android:src="@drawable/ic_fire_white"
             android:contentDescription="Calories Burned" />
@@ -75,9 +92,9 @@
             android:layout_height="wrap_content"
             android:text="0"
             android:textColor="#FFFFFF"
-            android:textSize="24sp"
+            android:textSize="20sp"
             android:textStyle="bold"
             android:includeFontPadding="false" />
     </LinearLayout>
 
-</LinearLayout>
+</RelativeLayout>

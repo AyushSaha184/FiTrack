@@ -52,19 +52,20 @@
           <intent-filter>
               <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
               <action android:name="com.fitrack.app.REFRESH_AND_OPEN" />
+              <action android:name="com.fitrack.app.REFRESH_WIDGET" />
           </intent-filter>
           <meta-data
               android:name="android.appwidget.provider"
               android:resource="@xml/fitrack_steps_widget_info" />
-          <meta-data
-              android:name="miui.appwidget.size"
-              android:value="4x2" />
-          <meta-data
-              android:name="com.miui.widget.size"
-              android:value="4x2" />
-          <meta-data
-              android:name="miui.appwidget.title"
-              android:value="@string/widget_name" />
+      </receiver>
+
+      <receiver
+          android:name=".StepCounterRestartReceiver"
+          android:enabled="true"
+          android:exported="false">
+          <intent-filter>
+              <action android:name="com.fitrack.app.RESTART_STEP_COUNTER" />
+          </intent-filter>
       </receiver>
     </application>
 </manifest>

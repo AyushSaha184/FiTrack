@@ -308,6 +308,37 @@ class StepCounterForegroundService : Service(), SensorEventListener {
         Companion.updateWidget(this)
     }
 
+    private fun scheduleRestartWatchdog() {
+        try {
+            val trackingActive = prefs.getBoolean("tracking_active", false)
+            if (!trackingActive) return
+
+            val restartIntent = Intent(applicationContext, StepCounterRestartReceiver::class.java).apply {
+                action = "com.fitrack.app.RESTART_STEP_COUNTER"
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                applicationContext,
+                NOTIFICATION_ID,
+                restartIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager?.setExactAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + 500,
+                    pendingIntent
+                )
+            } else {
+                alarmManager?.set(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + 500,
+                    pendingIntent
+                )
+            }
+        } catch (_: Exception) {}
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         isAppForeground = false
@@ -317,25 +348,8 @@ class StepCounterForegroundService : Service(), SensorEventListener {
             startForegroundServiceNotification()
             registerSensors()
 
-            // Schedule a restart via AlarmManager in case the OS terminates the application process
-            try {
-                val restartIntent = Intent(applicationContext, StepCounterForegroundService::class.java).also {
-                    it.setPackage(packageName)
-                    it.action = "ACTION_APP_BACKGROUNDED"
-                }
-                val pendingIntent = PendingIntent.getService(
-                    applicationContext,
-                    NOTIFICATION_ID,
-                    restartIntent,
-                    PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-                )
-                val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-                alarmManager?.set(
-                    AlarmManager.ELAPSED_REALTIME,
-                    SystemClock.elapsedRealtime() + 1000,
-                    pendingIntent
-                )
-            } catch (_: Exception) {}
+            // Schedule a restart via broadcast receiver watchdog in case the OS terminates the application process
+            scheduleRestartWatchdog()
         }
     }
 
@@ -343,6 +357,9 @@ class StepCounterForegroundService : Service(), SensorEventListener {
         unregisterSensors()
         if (isExplicitStop) {
             prefs.edit().putBoolean("tracking_active", false).apply()
+        } else {
+            // Service killed by system/recents swipe, not by user request
+            scheduleRestartWatchdog()
         }
         super.onDestroy()
     }

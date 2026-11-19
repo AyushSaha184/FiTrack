@@ -19,6 +19,7 @@ class FitrackStepsWidget : AppWidgetProvider() {
 
     companion object {
         const val ACTION_REFRESH_AND_OPEN = "com.fitrack.app.REFRESH_AND_OPEN"
+        const val ACTION_REFRESH_WIDGET = "com.fitrack.app.REFRESH_WIDGET"
         private const val WIDGET_ALARM_INTERVAL_MS = 15 * 60 * 1000L // 15 minutes
 
         fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
@@ -37,7 +38,19 @@ class FitrackStepsWidget : AppWidgetProvider() {
             val ringBitmap = drawProgressRing(steps, goal)
             views.setImageViewBitmap(R.id.widget_progress_ring, ringBitmap)
 
-            // Setup click PendingIntent to send our REFRESH_AND_OPEN broadcast action
+            // Setup click PendingIntent for top-right Refresh button (refreshes widget only)
+            val refreshIntent = Intent(context, FitrackStepsWidget::class.java).apply {
+                action = ACTION_REFRESH_WIDGET
+            }
+            val refreshPendingIntent = PendingIntent.getBroadcast(
+                context,
+                1,
+                refreshIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_refresh_button, refreshPendingIntent)
+
+            // Setup click PendingIntent for opening app
             val clickIntent = Intent(context, FitrackStepsWidget::class.java).apply {
                 action = ACTION_REFRESH_AND_OPEN
             }
@@ -53,26 +66,28 @@ class FitrackStepsWidget : AppWidgetProvider() {
         }
 
         private fun drawProgressRing(steps: Int, goal: Int): Bitmap {
-            val size = 200
+            val size = 320
             val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
+
+            val strokeWidth = 24f
+            val padding = 20f
 
             val trackPaint = Paint().apply {
                 color = Color.parseColor("#1F1F1F") // AMOLED dark track
                 style = Paint.Style.STROKE
-                strokeWidth = 16f
+                this.strokeWidth = strokeWidth
                 isAntiAlias = true
             }
 
             val progressPaint = Paint().apply {
                 color = Color.WHITE
                 style = Paint.Style.STROKE
-                strokeWidth = 16f
+                this.strokeWidth = strokeWidth
                 strokeCap = Paint.Cap.ROUND
                 isAntiAlias = true
             }
 
-            val padding = 16f
             val rect = RectF(padding, padding, size - padding, size - padding)
 
             // Draw track
@@ -95,7 +110,7 @@ class FitrackStepsWidget : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
+        if (intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE || intent.action == ACTION_REFRESH_WIDGET) {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val thisWidget = ComponentName(context, FitrackStepsWidget::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)

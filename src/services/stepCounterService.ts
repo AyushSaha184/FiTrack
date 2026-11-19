@@ -180,4 +180,23 @@ export const stepCounterService = {
       return false;
     }
   },
+
+  async isXiaomiDevice(): Promise<boolean> {
+    if (!StepCounterModule || typeof StepCounterModule.isXiaomiDevice !== 'function') return false;
+    try {
+      return await StepCounterModule.isXiaomiDevice();
+    } catch {
+      return false;
+    }
+  },
+
+  async openAutostartSettings(): Promise<boolean> {
+    if (!StepCounterModule || typeof StepCounterModule.openAutostartSettings !== 'function') return false;
+    try {
+      return await StepCounterModule.openAutostartSettings();
+    } catch (error) {
+      logger.error('[stepCounterService] openAutostartSettings error:', error);
+      return false;
+    }
+  },
 };

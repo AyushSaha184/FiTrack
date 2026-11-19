@@ -190,6 +190,50 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
         promise.resolve(true)
     }
 
+    @ReactMethod
+    fun isXiaomiDevice(promise: Promise) {
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        val isXiaomi = manufacturer.contains("xiaomi") || manufacturer.contains("redmi") || manufacturer.contains("poco")
+        promise.resolve(isXiaomi)
+    }
+
+    @ReactMethod
+    fun openAutostartSettings(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val intent = Intent().apply {
+                component = ComponentName(
+                    "com.miui.securitycenter",
+                    "com.miui.permcenter.autostart.AutoStartManagementActivity"
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val list = context.packageManager.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            if (list.isNotEmpty()) {
+                context.startActivity(intent)
+                promise.resolve(true)
+            } else {
+                openAppDetailsSettings(context)
+                promise.resolve(false)
+            }
+        } catch (_: Exception) {
+            try {
+                openAppDetailsSettings(reactApplicationContext)
+                promise.resolve(false)
+            } catch (e: Exception) {
+                promise.reject("OPEN_SETTINGS_FAILED", e.message)
+            }
+        }
+    }
+
+    private fun openAppDetailsSettings(context: Context) {
+        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = android.net.Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
     private fun updateWidget() {
         val context = reactApplicationContext
         val intent = Intent(context, FitrackStepsWidget::class.java).apply {

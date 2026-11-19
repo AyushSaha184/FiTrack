@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuthStore } from '../stores';
 import { reaction } from 'mobx';
-import type { LoginInput, SignupInput } from '../utils/validators';
 
 const shallowEqual = (a: Record<string, any>, b: Record<string, any>): boolean => {
   const keysA = Object.keys(a);
@@ -19,13 +18,11 @@ export const useAuth = () => {
       () => ({
         user: store.user,
         userId: store.user?.id,
-        userOnboarding: store.user?.onboardingCompleted,
         userName: store.user?.name,
+        userAvatar: store.user?.avatarUrl,
         isLoading: store.isLoading,
         isInitialized: store.isInitialized,
-        isAuthenticated: store.isAuthenticated,
-        isOnboarded: store.isOnboarded,
-        isNameRequired: store.isNameRequired,
+        hasStarted: store.hasStarted,
         error: store.error,
       }),
       (current, previous) => {
@@ -43,63 +40,31 @@ export const useAuth = () => {
     return () => disposer();
   }, [store]);
 
-  const login = useCallback(async (input: LoginInput) => {
-    await store.login(input);
+  const startApp = useCallback(async () => {
+    await store.startApp();
   }, [store]);
 
-  const signup = useCallback(async (input: SignupInput) => {
-    await store.signup(input);
-  }, [store]);
-
-  const socialLogin = useCallback(async (provider: 'google') => {
-    await store.socialLogin(provider);
-  }, [store]);
-
-  const logout = useCallback(async () => {
-    await store.logout();
-  }, [store]);
-
-  const resetPassword = useCallback(async (email: string) => {
-    await store.resetPassword(email);
-  }, [store]);
-
-  const completeOnboarding = useCallback(async () => {
-    await store.completeOnboarding();
-  }, [store]);
-
-  const updateProfile = useCallback(async (updates: { name?: string; email?: string; profile?: any }) => {
+  const updateProfile = useCallback(async (updates: { name?: string; email?: string; avatarUrl?: string; profile?: any }) => {
     await store.updateProfile(updates);
-  }, [store]);
-
-  const setUserName = useCallback(async (name: string) => {
-    await store.setUserName(name);
   }, [store]);
 
   const clearError = useCallback(() => {
     store.clearError();
   }, [store]);
 
-  const deleteAccount = useCallback(async () => {
-    await store.deleteAccount();
+  const resetApp = useCallback(async () => {
+    await store.resetApp();
   }, [store]);
 
   return {
     user: store.user,
     isLoading: store.isLoading,
     isInitialized: store.isInitialized,
-    isAuthenticated: store.isAuthenticated,
-    isOnboarded: store.isOnboarded,
-    isNameRequired: store.isNameRequired,
+    hasStarted: store.hasStarted,
     error: store.error,
-    login,
-    signup,
-    socialLogin,
-    logout,
-    deleteAccount,
-    resetPassword,
-    completeOnboarding,
+    startApp,
     updateProfile,
-    setUserName,
     clearError,
+    resetApp,
   };
 };

@@ -163,10 +163,15 @@ export class SettingsStore {
         autoSave: true,
         defaultUnits: { weight: 'kg', height: 'cm', temperature: 'celsius' },
       };
+      this.recordBugReports = false;
+      this.restartOnBoot = true;
+      this.isLoaded = true;
       storage.set(STORAGE_KEYS.THEME, this.theme);
       storage.set(STORAGE_KEYS.UNITS, this.units);
       storage.set(STORAGE_KEYS.NOTIFICATIONS, this.notifications);
       storage.set(STORAGE_KEYS.WORKOUT_SETTINGS, this.workout);
+      storage.set(STORAGE_KEYS.RECORD_BUG_REPORTS, false);
+      storage.set(STORAGE_KEYS.STEP_RESTART_ON_BOOT, true);
     });
   }
 }

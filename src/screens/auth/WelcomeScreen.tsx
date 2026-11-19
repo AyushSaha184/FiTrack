@@ -8,8 +8,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -19,8 +17,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Logo } from '../../components/common/Logo';
+import { useAuth } from '../../hooks';
 import { responsive } from '../../theme';
-import type { AuthStackParamList } from '../../types/navigation';
 import Svg, { Path, Circle, Polyline } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -30,8 +28,6 @@ const SWIPE_THRESHOLD = CARD_WIDTH * 0.3;
 const CARD_HEIGHT = Math.min(420, Math.max(290, SCREEN_HEIGHT * 0.42));
 const CAROUSEL_HEIGHT = CARD_HEIGHT + 48;
 const IS_SMALL_SCREEN = SCREEN_HEIGHT < 720;
-
-type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Welcome'>;
 
 interface PreviewCard {
   id: string;
@@ -466,10 +462,21 @@ const PreviewCardComponent = ({
 };
 
 export const WelcomeScreen = () => {
-  const navigation = useNavigation<NavigationProp>();
+  const { startApp } = useAuth();
   const [activeIndex, setActiveIndex] = useState(1); // Default to middle card (Home screen)
+  const [starting, setStarting] = useState(false);
   const scrollX = useSharedValue(CARD_WIDTH + CARD_SPACING); // Centered default position
   const scrollRef = React.useRef<ScrollView>(null);
+
+  const handleStart = useCallback(async () => {
+    if (starting) return;
+    setStarting(true);
+    try {
+      await startApp();
+    } finally {
+      setStarting(false);
+    }
+  }, [starting, startApp]);
 
   // Position middle card as center on layout load
   React.useEffect(() => {
@@ -575,12 +582,15 @@ export const WelcomeScreen = () => {
         {/* Bottom Center Tappable Text Link */}
         <TouchableOpacity
           style={styles.ctaSection}
-          onPress={() => navigation.navigate('Login')}
+          onPress={handleStart}
           activeOpacity={0.7}
+          disabled={starting}
         >
-          <Text style={[styles.ctaTitle, { color: '#FFFFFF' }]}>Get Started</Text>
+          <Text style={[styles.ctaTitle, { color: '#FFFFFF' }]}>
+            {starting ? 'Opening...' : 'Get Started'}
+          </Text>
           <Text style={styles.ctaSubtitle}>
-            Join now and start your fitness journey.
+            Everything stays on your device.
           </Text>
         </TouchableOpacity>
       </ScrollView>

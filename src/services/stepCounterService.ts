@@ -169,4 +169,15 @@ export const stepCounterService = {
       return false;
     }
   },
+
+  async setWeight(weightKg: number): Promise<boolean> {
+    if (!StepCounterModule || typeof StepCounterModule.setWeight !== 'function') return false;
+    try {
+      await StepCounterModule.setWeight(weightKg);
+      return true;
+    } catch (error) {
+      logger.error('[stepCounterService] setWeight error:', error);
+      return false;
+    }
+  },
 };

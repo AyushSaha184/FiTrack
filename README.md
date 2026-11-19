@@ -78,6 +78,12 @@ FiTrack uses a dark, minimal interface designed to stay comfortable in a gym env
 
 No clutter. No unnecessary complexity. Just the information you need while training.
 
+###  Fully Offline
+
+FiTrack keeps everything on your device. No account, no sign-in, no cloud database. Your
+workouts, weight logs, and step history live in encrypted on-device storage and keep working
+with no internet connection.
+
 ---
 
 ##  Why FiTrack?

@@ -36,48 +36,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Google Services JSON Configuration
-        run: |
-          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
-            echo "[CI] Decoding GOOGLE_SERVICES_JSON_BASE64 secret..."
-            echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > android/app/google-services.json
-          elif [ ! -f "android/app/google-services.json" ]; then
-            echo "[CI] WARNING: google-services.json not found. Creating placeholder..."
-            cat << 'EOF' > android/app/google-services.json
-          {
-            "project_info": {
-              "project_number": "1234567890",
-              "project_id": "fitrack-app",
-              "storage_bucket": "fitrack-app.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:1234567890:android:1234567890abcdef",
-                  "android_client_info": {
-                    "package_name": "com.fitrack.app"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "AIzaSyDummyKeyForBuildOnly"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "status": 1
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          EOF
-          else
-            echo "[CI] Using workspace android/app/google-services.json"
-          fi
-
       - name: Setup Release Keystore
         run: |
           KEYSTORE_BASE64="${{ secrets.ANDROID_KEYSTORE_BASE64 || secrets.FITRACK_RELEASE_KEYSTORE_BASE64 }}"
@@ -101,7 +59,6 @@ jobs:
           FITRACK_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || secrets.FITRACK_RELEASE_KEY_ALIAS }}
           FITRACK_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.FITRACK_RELEASE_KEY_PASSWORD }}
           EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY: ${{ secrets.EXPO_PUBLIC_STORAGE_ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }}
-          EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_WEB_CLIENT_ID || '' }}
 
       - name: Upload Signed Release APK Artifact
         uses: actions/upload-artifact@v4

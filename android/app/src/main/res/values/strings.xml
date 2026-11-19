@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">FiTrack</string>
+    <string name="widget_name">FiTrack Steps</string>
+    <string name="widget_description">Track daily steps and calories burned</string>
 </resources>

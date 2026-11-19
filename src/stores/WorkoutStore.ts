@@ -1,8 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { Workout, WorkoutExercise, Set, WorkoutType, DayOfWeek } from '../models';
-import { workoutsService } from '../services/firebase/workoutsService';
-import { collections } from '../services/firebase/firestore';
-import firestore from '@react-native-firebase/firestore';
+import { workoutsService } from '../services/local/workoutsService';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS, getDayOfWeekKey, DAY_ORDER, getWeekDates } from '../utils/constants';
 import { generateUUID, dateKey } from '../utils/helpers';
@@ -20,7 +18,7 @@ export class WorkoutStore {
   weeklyWorkouts: Map<string, Workout> = new Map();
 
   private saveDraftTimer: ReturnType<typeof setTimeout> | null = null;
-  private syncFirestoreTimer: ReturnType<typeof setTimeout> | null = null;
+  private localSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private workoutsUnsubscribe: (() => void) | null = null;
   private activeFetches = new Map<string, Promise<void>>();
 
@@ -71,20 +69,14 @@ export class WorkoutStore {
     try {
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const ninetyDaysAgoIso = ninetyDaysAgo.toISOString();
 
-      // 1. Delete Firestore workouts older than 90 days
-      const snapshot = await collections.workouts(this.userId)
-        .where('date', '<', ninetyDaysAgoIso)
-        .get();
-
-      if (!snapshot.empty) {
-        const batch = firestore().batch();
-        snapshot.docs.forEach((doc) => {
-          batch.delete(doc.ref);
-        });
-        await batch.commit();
-        logger.info(`[WorkoutStore] Pruned ${snapshot.size} workouts older than 90 days from Firestore.`);
+      // 1. Delete workouts older than 90 days from local storage
+      const removed = await workoutsService.deleteWorkoutsBefore(
+        this.userId,
+        ninetyDaysAgo.toISOString(),
+      );
+      if (removed > 0) {
+        logger.info(`[WorkoutStore] Pruned ${removed} workouts older than 90 days.`);
       }
 
       // 2. Prune local MMKV storage for files older than 30 days
@@ -294,9 +286,9 @@ export class WorkoutStore {
       clearTimeout(this.saveDraftTimer);
       this.saveDraftTimer = null;
     }
-    if (this.syncFirestoreTimer) {
-      clearTimeout(this.syncFirestoreTimer);
-      this.syncFirestoreTimer = null;
+    if (this.localSyncTimer) {
+      clearTimeout(this.localSyncTimer);
+      this.localSyncTimer = null;
     }
     const targetDay = day || this.selectedDay;
     storage.delete(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT);
@@ -371,7 +363,7 @@ export class WorkoutStore {
       this.saveDraft();
     });
 
-    this.debouncedSyncToFirestore(this.activeWorkout.exercises);
+    this.debouncedSyncToLocal(this.activeWorkout.exercises);
   }
 
   async removeExercise(workoutExerciseId: string) {
@@ -392,7 +384,7 @@ export class WorkoutStore {
       }
     });
 
-    this.debouncedSyncToFirestore(updatedExercises);
+    this.debouncedSyncToLocal(updatedExercises);
   }
 
   reorderExercises(fromIndex: number, toIndex: number) {
@@ -435,7 +427,7 @@ export class WorkoutStore {
 
     this.saveDraft();
     this.saveRoutineTemplate();
-    this.debouncedSyncToFirestore(reordered);
+    this.debouncedSyncToLocal(reordered);
   }
 
   async addSet(workoutExerciseId: string, weight = 0, reps = 0) {
@@ -479,7 +471,7 @@ export class WorkoutStore {
       this.saveDraft();
     });
 
-    this.debouncedSyncToFirestore(
+    this.debouncedSyncToLocal(
       this.activeWorkout
         ? this.activeWorkout.exercises
         : [],
@@ -525,7 +517,7 @@ export class WorkoutStore {
       this.saveDraft();
     });
 
-    this.debouncedSyncToFirestore(
+    this.debouncedSyncToLocal(
       this.activeWorkout
         ? this.activeWorkout.exercises
         : [],
@@ -579,7 +571,7 @@ export class WorkoutStore {
       this.saveDraft();
     });
 
-    this.debouncedSyncToFirestore(
+    this.debouncedSyncToLocal(
       this.activeWorkout
         ? this.activeWorkout.exercises
         : [],
@@ -616,7 +608,7 @@ export class WorkoutStore {
       this.saveDraft();
     });
 
-    this.debouncedSyncToFirestore(
+    this.debouncedSyncToLocal(
       this.activeWorkout
         ? this.activeWorkout.exercises
         : [],
@@ -631,14 +623,13 @@ export class WorkoutStore {
         clearTimeout(this.saveDraftTimer);
         this.saveDraftTimer = null;
       }
-      if (this.syncFirestoreTimer) {
-        clearTimeout(this.syncFirestoreTimer);
-        this.syncFirestoreTimer = null;
+      if (this.localSyncTimer) {
+        clearTimeout(this.localSyncTimer);
+        this.localSyncTimer = null;
       }
 
       // 1. Get dates for the currently selected week (starts on Monday)
       const weekDates = getWeekDates(this.selectedDate);
-      const workoutsToSyncToFirestore: { id: string; workoutRecord: any; snapshotExercises: WorkoutExercise[]; dayDate: Date }[] = [];
       const now = new Date();
 
       // 2. Iterate through all 7 days in the week
@@ -738,14 +729,44 @@ export class WorkoutStore {
           }
           storage.set(archiveKey, existingArchive);
 
-          // Queue for non-blocking Firestore sync
+          // Persist the archived session so it also appears in workout history.
+          const totalVolume = snapshotExercises.reduce((total, ex) => {
+            return (
+              total +
+              ex.sets.reduce(
+                (sum, set) =>
+                  sum + (set.completed ? (Number(set.weight) || 0) * (Number(set.reps) || 0) : 0),
+                0,
+              )
+            );
+          }, 0);
+
+          const archivedWorkout: Workout = {
+            id: workoutIdToArchive,
+            userId: this.userId || '',
+            name: workoutRecord.name,
+            type: workoutRecord.type as WorkoutType,
+            date: dayDate,
+            completed: true,
+            totalVolume,
+            exercises: snapshotExercises,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          runInAction(() => {
+            this.workouts.set(archivedWorkout.id, archivedWorkout);
+          });
+
           if (this.userId) {
-            workoutsToSyncToFirestore.push({
-              id: workoutIdToArchive,
-              workoutRecord,
-              snapshotExercises,
-              dayDate,
-            });
+            workoutsService
+              .createWorkout(this.userId, archivedWorkout)
+              .catch((err) =>
+                logger.error(
+                  `[WorkoutStore] Failed to persist archived workout ${archivedWorkout.id}:`,
+                  err,
+                ),
+              );
           }
         }
 
@@ -805,66 +826,6 @@ export class WorkoutStore {
           storage.set(STORAGE_KEYS.ACTIVE_WORKOUT_DRAFT, resetWorkout);
         }
       }
-
-      // 5. Asynchronously persist archived workouts to Firestore in the background without blocking the UI
-      if (this.userId && workoutsToSyncToFirestore.length > 0) {
-        const userId = this.userId;
-        setTimeout(async () => {
-          for (const item of workoutsToSyncToFirestore) {
-            try {
-              const totalVolume = item.snapshotExercises.reduce((total: number, ex: any) => {
-                return total + (ex.sets || []).reduce((t: number, s: any) => t + (s.completed ? (s.weight || 0) * (s.reps || 0) : 0), 0);
-              }, 0);
-
-              // Plain JSON serialization for Firestore
-              const firestoreExercises = item.snapshotExercises.map((ex: any) => ({
-                id: String(ex.id || generateUUID()),
-                exerciseId: String(ex.exerciseId || ''),
-                exercise: ex.exercise ? {
-                  name: String(ex.exercise.name || ''),
-                  muscleGroup: String(ex.exercise.muscleGroup || ''),
-                  equipment: String(ex.exercise.equipment || ''),
-                } : null,
-                orderIndex: Number(ex.orderIndex || 0),
-                sets: (ex.sets || []).map((s: any) => ({
-                  id: String(s.id || generateUUID()),
-                  orderIndex: Number(s.orderIndex || 0),
-                  weight: Number(s.weight || 0),
-                  reps: Number(s.reps || 0),
-                  completed: Boolean(s.completed),
-                })),
-              }));
-
-              await workoutsService.createWorkout(userId, {
-                id: item.id,
-                name: item.workoutRecord.name,
-                type: item.workoutRecord.type,
-                date: item.dayDate,
-                completed: true,
-                totalVolume,
-                exercises: firestoreExercises as any,
-              });
-
-              runInAction(() => {
-                this.workouts.set(item.id, {
-                  id: item.id,
-                  userId,
-                  name: item.workoutRecord.name,
-                  type: item.workoutRecord.type as any,
-                  date: item.dayDate,
-                  completed: true,
-                  totalVolume,
-                  exercises: item.snapshotExercises,
-                  createdAt: new Date(),
-                  updatedAt: new Date(),
-                });
-              });
-            } catch (err) {
-              logger.error(`[WorkoutStore] Background Firestore archive failed for ${item.id}:`, err);
-            }
-          }
-        }, 0);
-      }
     } finally {
       runInAction(() => {
         this.isLoading = false;
@@ -918,30 +879,30 @@ export class WorkoutStore {
     storage.set(`workout.routine.${this.selectedDay}`, templateExercises);
   }
 
-  private debouncedSyncToFirestore(exercises: WorkoutExercise[], immediate = false) {
+  private debouncedSyncToLocal(exercises: WorkoutExercise[], immediate = false) {
     if (!this.userId || !this.activeWorkout) {
       return;
     }
     const userId = this.userId;
     const workoutId = this.activeWorkout.id;
 
-    if (this.syncFirestoreTimer) {
-      clearTimeout(this.syncFirestoreTimer);
-      this.syncFirestoreTimer = null;
+    if (this.localSyncTimer) {
+      clearTimeout(this.localSyncTimer);
+      this.localSyncTimer = null;
     }
 
     const performSync = async () => {
       try {
         await workoutsService.saveWorkoutExercises(userId, workoutId, exercises);
       } catch (err) {
-        logger.error('[WorkoutStore] debouncedSyncToFirestore error:', err);
+        logger.error('[WorkoutStore] debouncedSyncToLocal error:', err);
       }
     };
 
     if (immediate) {
       performSync();
     } else {
-      this.syncFirestoreTimer = setTimeout(performSync, 500);
+      this.localSyncTimer = setTimeout(performSync, 500);
     }
   }
 
@@ -997,6 +958,27 @@ export class WorkoutStore {
         sets: e.sets || [],
       })),
     };
+  }
+
+  resetLocalState() {
+    if (this.saveDraftTimer) {
+      clearTimeout(this.saveDraftTimer);
+      this.saveDraftTimer = null;
+    }
+    if (this.localSyncTimer) {
+      clearTimeout(this.localSyncTimer);
+      this.localSyncTimer = null;
+    }
+    this.unsubscribeWorkouts();
+    this.activeFetches.clear();
+    runInAction(() => {
+      this.workouts.clear();
+      this.weeklyWorkouts.clear();
+      this.activeWorkout = null;
+      this.isLoading = false;
+      this.isSyncing = false;
+      this.error = null;
+    });
   }
 }
 

@@ -1,15 +1,17 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import { createContext, useContext } from 'react';
-import { firebaseAuthService } from '../services/firebase/auth';
-import { collections } from '../services/firebase/firestore';
 import { workoutStore } from './WorkoutStore';
 import { weightStore } from './WeightStore';
 import { stepsStore } from './StepsStore';
-import auth from '@react-native-firebase/auth';
+import { settingsStore } from './SettingsStore';
 import type { User, UserPreferences, Units, UserProfile } from '../models';
 import { storage } from '../utils/storage';
-import type { LoginInput, SignupInput } from '../utils/validators';
+import { generateUUID } from '../utils/helpers';
 import { logger } from '../utils/logger';
+import { avatarService } from '../services/profile/avatarService';
+
+const PROFILE_KEY = 'user_cached_profile';
+const USER_ID_KEY = 'local_user_id';
+const APP_STARTED_KEY = 'app_started';
 
 const defaultPreferences: UserPreferences = {
   units: { weight: 'kg', height: 'cm', temperature: 'celsius' },
@@ -32,43 +34,76 @@ const defaultPreferences: UserPreferences = {
   },
 };
 
+/**
+ * Local, single-device profile. There is no sign-in anymore: the app creates
+ * one profile the first time it runs and all data is scoped to its id.
+ */
 export class AuthStore {
   user: User | null = null;
-  isLoading = true;
+  isLoading = false;
   isInitialized = false;
+  hasStarted = false;
   error: string | null = null;
-  isAuthenticated = false;
-  isNameRequired = false;
 
-  private authUnsubscribe: (() => void) | null = null;
-  private activeFetches = new Map<string, Promise<void>>();
+  private loadedForUserId: string | null = null;
 
   constructor() {
     makeAutoObservable(this);
-    this.restoreCachedUser();
+    this.restoreLocalProfile();
   }
 
-  private restoreCachedUser() {
+  private createDefaultUser(id: string): User {
+    const now = new Date();
+    return {
+      id,
+      email: '',
+      name: 'Athlete',
+      createdAt: now,
+      updatedAt: now,
+      preferences: defaultPreferences,
+      profile: { fitnessLevel: 'beginner' },
+      onboardingCompleted: true,
+    };
+  }
+
+  private restoreLocalProfile() {
     try {
-      const cached = storage.get<User>('user_cached_profile');
-      if (cached && cached.id) {
-        const createdAt = cached.createdAt ? new Date(cached.createdAt) : new Date();
-        const updatedAt = cached.updatedAt ? new Date(cached.updatedAt) : new Date();
-        this.user = {
-          ...cached,
-          createdAt: isNaN(createdAt.getTime()) ? new Date() : createdAt,
-          updatedAt: isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
-        };
-        this.isAuthenticated = true;
-        this.isInitialized = true;
-      }
-    } catch (e) {
-      logger.error('[AuthStore] restoreCachedUser error:', e);
-    }
-  }
+      const cached = storage.get<any>(PROFILE_KEY);
+      const storedId = storage.getString(USER_ID_KEY);
+      const id = cached?.id || storedId || generateUUID();
 
-  get isOnboarded() {
-    return this.user?.onboardingCompleted ?? false;
+      const createdAt = cached?.createdAt ? new Date(cached.createdAt) : new Date();
+      const updatedAt = cached?.updatedAt ? new Date(cached.updatedAt) : new Date();
+      const user: User = {
+        ...this.createDefaultUser(id),
+        ...(cached || {}),
+        id,
+        name: cached?.name || 'Athlete',
+        email: cached?.email || '',
+        preferences: cached?.preferences || defaultPreferences,
+        profile: cached?.profile || { fitnessLevel: 'beginner' },
+        onboardingCompleted: true,
+        createdAt: isNaN(createdAt.getTime()) ? new Date() : createdAt,
+        updatedAt: isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
+      };
+
+      this.user = user;
+      storage.set(USER_ID_KEY, id);
+
+      const started = storage.get<boolean>(APP_STARTED_KEY);
+      // Existing installs already have a saved profile, so they skip the
+      // welcome screen. Fresh installs see it once.
+      this.hasStarted = started === true || Boolean(cached);
+      if (this.hasStarted) {
+        storage.set(APP_STARTED_KEY, true);
+      }
+      this.isInitialized = true;
+      this.isLoading = false;
+    } catch (error) {
+      logger.error('[AuthStore] restoreLocalProfile error:', error);
+      this.isInitialized = true;
+      this.isLoading = false;
+    }
   }
 
   get preferences(): UserPreferences {
@@ -80,43 +115,27 @@ export class AuthStore {
   }
 
   async initialize() {
-    if (this.authUnsubscribe) return;
+    if (!this.isInitialized) {
+      this.restoreLocalProfile();
+    }
+    const userId = this.user?.id;
+    if (!userId || this.loadedForUserId === userId) {
+      runInAction(() => {
+        this.isLoading = false;
+        this.isInitialized = true;
+      });
+      return;
+    }
+
+    this.loadedForUserId = userId;
     try {
-      if (!this.user) {
-        this.isLoading = true;
-      }
-
-      const { session } = await firebaseAuthService.getSession();
-      if (session?.user) {
-        if (this.isInitialized) {
-          // If already initialized via cached profile, refresh in background without blocking UI
-          this.fetchUser(session.user).catch((err) => {
-            logger.warn('[AuthStore] Background profile refresh failed:', err);
-          });
-        } else {
-          await this.fetchUser(session.user);
-        }
-      }
-
-      this.authUnsubscribe = firebaseAuthService.onAuthStateChange(
-        (event, newSession) => {
-          if (__DEV__) logger.debug('[AuthStore] onAuthStateChange event:', event);
-          if (event === 'SIGNED_OUT') {
-            if (!auth().currentUser) {
-              runInAction(() => {
-                this.user = null;
-                this.isAuthenticated = false;
-                this.isNameRequired = false;
-                storage.delete('user_cached_profile');
-              });
-            }
-          } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
-            runInAction(() => {
-              this.fetchUser(newSession.user);
-            });
-          }
-        },
-      );
+      this.isLoading = true;
+      await Promise.allSettled([
+        workoutStore.loadWorkouts(userId),
+        weightStore.loadEntries(userId),
+        stepsStore.loadTodaySteps(userId),
+        stepsStore.loadWeeklySteps(userId),
+      ]);
     } catch (error) {
       logger.error('[AuthStore] initialize error:', error);
     } finally {
@@ -127,298 +146,88 @@ export class AuthStore {
     }
   }
 
-  async fetchUser(fbUser: any, isGoogleSignIn = false) {
-    if (!fbUser) return;
-
-    const userId = fbUser.id;
-    let fetchPromise = this.activeFetches.get(userId);
-    if (fetchPromise) {
-      await fetchPromise;
-      if (isGoogleSignIn) {
-        runInAction(() => {
-          const displayName = this.user?.name;
-          const needsName = !displayName || displayName === 'Athlete';
-          this.isNameRequired = needsName;
-        });
-      }
-      return;
+  async startApp() {
+    storage.set(APP_STARTED_KEY, true);
+    if (this.user) {
+      storage.set(PROFILE_KEY, this.user);
     }
-
-    fetchPromise = (async () => {
-      try {
-        const userDocRef = collections.userDoc(userId);
-        const doc = await userDocRef.get();
-        let profileData = doc.exists() ? doc.data() : null;
-
-        const metadata = fbUser.user_metadata || {};
-        const displayName = profileData?.name || profileData?.displayName || metadata.name || metadata.full_name || 'Athlete';
-        const avatarUrl = profileData?.avatarUrl || profileData?.photoURL || metadata.avatar_url || metadata.picture || null;
-        const localOnboarded = storage.get<boolean>(`onboarding_completed_${userId}`);
-        const onboardingCompleted = (profileData?.onboardingCompleted ?? false) || localOnboarded === true;
-
-        if (!profileData) {
-          profileData = {
-            id: userId,
-            email: fbUser.email || '',
-            name: displayName,
-            avatarUrl,
-            onboardingCompleted,
-          };
-          await userDocRef.set(profileData, { merge: true });
-        }
-
-        const needsName = isGoogleSignIn && (!displayName || displayName === 'Athlete');
-
-        runInAction(() => {
-          this.user = {
-            id: userId,
-            email: fbUser.email || '',
-            name: displayName,
-            avatarUrl,
-            createdAt: fbUser.created_at ? new Date(fbUser.created_at) : new Date(),
-            updatedAt: new Date(),
-            preferences: defaultPreferences,
-            profile: {
-              fitnessLevel: profileData?.profile?.fitnessLevel || profileData?.fitnessLevel || 'beginner',
-              age: profileData?.profile?.age || profileData?.age,
-              gender: profileData?.profile?.gender || profileData?.gender,
-              height: (profileData?.profile?.height ?? profileData?.height) ? Number(profileData?.profile?.height ?? profileData?.height) : undefined,
-              goalWeight: (profileData?.profile?.goalWeight ?? profileData?.goalWeight) ? Number(profileData?.profile?.goalWeight ?? profileData?.goalWeight) : undefined,
-              weeklyGoal: profileData?.profile?.weeklyGoal || profileData?.weeklyGoal,
-            },
-            onboardingCompleted,
-          };
-          this.isAuthenticated = true;
-          this.isNameRequired = needsName;
-          storage.set('user_cached_profile', this.user);
-          workoutStore.loadWorkouts(userId).catch(() => {});
-          weightStore.loadEntries(userId).catch(() => {});
-          stepsStore.loadTodaySteps(userId).catch(() => {});
-        });
-      } catch (error) {
-        logger.error('[AuthStore] fetchUser error:', error);
-      }
-    })();
-
-    this.activeFetches.set(userId, fetchPromise);
-    try {
-      await fetchPromise;
-    } finally {
-      this.activeFetches.delete(userId);
-    }
-  }
-
-  async setUserName(name: string) {
-    if (!this.user) return;
-    try {
-      this.isLoading = true;
-      await collections.userDoc(this.user.id).set({ name }, { merge: true });
-      await firebaseAuthService.updateProfile({ name });
-
-      runInAction(() => {
-        if (this.user) {
-          this.user.name = name;
-          this.isNameRequired = false;
-        }
-      });
-    } catch (error: any) {
-      logger.error('[AuthStore] setUserName error:', error);
-      throw error;
-    } finally {
-      runInAction(() => {
-        this.isLoading = false;
-      });
-    }
-  }
-
-  async login(input: LoginInput) {
-    try {
-      this.error = null;
-      this.isLoading = true;
-      const response = await firebaseAuthService.login(input);
-      await this.fetchUser(response.user, false);
-      if (!this.isAuthenticated) {
-        throw new Error('Failed to load user profile. Please try logging in again.');
-      }
-    } catch (error: any) {
-      logger.error('[AuthStore] login error:', error);
-      runInAction(() => {
-        this.error = error.message || 'Login failed';
-      });
-      throw error;
-    } finally {
-      runInAction(() => {
-        this.isLoading = false;
-      });
-    }
-  }
-
-  async signup(input: SignupInput) {
-    try {
-      this.error = null;
-      this.isLoading = true;
-      const response = await firebaseAuthService.signup(input);
-      if (response.session && response.user) {
-        await this.fetchUser(response.user, false);
-      }
-    } catch (error: any) {
-      logger.error('[AuthStore] signup error:', error);
-      runInAction(() => {
-        this.error = error.message || 'Signup failed';
-      });
-      throw error;
-    } finally {
-      runInAction(() => {
-        this.isLoading = false;
-      });
-    }
-  }
-
-  async socialLogin(provider: 'google') {
-    try {
-      this.error = null;
-      this.isLoading = true;
-      if (provider === 'google') {
-        const response = await firebaseAuthService.signInWithGoogle();
-        await this.fetchUser(response.user, true);
-        if (!this.isAuthenticated) {
-          throw new Error('Failed to load user profile. Please try signing in again.');
-        }
-      }
-    } catch (error: any) {
-      logger.error('[AuthStore] socialLogin error:', error);
-      runInAction(() => {
-        this.error = error.message || 'Social login failed';
-      });
-      throw error;
-    } finally {
-      runInAction(() => {
-        this.isLoading = false;
-      });
-    }
-  }
-
-  async logout() {
-    try {
-      this.isLoading = true;
-      await firebaseAuthService.signOut();
-    } catch (error) {
-      logger.error('[AuthStore] logout error:', error);
-    } finally {
-      runInAction(() => {
-        this.user = null;
-        this.isAuthenticated = false;
-        this.isNameRequired = false;
-        this.isLoading = false;
-        storage.delete('user_cached_profile');
-      });
-    }
-  }
-
-  async deleteAccount() {
-    try {
-      this.isLoading = true;
-      this.error = null;
-      await firebaseAuthService.deleteAccount();
-      runInAction(() => {
-        this.user = null;
-        this.isAuthenticated = false;
-        this.isNameRequired = false;
-        storage.clearAll();
-      });
-    } catch (error: any) {
-      logger.error('[AuthStore] deleteAccount error:', error);
-      runInAction(() => {
-        this.error = error.message || 'Failed to delete account';
-      });
-      throw error;
-    } finally {
-      runInAction(() => {
-        this.isLoading = false;
-      });
-    }
-  }
-
-  async resetPassword(email: string) {
-    try {
-      this.error = null;
-      await firebaseAuthService.resetPassword(email);
-    } catch (error: any) {
-      runInAction(() => {
-        this.error = error.message || 'Password reset failed';
-      });
-      throw error;
-    }
-  }
-
-  async completeOnboarding() {
-    if (!this.user) return;
-    const userId = this.user.id;
-    storage.set(`onboarding_completed_${userId}`, true);
     runInAction(() => {
-      this.user = { ...this.user!, onboardingCompleted: true };
+      this.hasStarted = true;
     });
-
-    await collections.userDoc(userId).set({ onboardingCompleted: true }, { merge: true });
-    await firebaseAuthService.updateProfile({
-      name: this.user.name,
-      onboardingCompleted: true,
-    });
+    this.loadedForUserId = null;
+    await this.initialize();
   }
 
-  async updateProfile(updates: { name?: string; email?: string; profile?: Partial<UserProfile> }) {
+  async updateProfile(updates: {
+    name?: string;
+    email?: string;
+    avatarUrl?: string;
+    profile?: Partial<UserProfile>;
+  }) {
     if (!this.user) return;
-    try {
-      const authUpdates = { name: updates.name, email: updates.email };
-      if (authUpdates.name || authUpdates.email) {
-        await firebaseAuthService.updateProfile(authUpdates);
+
+    runInAction(() => {
+      const next: User = {
+        ...this.user!,
+        updatedAt: new Date(),
+      };
+      if (updates.name) next.name = updates.name;
+      if (updates.email !== undefined) next.email = updates.email;
+      if (updates.avatarUrl !== undefined) {
+        next.avatarUrl = updates.avatarUrl || undefined;
       }
-      
-      const firestorePayload: any = {};
-      if (updates.name) firestorePayload.name = updates.name;
-      if (updates.email) firestorePayload.email = updates.email;
       if (updates.profile) {
-        firestorePayload.profile = {
-          ...this.user.profile,
+        next.profile = {
+          ...next.profile,
           ...updates.profile,
         };
       }
-      
-      if (Object.keys(firestorePayload).length > 0) {
-        const cleanPayload = JSON.parse(JSON.stringify(firestorePayload));
-        await collections.userDoc(this.user.id).set(cleanPayload, { merge: true });
-      }
-      
-      runInAction(() => {
-        if (updates.name && this.user) this.user.name = updates.name;
-        if (updates.profile && this.user) {
-          this.user.profile = {
-            ...this.user.profile,
-            ...updates.profile,
-          };
-          storage.set('user_cached_profile', this.user);
-        }
-      });
-    } catch (error: any) {
-      runInAction(() => {
-        this.error = error.message || 'Profile update failed';
-      });
-      throw error;
-    }
+      this.user = next;
+    });
+
+    storage.set(PROFILE_KEY, this.user);
   }
 
   clearError() {
     this.error = null;
   }
 
-  dispose() {
-    if (this.authUnsubscribe) {
-      this.authUnsubscribe();
-      this.authUnsubscribe = null;
+  /**
+   * Wipes every local key and returns the app to its first-run state. This is
+   * the offline equivalent of the old "delete account" action.
+   */
+  async resetApp() {
+    try {
+      if (workoutStore.resetLocalState) workoutStore.resetLocalState();
+      if (weightStore.resetLocalState) weightStore.resetLocalState();
+      if (stepsStore.resetLocalState) stepsStore.resetLocalState();
+      await avatarService.clearAll().catch(() => {});
+
+      storage.clearAll();
+
+      // Re-apply baseline settings after the wipe so the app starts clean.
+      settingsStore.resetToDefaults();
+
+      const user = this.createDefaultUser(generateUUID());
+      storage.set(USER_ID_KEY, user.id);
+      storage.delete(PROFILE_KEY);
+
+      runInAction(() => {
+        this.user = user;
+        this.hasStarted = false;
+        this.error = null;
+        this.isInitialized = true;
+        this.isLoading = false;
+      });
+      this.loadedForUserId = null;
+    } catch (error: any) {
+      logger.error('[AuthStore] resetApp error:', error);
+      runInAction(() => {
+        this.error = error?.message || 'Failed to reset app data';
+      });
+      throw error;
     }
   }
 }
 
 export const authStore = new AuthStore();
-export const AuthContext = createContext(authStore);
-export const useAuthStore = () => useContext(AuthContext);

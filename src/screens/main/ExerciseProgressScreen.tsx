@@ -9,7 +9,6 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -17,7 +16,6 @@ import { observer } from 'mobx-react-lite';
 import Svg, { Line, Polyline } from 'react-native-svg';
 import { useColors, useWorkoutStore } from '../../hooks';
 import { spacing, radius, responsive } from '../../theme';
-import { aiService } from '../../services/ai/aiService';
 import { storage } from '../../utils/storage';
 import { dateKey, getDayOfWeekKey } from '../../utils/helpers';
 import type { Workout } from '../../models';
@@ -55,48 +53,6 @@ export const ExerciseProgressScreen = observer(() => {
   const [loading, setLoading] = useState(true);
   const [exerciseHistories, setExerciseHistories] = useState<ExerciseHistory[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
-
-  const handleGenerateReport = async () => {
-    if (exerciseHistories.length === 0) return;
-
-    const keys = aiService.getSavedKeys();
-    if (keys.length === 0) {
-      Alert.alert(
-        'Setup Required',
-        'Please add at least one AI API key in the settings menu to generate weekly reports.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Go to Settings', onPress: () => (navigation as any).navigate('Settings') },
-        ]
-      );
-      return;
-    }
-
-    try {
-      setGenerating(true);
-
-      const minifiedHistory = exerciseHistories.map((h) => ({
-        exercise: h.name,
-        weeks: h.weeks.map((w) => ({
-          week: w.weekLabel,
-          date: w.dateStr,
-          sets: w.sets.map((s) => ({ weight: s.weight, reps: s.reps })),
-        })),
-      }));
-
-      const reportResult = await aiService.generateReport(JSON.stringify(minifiedHistory));
-      (navigation as any).navigate('AIReport', { report: reportResult });
-    } catch (err: any) {
-      logger.error('[ExerciseProgressScreen] Failed to generate AI report:', err);
-      Alert.alert(
-        'Generation Failed',
-        err.message || 'An error occurred while generating your progress report. Please check your network and API keys.'
-      );
-    } finally {
-      setGenerating(false);
-    }
-  };
 
   const loadProgressData = useCallback(async () => {
     try {
@@ -174,7 +130,7 @@ export const ExerciseProgressScreen = observer(() => {
       });
 
       // 2. Use the cached workouts already in WorkoutStore instead of
-      //    re-querying Firestore. The store is fed by an onSnapshot
+      //    re-querying storage. The store is kept up to date by local writes
       //    subscription (capped to 100 most-recent docs), so we get
       //    live + dedupe + no extra network calls for free.
       const storeWorkouts: Workout[] = Array.from(workoutStore.workouts.values()).filter(
@@ -350,22 +306,6 @@ export const ExerciseProgressScreen = observer(() => {
       <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Exercise Progress</Text>
         <View style={styles.headerActions}>
-          {exerciseHistories.length > 0 && (
-            <TouchableOpacity
-              onPress={handleGenerateReport}
-              disabled={generating}
-              style={[styles.generateButton, { backgroundColor: colors.cardSurface, borderColor: colors.cardBorder }]}
-              activeOpacity={0.7}
-            >
-              {generating ? (
-                <ActivityIndicator size="small" color={colors.text} />
-              ) : (
-                <Text style={[styles.generateButtonText, { color: colors.text }]}>
-                  Generate Report
-                </Text>
-              )}
-            </TouchableOpacity>
-          )}
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={[styles.backButton, { backgroundColor: colors.cardSurface }]}
@@ -483,21 +423,6 @@ export const ExerciseProgressScreen = observer(() => {
             );
           })}
         </ScrollView>
-      )}
-
-      {/* Fullscreen Loading Overlay */}
-      {generating && (
-        <View style={[styles.overlayContainer, { backgroundColor: colors.overlay }]}>
-          <View style={[styles.loadingBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={[styles.loadingStatusText, { color: colors.text, marginTop: spacing.md }]}>
-              Generating report...
-            </Text>
-            <Text style={[styles.loadingSubText, { color: colors.textMuted, marginTop: spacing.xs }]}>
-              This may take up to 10 seconds
-            </Text>
-          </View>
-        </View>
       )}
     </SafeAreaView>
   );

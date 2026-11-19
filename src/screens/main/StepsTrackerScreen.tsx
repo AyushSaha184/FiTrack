@@ -36,6 +36,7 @@ import { useColors, useAuth, useStepsStore, useWeightStore } from '../../hooks';
 import { spacing, typography, durations } from '../../theme';
 import { formatDate, formatStepsWithCommas, dateKey } from '../../utils/helpers';
 import { stepsToCalories } from '../../utils/calculations';
+import { stepCounterService } from '../../services/stepCounterService';
 import type { StepEntry } from '../../models';
 
 const timeRangeOptions = [
@@ -103,6 +104,9 @@ export const StepsTrackerScreen = observer(({ isActive = true }: StepsTrackerScr
     // the system dialog popping up while the screen is still animating in.
     const timer = setTimeout(() => {
       stepsStore.startLiveStepTracking(user.id);
+      if (currentWeight) {
+        stepCounterService.setWeight(currentWeight).catch(() => {});
+      }
     }, 600);
 
     // Periodically sync steps from native background service while screen is active

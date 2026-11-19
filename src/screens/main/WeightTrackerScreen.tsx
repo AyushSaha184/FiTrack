@@ -58,11 +58,10 @@ export const WeightTrackerScreen = observer(() => {
       }
     };
     loadWeightData();
-  }, [auth.isAuthenticated, auth.user?.id, weightStore]);
+  }, [auth.user?.id, weightStore]);
 
-  // Live Firestore subscription: keeps the chart, history, and stats up to
-  // date with writes from any other device (or this device's background
-  // sync) without re-fetching.
+  // Live local subscription: keeps the chart, history, and stats up to date
+  // with every write on this device without re-fetching.
   useEffect(() => {
     const userId = auth.user?.id;
     if (!userId) {

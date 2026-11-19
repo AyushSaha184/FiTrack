@@ -1,5 +1,6 @@
 package com.fitrack.app
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -13,6 +14,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
@@ -28,6 +30,8 @@ class StepCounterForegroundService : Service(), SensorEventListener {
     private var stepCounterSensor: Sensor? = null
     private var initialStepCount = -1f
     private var isListening = false
+    private var isExplicitStop = false
+    private var isAppForeground = false
 
     private lateinit var prefs: SharedPreferences
 
@@ -102,29 +106,62 @@ class StepCounterForegroundService : Service(), SensorEventListener {
         checkAndResetDate()
         
         val action = intent?.action
-        if (action == "ACTION_APP_FOREGROUNDED") {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
-        } else {
-            startForegroundServiceNotification()
+        if (action == "ACTION_STOP_SERVICE") {
+            isExplicitStop = true
+            prefs.edit().putBoolean("tracking_active", false).apply()
+            unregisterSensors()
+            hideForegroundNotification()
+            stopSelf()
+            return START_NOT_STICKY
         }
-        
+
+        if (action == "ACTION_APP_FOREGROUNDED") {
+            isAppForeground = true
+            hideForegroundNotification()
+            return START_STICKY
+        }
+
+        if (action == "ACTION_APP_BACKGROUNDED") {
+            isAppForeground = false
+            val trackingActive = prefs.getBoolean("tracking_active", false)
+            if (trackingActive) {
+                startForegroundServiceNotification()
+                registerSensors()
+            }
+            return START_STICKY
+        }
+
+        if (action == "ACTION_UPDATE_NOTIFICATION") {
+            if (!isAppForeground) {
+                updateNotification()
+            }
+            return START_STICKY
+        }
+
+        isExplicitStop = false
+
+        // Determine if app is currently in foreground
+        isAppForeground = MainApplication.isAppInForeground
+
+        // Must start foreground service notification on initial start to satisfy Android O+ startForegroundService contract
+        startForegroundServiceNotification()
         registerSensors()
         
         // Save status that service is active
         prefs.edit().putBoolean("tracking_active", true).apply()
 
+        // If app is already open in foreground, immediately hide notification
+        if (isAppForeground) {
+            hideForegroundNotification()
+        }
+
         return START_STICKY
     }
 
-    private fun startForegroundServiceNotification() {
-        createNotificationChannel()
-
-        val notificationIntent = Intent(this, MainActivity::class.java)
+    private fun buildNotification(): Notification {
+        val notificationIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -132,21 +169,59 @@ class StepCounterForegroundService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val currentSteps = prefs.getInt("steps", 0)
+        val goal = prefs.getInt("goal", 10000)
+        val stepText = String.format(Locale.getDefault(), "%,d / %,d steps", currentSteps, goal)
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Step Tracker")
-            .setContentText("Tracking your steps")
+            .setContentText(stepText)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
+    }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Android 14+ (API 34+) requires explicit FOREGROUND_SERVICE_TYPE_HEALTH
-            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+    private fun updateNotification() {
+        if (isAppForeground) return
+        try {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, buildNotification())
+        } catch (_: Exception) {}
+    }
+
+    private fun hideForegroundNotification() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun startForegroundServiceNotification() {
+        try {
+            createNotificationChannel()
+            val notification = buildNotification()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Android 14+ (API 34+) requires explicit FOREGROUND_SERVICE_TYPE_HEALTH
+                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (_: Exception) {
+            try {
+                if (!isAppForeground) {
+                    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    manager.notify(NOTIFICATION_ID, buildNotification())
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -221,6 +296,9 @@ class StepCounterForegroundService : Service(), SensorEventListener {
             val currentSteps = prefs.getInt("steps", 0)
             prefs.edit().putInt("steps", currentSteps + stepDelta).apply()
             Companion.updateWidget(this)
+            if (!isAppForeground) {
+                updateNotification()
+            }
         }
     }
 
@@ -230,9 +308,42 @@ class StepCounterForegroundService : Service(), SensorEventListener {
         Companion.updateWidget(this)
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        isAppForeground = false
+        val trackingActive = prefs.getBoolean("tracking_active", false)
+        if (trackingActive) {
+            // Keep foreground notification and sensors active
+            startForegroundServiceNotification()
+            registerSensors()
+
+            // Schedule a restart via AlarmManager in case the OS terminates the application process
+            try {
+                val restartIntent = Intent(applicationContext, StepCounterForegroundService::class.java).also {
+                    it.setPackage(packageName)
+                    it.action = "ACTION_APP_BACKGROUNDED"
+                }
+                val pendingIntent = PendingIntent.getService(
+                    applicationContext,
+                    NOTIFICATION_ID,
+                    restartIntent,
+                    PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                alarmManager?.set(
+                    AlarmManager.ELAPSED_REALTIME,
+                    SystemClock.elapsedRealtime() + 1000,
+                    pendingIntent
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
     override fun onDestroy() {
         unregisterSensors()
-        prefs.edit().putBoolean("tracking_active", false).apply()
+        if (isExplicitStop) {
+            prefs.edit().putBoolean("tracking_active", false).apply()
+        }
         super.onDestroy()
     }
 

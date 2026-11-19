@@ -57,8 +57,10 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
     fun stopStepCounter(promise: Promise) {
         try {
             val context = reactApplicationContext
-            val intent = Intent(context, StepCounterForegroundService::class.java)
-            context.stopService(intent)
+            val intent = Intent(context, StepCounterForegroundService::class.java).apply {
+                action = "ACTION_STOP_SERVICE"
+            }
+            context.startService(intent)
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("STOP_SERVICE_FAILED", e.message)
@@ -150,6 +152,13 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
                 apply()
             }
             updateWidget()
+            try {
+                val context = reactApplicationContext
+                val intent = Intent(context, StepCounterForegroundService::class.java).apply {
+                    action = "ACTION_UPDATE_NOTIFICATION"
+                }
+                context.startService(intent)
+            } catch (_: Exception) {}
         }
         promise.resolve(true)
     }
@@ -157,6 +166,20 @@ class StepCounterModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun setGoal(goal: Int, promise: Promise) {
         prefs.edit().putInt("goal", goal).apply()
+        updateWidget()
+        try {
+            val context = reactApplicationContext
+            val intent = Intent(context, StepCounterForegroundService::class.java).apply {
+                action = "ACTION_UPDATE_NOTIFICATION"
+            }
+            context.startService(intent)
+        } catch (_: Exception) {}
+        promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun setWeight(weightKg: Float, promise: Promise) {
+        prefs.edit().putFloat("user_weight_kg", weightKg).apply()
         updateWidget()
         promise.resolve(true)
     }

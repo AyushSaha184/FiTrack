@@ -27,9 +27,12 @@ class FitrackStepsWidget : AppWidgetProvider() {
             val storedDate = prefs.getString("date", "")
             val steps = if (storedDate == today) prefs.getInt("steps", 0) else 0
             val goal = prefs.getInt("goal", 10000)
+            val weightKg = prefs.getFloat("user_weight_kg", 70f)
+            val caloriesBurned = Math.round((steps * 0.04f * weightKg) / 60f)
 
             val views = RemoteViews(context.packageName, R.layout.widget_steps)
             views.setTextViewText(R.id.widget_step_count, steps.toString())
+            views.setTextViewText(R.id.widget_calories_count, caloriesBurned.toString())
 
             val ringBitmap = drawProgressRing(steps, goal)
             views.setImageViewBitmap(R.id.widget_progress_ring, ringBitmap)
@@ -55,7 +58,7 @@ class FitrackStepsWidget : AppWidgetProvider() {
             val canvas = Canvas(bitmap)
 
             val trackPaint = Paint().apply {
-                color = Color.parseColor("#222222") // AMOLED dark track
+                color = Color.parseColor("#1F1F1F") // AMOLED dark track
                 style = Paint.Style.STROKE
                 strokeWidth = 16f
                 isAntiAlias = true
@@ -75,9 +78,9 @@ class FitrackStepsWidget : AppWidgetProvider() {
             // Draw track
             canvas.drawCircle(size / 2f, size / 2f, (size - 2f * padding) / 2f, trackPaint)
 
-            // Draw progress arc anticlockwise from 12 o'clock (-90 degrees)
+            // Draw progress arc clockwise from 12 o'clock (-90 degrees)
             val progress = if (goal > 0) Math.min(1.0f, steps.toFloat() / goal.toFloat()) else 0.0f
-            val sweepAngle = -360f * progress
+            val sweepAngle = 360f * progress
             canvas.drawArc(rect, -90f, sweepAngle, false, progressPaint)
 
             return bitmap

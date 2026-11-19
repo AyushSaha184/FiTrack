@@ -33,6 +33,7 @@
           android:name=".StepCounterForegroundService"
           android:enabled="true"
           android:exported="false"
+          android:stopWithTask="false"
           android:foregroundServiceType="health" />
 
       <receiver
@@ -47,7 +48,7 @@
       <receiver
           android:name=".FitrackStepsWidget"
           android:exported="true"
-          android:label="FiTrack Steps">
+          android:label="@string/widget_name">
           <intent-filter>
               <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
               <action android:name="com.fitrack.app.REFRESH_AND_OPEN" />
@@ -55,6 +56,15 @@
           <meta-data
               android:name="android.appwidget.provider"
               android:resource="@xml/fitrack_steps_widget_info" />
+          <meta-data
+              android:name="miui.appwidget.size"
+              android:value="4x2" />
+          <meta-data
+              android:name="com.miui.widget.size"
+              android:value="4x2" />
+          <meta-data
+              android:name="miui.appwidget.title"
+              android:value="@string/widget_name" />
       </receiver>
     </application>
 </manifest>

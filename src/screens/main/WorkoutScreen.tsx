@@ -54,7 +54,7 @@ export const WorkoutScreen = observer(() => {
   // Memoize week dates to avoid allocating 7 Date objects on every render
   const weekDates = useMemo(() => getWeekDates(), []);
 
-  // Live Firestore subscription: replaces the one-shot loadWorkouts() in
+  // Live local subscription: replaces the one-shot loadWorkouts() in
   // AuthStore.fetchUser. The store dedupes the underlying onSnapshot.
   useEffect(() => {
     const userId = workoutStore.userId;

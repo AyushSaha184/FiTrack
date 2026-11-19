@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StatusBar, LogBox, View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { StatusBar, LogBox, View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, AppState } from 'react-native';
 
 if (Text && (Text as any).defaultProps == null) {
   (Text as any).defaultProps = (Text as any).defaultProps || {};
@@ -13,7 +13,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { logger, getErrorLogs } from './utils/logger';
-import { crashReportsService } from './services/firebase/crashReports';
+import { crashReportsService } from './services/crashReports';
 import { AppNavigator } from './navigation/AppNavigator';
 import { StoreContext, rootStore } from './stores';
 import { observer } from 'mobx-react-lite';
@@ -32,7 +32,7 @@ const globalErrorHandler = (error: Error, isFatal?: boolean) => {
         message: `${error.message}\n${error.stack || ''}`,
       }],
     });
-    crashReportsService.submit(payload);
+    crashReportsService.saveLocally(payload);
   }
 };
 
@@ -74,7 +74,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, Error
         message: `${error.message}\n${error.stack || ''}\nComponent Stack: ${componentStack || ''}`,
       }],
     });
-    const result = await crashReportsService.submit(payload);
+    const result = crashReportsService.saveLocally(payload);
     if (result) {
       this.setState({ reportSent: true });
     }
@@ -190,11 +190,14 @@ const App = observer(() => {
 
   useEffect(() => {
     let cancelled = false;
+    let lastCheckTime = 0;
+
     const checkUpdates = async () => {
       try {
         // Clean up any previously downloaded APKs left over from earlier updates
         updateService.cleanupCachedApks().catch(() => {});
         const info = await updateService.checkForUpdate();
+        lastCheckTime = Date.now();
         if (!cancelled && info) {
           setUpdateInfo(info);
           setShowUpdateModal(true);
@@ -203,11 +206,21 @@ const App = observer(() => {
         logger.warn('[App] Update auto-check failed silently on startup:', err);
       }
     };
+
     // Run the check shortly after launch
     const timer = setTimeout(checkUpdates, 600);
+
+    // Also check whenever app returns to foreground (with a 2-minute cooldown to prevent GitHub API rate limiting)
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && Date.now() - lastCheckTime > 2 * 60 * 1000) {
+        checkUpdates();
+      }
+    });
+
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      subscription.remove();
     };
   }, []);
 

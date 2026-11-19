@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { WeightEntry } from '../models';
-import { weightService } from '../services/firebase/weightService';
+import { weightService } from '../services/local/weightService';
 import { generateUUID } from '../utils/helpers';
 import { storage } from '../utils/storage';
 import { logger } from '../utils/logger';
@@ -182,9 +182,9 @@ export class WeightStore {
       }
 
       const entryDate = date || new Date();
-      // Optimistic local update so the UI reacts instantly. The Firestore
-      // onSnapshot subscription (when active) will eventually re-merge the
-      // server's view; both use the same UUID so the merge is idempotent.
+      // Optimistic local update so the UI reacts instantly. The local
+      // subscription (when active) re-emits the same entry, and both use the
+      // same UUID so the merge is idempotent.
       const localEntry: WeightEntry = {
         id: generateUUID(),
         userId,
@@ -259,6 +259,22 @@ export class WeightStore {
 
   clearError() {
     this.error = null;
+  }
+
+  resetLocalState() {
+    if (this.entriesUnsubscribe) {
+      this.entriesUnsubscribe();
+      this.entriesUnsubscribe = null;
+    }
+    this.activeFetches.clear();
+    runInAction(() => {
+      this.entries = [];
+      this.currentWeight = null;
+      this.goalWeight = null;
+      this.stats = { highest: null, lowest: null, average: null, change: null };
+      this.isLoading = false;
+      this.error = null;
+    });
   }
 }
 

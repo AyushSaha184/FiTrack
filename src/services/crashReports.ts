@@ -1,7 +1,7 @@
-import firestore from '@react-native-firebase/firestore';
 import { Platform } from 'react-native';
-import { CONFIG } from '../../config/constants';
-import { logger } from '../../utils/logger';
+import { CONFIG } from '../config/constants';
+import { storage } from '../utils/storage';
+import { logger } from '../utils/logger';
 
 export interface CrashReportPayload {
   reportType: string;
@@ -13,30 +13,30 @@ export interface CrashReportPayload {
   diagnosticLogs?: unknown[];
 }
 
+const STORAGE_KEY = 'crash_reports';
+const MAX_SAVED_REPORTS = 20;
+
+/**
+ * Offline crash/diagnostic reports. Reports are never uploaded anywhere; they
+ * are kept on-device and can still be shared through the
+ * user's email app from Settings.
+ */
 export const crashReportsService = {
-  async submit(payload: CrashReportPayload, reportId?: string) {
+  saveLocally(payload: CrashReportPayload, reportId?: string): { id: string } | null {
     try {
       const id =
         reportId ||
-        `crash_${payload.user.id || 'anon'}_${payload.timestamp.replace(/[:.]/g, '-')}`;
-      const docRef = firestore().collection('crashReports').doc(id);
+        `crash_${payload.user.id || 'local'}_${payload.timestamp.replace(/[:.]/g, '-')}`;
       const cleanPayload = JSON.parse(JSON.stringify(payload));
-      await docRef.set(
-        {
-          id,
-          userId: payload.user.id !== 'unknown' ? payload.user.id : null,
-          reportData: cleanPayload,
-          appVersion: payload.app.version,
-          os: payload.device.os,
-          osVersion: String(payload.device.osVersion),
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
+      const existing = storage.get<any[]>(STORAGE_KEY) || [];
+      const next = [
+        { id, createdAt: new Date().toISOString(), reportData: cleanPayload },
+        ...existing.filter((item) => item?.id !== id),
+      ].slice(0, MAX_SAVED_REPORTS);
+      storage.set(STORAGE_KEY, next);
       return { id };
     } catch (err) {
-      logger.error('[crashReportsService] Failed to submit crash report:', err);
+      logger.error('[crashReportsService] Failed to save crash report:', err);
       return null;
     }
   },
@@ -62,8 +62,8 @@ export const crashReportsService = {
       },
       user: {
         name: params.userName || 'Athlete',
-        email: params.userEmail || 'unknown',
-        id: params.userId || 'unknown',
+        email: params.userEmail || 'local-device',
+        id: params.userId || 'local',
       },
       settings: params.settings,
       diagnosticLogs: params.diagnosticLogs,

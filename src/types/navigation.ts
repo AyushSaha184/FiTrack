@@ -1,19 +1,9 @@
 import type { WorkoutType } from '../models';
 
 export type RootStackParamList = {
-  Auth: undefined;
-  NameInput: undefined;
-  MetricSelection: undefined;
   App: undefined;
   Settings: undefined;
-};
-
-export type AuthStackParamList = {
-  Welcome: undefined;
-  Login: undefined;
-  Signup: undefined;
-  ForgotPassword: undefined;
-  Onboarding: undefined;
+  ExerciseProgress: undefined;
 };
 
 export type MainTabParamList = {

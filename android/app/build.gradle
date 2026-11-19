@@ -1,8 +1,6 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-apply plugin: "com.google.gms.google-services"
-apply plugin: "com.google.firebase.crashlytics"
 
 def packageJson = file("../../package.json").text
 def matcher = packageJson =~ /"version":\s*"([^"]+)"/
@@ -103,10 +101,6 @@ android {
 }
 
 dependencies {
-    // RNFirebase 18.x otherwise resolves its bundled Firebase BoM 32.7.1.
-    // BoM 33.7.0 includes Crashlytics NDK binaries built for 16 KB page sizes.
-    implementation(enforcedPlatform("com.google.firebase:firebase-bom:${rootProject.ext.firebaseBomVersion}"))
-
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 

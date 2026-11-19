@@ -1,7 +1,7 @@
 import { AppState } from 'react-native';
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { StepEntry, StepSource } from '../models';
-import { stepsService } from '../services/firebase/stepsService';
+import { stepsService } from '../services/local/stepsService';
 import { stepCounterService } from '../services/stepCounterService';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS, DEFAULT_STEP_GOAL, getLast7Days, dateKey } from '../utils/helpers';
@@ -229,7 +229,7 @@ export class StepsStore {
       try {
         await stepsService.deleteStepLog(userId, entryId);
       } catch (err) {
-        logger.error('[StepsStore] deleteEntry remote error:', err);
+        logger.error('[StepsStore] deleteEntry local persistence error:', err);
       }
     }
   }
@@ -318,7 +318,7 @@ export class StepsStore {
   async syncFromBackgroundService(userId: string) {
     if (!userId) return;
     try {
-      // 1. Process and upload any archived step logs from previous days (e.g. rollover occurred while app was in background/closed)
+      // 1. Persist any archived step logs from previous days (e.g. rollover occurred while app was in background/closed)
       const pendingLogs = await stepCounterService.getPendingStepLogs();
       if (pendingLogs.length > 0) {
         for (const item of pendingLogs) {
@@ -356,6 +356,27 @@ export class StepsStore {
 
   clearError() {
     this.error = null;
+  }
+
+  resetLocalState() {
+    if (this.syncDebounceTimer) {
+      clearTimeout(this.syncDebounceTimer);
+      this.syncDebounceTimer = null;
+    }
+    if (this.unsubscribeStepCounter) {
+      this.unsubscribeStepCounter();
+      this.unsubscribeStepCounter = null;
+    }
+    runInAction(() => {
+      this.todaySteps = 0;
+      this.dailyGoal = DEFAULT_STEP_GOAL;
+      this.weeklyEntries = [];
+      this.todayEntry = null;
+      this.isLoading = false;
+      this.isLiveTracking = false;
+      this.error = null;
+      this.source = 'manual';
+    });
   }
 }
 

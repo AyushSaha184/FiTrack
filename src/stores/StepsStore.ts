@@ -17,22 +17,104 @@ export class StepsStore {
   isLiveTracking = false;
   error: string | null = null;
   source: StepSource = 'manual';
+  currentDate: string = dateKey(new Date());
 
+  private currentUserId: string | null = null;
   private unsubscribeStepCounter: (() => void) | null = null;
   private syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private midnightTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     makeAutoObservable(this);
     this.dailyGoal = storage.get<number>(STORAGE_KEYS.STEP_DAILY_GOAL) || DEFAULT_STEP_GOAL;
+    this.currentDate = dateKey(new Date());
     this.restoreCachedSteps();
+    this.scheduleMidnightCheck();
 
-    // Listen to AppState changes to show/hide the foreground notification
+    // Listen to AppState changes to show/hide the foreground notification and handle day rollover
     AppState.addEventListener('change', (nextAppState) => {
       const isForeground = nextAppState === 'active';
       if (this.isLiveTracking) {
         stepCounterService.updateAppVisibility(isForeground).catch(() => {});
       }
+      if (isForeground) {
+        if (this.currentUserId) {
+          this.checkDateRollover(this.currentUserId)
+            .then(() => this.syncFromBackgroundService(this.currentUserId!))
+            .catch((err) => {
+              logger.error('[StepsStore] AppState active sync error:', err);
+            });
+        } else {
+          this.checkDateRollover().catch(() => {});
+        }
+      }
     });
+  }
+
+  private scheduleMidnightCheck() {
+    if (this.midnightTimer) {
+      clearTimeout(this.midnightTimer);
+    }
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+    const msToMidnight = Math.max(1000, midnight.getTime() - now.getTime());
+    this.midnightTimer = setTimeout(async () => {
+      try {
+        await this.checkDateRollover(this.currentUserId ?? undefined);
+        if (this.currentUserId) {
+          await this.syncFromBackgroundService(this.currentUserId);
+        }
+      } catch (e) {
+        logger.error('[StepsStore] Midnight rollover check error:', e);
+      } finally {
+        this.scheduleMidnightCheck();
+      }
+    }, msToMidnight);
+  }
+
+  async checkDateRollover(targetUserId?: string): Promise<boolean> {
+    const todayStr = dateKey(new Date());
+    if (this.currentDate !== todayStr) {
+      const previousDate = this.currentDate;
+      const userId = targetUserId || this.currentUserId;
+
+      // 1. If steps were logged for the previous date, ensure they are stored in history
+      if (userId && this.todaySteps > 0) {
+        try {
+          const existing = await stepsService.getStepLogs(userId, previousDate);
+          const maxSteps = Math.max(existing?.stepCount ?? 0, this.todaySteps);
+          await stepsService.saveStepLog(userId, maxSteps, this.dailyGoal, previousDate);
+        } catch (e) {
+          logger.error('[StepsStore] Failed to save previous day log on rollover:', e);
+        }
+      }
+
+      // 2. Reset in-memory today's steps and cache for the new day
+      runInAction(() => {
+        this.currentDate = todayStr;
+        this.todaySteps = 0;
+        this.todayEntry = null;
+        this.persistTodayCache(0);
+      });
+
+      // 3. Reload weekly entries so previous day shows up in history immediately
+      if (userId) {
+        await this.loadWeeklySteps(userId);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private upsertWeeklyEntry(entry: StepEntry) {
+    const entryDateStr = dateKey(new Date(entry.date));
+    const existingIdx = this.weeklyEntries.findIndex((e) => dateKey(new Date(e.date)) === entryDateStr);
+    if (existingIdx !== -1) {
+      this.weeklyEntries[existingIdx] = entry;
+    } else {
+      this.weeklyEntries = [entry, ...this.weeklyEntries];
+    }
+    storage.set('steps_weekly_cache', this.weeklyEntries);
   }
 
   private persistTodayCache(steps: number) {
@@ -43,12 +125,14 @@ export class StepsStore {
   private restoreCachedSteps() {
     try {
       const todayStr = dateKey(new Date());
+      this.currentDate = todayStr;
       const cachedToday = storage.get<{ date: string; steps: number }>('steps_today_cache_v2');
       if (cachedToday && cachedToday.date === todayStr && typeof cachedToday.steps === 'number') {
         this.todaySteps = cachedToday.steps;
       } else {
         // Stale or legacy cache from a previous day -> reset to 0 for today
         this.todaySteps = 0;
+        this.persistTodayCache(0);
       }
       const cachedWeekly = storage.get<any[]>('steps_weekly_cache');
       if (cachedWeekly && Array.isArray(cachedWeekly) && cachedWeekly.length > 0) {
@@ -99,6 +183,8 @@ export class StepsStore {
       if (__DEV__) logger.warn('[StepsStore] Skipping loadTodaySteps: invalid userId', userId);
       return;
     }
+    this.currentUserId = userId;
+    await this.checkDateRollover(userId);
     try {
       this.isLoading = true;
       const todayStr = dateKey(new Date());
@@ -107,7 +193,7 @@ export class StepsStore {
 
       runInAction(() => {
         if (log) {
-          this.todaySteps = Math.max(log.stepCount, nativeSteps, this.todaySteps);
+          this.todaySteps = Math.max(log.stepCount, nativeSteps);
           this.dailyGoal = log.targetGoal || this.dailyGoal;
           this.todayEntry = {
             id: log.id,
@@ -118,9 +204,10 @@ export class StepsStore {
             createdAt: log.createdAt,
             updatedAt: log.updatedAt,
           };
+          this.upsertWeeklyEntry(this.todayEntry);
         } else {
-          // No remote log yet for today -> preserve higher of current local steps or native steps
-          this.todaySteps = Math.max(this.todaySteps, nativeSteps);
+          // No log yet for today -> only native steps recorded today
+          this.todaySteps = nativeSteps;
           this.todayEntry = null;
         }
         this.persistTodayCache(this.todaySteps);
@@ -281,6 +368,7 @@ export class StepsStore {
 
   async startLiveStepTracking(userId: string) {
     if (this.isLiveTracking || !userId) return;
+    this.currentUserId = userId;
 
     const hasPermission = await stepCounterService.requestPermission(userId);
     if (!hasPermission) {
@@ -317,14 +405,19 @@ export class StepsStore {
 
   async syncFromBackgroundService(userId: string) {
     if (!userId) return;
+    this.currentUserId = userId;
     try {
+      await this.checkDateRollover(userId);
+
       // 1. Persist any archived step logs from previous days (e.g. rollover occurred while app was in background/closed)
       const pendingLogs = await stepCounterService.getPendingStepLogs();
       if (pendingLogs.length > 0) {
         for (const item of pendingLogs) {
           if (item.steps > 0 && item.date) {
             try {
-              await stepsService.saveStepLog(userId, item.steps, this.dailyGoal, item.date);
+              const existing = await stepsService.getStepLogs(userId, item.date);
+              const maxSteps = Math.max(existing?.stepCount ?? 0, item.steps);
+              await stepsService.saveStepLog(userId, maxSteps, this.dailyGoal, item.date);
             } catch (saveErr) {
               logger.warn('[StepsStore] Failed to sync pending log for date:', item.date, saveErr);
             }
@@ -340,11 +433,21 @@ export class StepsStore {
 
       // If native sensor has higher steps than stored, update and sync up
       if (steps > this.todaySteps) {
+        const savedLog = await stepsService.saveStepLog(userId, steps, this.dailyGoal, todayStr);
         runInAction(() => {
           this.todaySteps = steps;
+          this.todayEntry = {
+            id: savedLog.id,
+            userId: savedLog.userId,
+            steps: savedLog.stepCount,
+            date: savedLog.date,
+            source: 'manual',
+            createdAt: savedLog.createdAt,
+            updatedAt: savedLog.updatedAt,
+          };
+          this.upsertWeeklyEntry(this.todayEntry);
           this.persistTodayCache(this.todaySteps);
         });
-        await stepsService.saveStepLog(userId, this.todaySteps, this.dailyGoal, todayStr);
       } else if (this.todaySteps > steps && this.todaySteps > 0) {
         // If stored steps are higher (e.g. from previous session/manual/cloud), sync down to native service
         await stepCounterService.setInitialSteps(this.todaySteps);
@@ -359,6 +462,10 @@ export class StepsStore {
   }
 
   resetLocalState() {
+    if (this.midnightTimer) {
+      clearTimeout(this.midnightTimer);
+      this.midnightTimer = null;
+    }
     if (this.syncDebounceTimer) {
       clearTimeout(this.syncDebounceTimer);
       this.syncDebounceTimer = null;

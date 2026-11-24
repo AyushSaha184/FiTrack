@@ -5,8 +5,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -20,6 +22,7 @@ import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -32,13 +35,19 @@ class StepCounterForegroundService : Service(), SensorEventListener {
     private var isListening = false
     private var isExplicitStop = false
     private var isAppForeground = false
+    private var dateChangeReceiver: BroadcastReceiver? = null
 
     private lateinit var prefs: SharedPreferences
 
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "step_counter_channel"
-        
+        private const val MIDNIGHT_ALARM_REQUEST_CODE = 1002
+
+        @Volatile
+        var instance: StepCounterForegroundService? = null
+            private set
+
         fun getTodayDateString(): String {
             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
             return sdf.format(Date())
@@ -66,6 +75,13 @@ class StepCounterForegroundService : Service(), SensorEventListener {
                 if (context != null) {
                     updateWidget(context)
                 }
+
+                instance?.let { service ->
+                    service.initialStepCount = -1f
+                    if (!service.isAppForeground) {
+                        service.updateNotification()
+                    }
+                }
                 return true
             } else if (storedDate.isEmpty()) {
                 prefs.edit().putString("date", today).putInt("steps", 0).apply()
@@ -86,6 +102,7 @@ class StepCounterForegroundService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         stepDetectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
         stepCounterSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
@@ -93,6 +110,8 @@ class StepCounterForegroundService : Service(), SensorEventListener {
 
         // Check if date has changed on start
         checkAndResetDate()
+        registerDateChangeReceiver()
+        scheduleMidnightAlarm()
     }
 
     private fun checkAndResetDate() {
@@ -102,13 +121,109 @@ class StepCounterForegroundService : Service(), SensorEventListener {
         }
     }
 
+    private fun registerDateChangeReceiver() {
+        if (dateChangeReceiver == null) {
+            dateChangeReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    checkAndResetDate()
+                    scheduleMidnightAlarm()
+                }
+            }
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_DATE_CHANGED)
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(dateChangeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(dateChangeReceiver, filter)
+            }
+        }
+    }
+
+    private fun unregisterDateChangeReceiver() {
+        dateChangeReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {}
+            dateChangeReceiver = null
+        }
+    }
+
+    private fun scheduleMidnightAlarm() {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(this, StepCounterForegroundService::class.java).apply {
+                action = "ACTION_MIDNIGHT_RESET"
+            }
+            val pendingIntent = PendingIntent.getService(
+                this,
+                MIDNIGHT_ALARM_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val midnight = Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_YEAR, 1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 500)
+            }
+            val triggerTime = midnight.timeInMillis
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.set(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            }
+        } catch (_: Exception) {
+            try {
+                val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+                val intent = Intent(this, StepCounterForegroundService::class.java).apply {
+                    action = "ACTION_MIDNIGHT_RESET"
+                }
+                val pendingIntent = PendingIntent.getService(
+                    this,
+                    MIDNIGHT_ALARM_REQUEST_CODE,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val midnight = Calendar.getInstance().apply {
+                    add(Calendar.DAY_OF_YEAR, 1)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 500)
+                }
+                alarmManager.set(AlarmManager.RTC_WAKEUP, midnight.timeInMillis, pendingIntent)
+            } catch (_: Exception) {}
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         checkAndResetDate()
         
         val action = intent?.action
+        if (action == "ACTION_MIDNIGHT_RESET") {
+            checkAndResetDate()
+            scheduleMidnightAlarm()
+            return START_STICKY
+        }
+
         if (action == "ACTION_STOP_SERVICE") {
             isExplicitStop = true
             prefs.edit().putBoolean("tracking_active", false).apply()
+            unregisterDateChangeReceiver()
             unregisterSensors()
             hideForegroundNotification()
             stopSelf()
@@ -354,7 +469,11 @@ class StepCounterForegroundService : Service(), SensorEventListener {
     }
 
     override fun onDestroy() {
+        unregisterDateChangeReceiver()
         unregisterSensors()
+        if (instance == this) {
+            instance = null
+        }
         if (isExplicitStop) {
             prefs.edit().putBoolean("tracking_active", false).apply()
         } else {

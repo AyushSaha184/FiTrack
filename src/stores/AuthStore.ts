@@ -130,6 +130,7 @@ export class AuthStore {
     this.loadedForUserId = userId;
     try {
       this.isLoading = true;
+      await stepsStore.syncFromBackgroundService(userId);
       await Promise.allSettled([
         workoutStore.loadWorkouts(userId),
         weightStore.loadEntries(userId),

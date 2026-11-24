@@ -32,6 +32,7 @@ class FitrackStepsWidget : AppWidgetProvider() {
             options: Bundle? = null
         ) {
             val prefs = context.getSharedPreferences("StepCounterPrefs", Context.MODE_PRIVATE)
+            StepCounterForegroundService.checkAndResetDate(prefs, context)
             val today = StepCounterForegroundService.getTodayDateString()
             val storedDate = prefs.getString("date", "")
             val steps = if (storedDate == today) prefs.getInt("steps", 0) else 0
